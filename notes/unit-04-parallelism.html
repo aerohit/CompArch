@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Unit 4 · Parallelism</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="assets/notes.css">
+<script src="assets/notes.js"></script>
+<style>
+.calc{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px;align-items:end}
+.stat{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-top:12px}
+.stat div{background:var(--panel2);border-radius:4px;padding:6px 10px;font:500 11px var(--mono);color:var(--mute)}
+.stat b{display:block;font-size:17px;color:var(--ink)}
+.caches{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+@media (max-width:680px){.caches{grid-template-columns:minmax(0,1fr)}}
+.cpanel{border:1px solid var(--line);border-radius:5px;padding:10px 12px;background:var(--panel)}
+.cpanel h6{margin:0 0 8px;font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}
+.lrow{display:grid;grid-template-columns:44px 30px 1fr;gap:8px;align-items:center;font:500 13px var(--mono);padding:5px 0;border-top:1px solid var(--panel2)}
+.lrow:first-of-type{border-top:0}
+.badge{display:inline-grid;place-items:center;width:26px;height:24px;border-radius:3px;font:700 13px var(--mono)}
+.b-I{background:var(--panel2);color:var(--mute)} .b-S{background:var(--te-soft);color:var(--te)} .b-M{background:var(--cu-soft);color:var(--cu)}
+.lrow .v span{display:inline-block;min-width:44px;padding:1px 6px;margin-right:4px;border-radius:3px;background:var(--panel2)}
+.lrow .v span.stale{text-decoration:line-through;color:var(--mute)}
+.flash{animation:fl .6s}
+@keyframes fl{from{box-shadow:0 0 0 3px var(--cu)}to{box-shadow:0 0 0 0 transparent}}
+.log{font:500 12.5px var(--mono);max-height:190px;overflow-y:auto;background:var(--panel2);border-radius:4px;padding:8px 12px;margin-top:10px}
+.log div{padding:1px 0}
+.log b{color:var(--cu)}
+.thr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.thr > div{border:1px solid var(--line);border-radius:5px;padding:10px 12px;background:var(--panel)}
+.thr h6{margin:0 0 6px;font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase}
+.op{font:500 13px var(--mono);padding:3px 8px;border-radius:3px;margin:2px 0}
+.op.done{color:var(--mute);text-decoration:line-through}
+.op.next{background:var(--cu-soft)}
+.sbuf{display:flex;gap:4px;flex-wrap:wrap;min-height:26px;align-items:center;font:500 12px var(--mono)}
+.sbuf span{padding:2px 8px;border-radius:3px;background:var(--warn-soft);color:var(--warn);border:1px dashed var(--warn)}
+.memrow{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+.memrow div{border:2px solid var(--ink);border-radius:4px;padding:6px 14px;font:600 15px var(--mono);background:var(--panel)}
+.memrow small{display:block;font:500 10px var(--mono);color:var(--mute)}
+.outc{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.outc span{font:600 12px var(--mono);padding:4px 10px;border-radius:14px;border:1px solid var(--line);color:var(--mute)}
+.outc span.seen{background:var(--te-soft);border-color:var(--te);color:var(--te)}
+.outc span.forbid{text-decoration:line-through;opacity:.6}
+.outc span.seen.forbid{background:var(--bad-soft);border-color:var(--bad);color:var(--bad);text-decoration:none;opacity:1}
+.arr{display:grid;grid-template-columns:44px repeat(var(--n),minmax(30px,1fr));gap:3px;font:500 12px var(--mono);align-items:center;overflow-x:auto}
+.arr .h{color:var(--mute);font-size:10.5px;text-align:center}
+.arr .l{color:var(--mute);font-size:11.5px}
+.arr .c{height:30px;display:grid;place-items:center;border-radius:3px;background:var(--panel2)}
+.arr .g0{box-shadow:inset 0 -3px 0 var(--te)} .arr .g1{box-shadow:inset 0 -3px 0 var(--pl)} .arr .g2{box-shadow:inset 0 -3px 0 var(--cu)} .arr .g3{box-shadow:inset 0 -3px 0 var(--warn)} .arr .g4{box-shadow:inset 0 -3px 0 var(--ok)}
+.arr .cur{outline:2px solid var(--ink)}
+.arr .done{background:var(--te-soft)}
+.vreg{display:flex;gap:4px;margin:6px 0;font:600 13px var(--mono);align-items:center;flex-wrap:wrap}
+.vreg .n{width:60px;font-size:11.5px;color:var(--mute);font-weight:500}
+.vreg span.e{width:56px;height:32px;display:grid;place-items:center;border-radius:3px;background:var(--cu-soft);border:1px solid var(--cu)}
+.vreg span.e.off{background:var(--panel2);border:1px dashed var(--line);color:var(--mute)}
+.vreg span.m1{background:var(--te-soft);border-color:var(--te)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar"><div class="in">
+  <a class="brand" href="index.html">Gates <span>→</span> GPUs · Notes</a>
+  <nav class="unitnav" aria-label="Units"><a href="index.html">Course map</a><a href="unit-01-build-a-computer.html">1 · Build a computer</a><a href="unit-02-registers-programs-contexts.html">2 · Programs &amp; contexts</a><a href="unit-03-faster-core.html">3 · A faster core</a><a href="unit-04-parallelism.html" aria-current="page">4 · Parallelism</a><a href="cs149/index.html">CS149 lectures</a></nav>
+  <button class="themebtn" type="button">☾ Dark</button>
+</div></header>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk"/></marker>
+  <marker id="ahc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkc"/></marker>
+  <marker id="aht" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkt"/></marker>
+  <marker id="ahp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkp"/></marker>
+  <marker id="ahb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkb"/></marker>
+</defs></svg>
+
+<div class="wrap">
+<nav class="toc" aria-label="On this page"></nav>
+<main id="main">
+
+<header class="hero">
+  <div class="kicker">Unit 4 · Lessons 16–19</div>
+  <h1>Add <em>parallelism</em></h1>
+  <p class="lede">Unit 3 squeezed every drop of independence out of <i>one</i> instruction stream. This unit adds more: more instruction streams on more cores, more hardware contexts sharing one core, and more data elements per instruction. Each is a different kind of parallelism, and each brings a new problem. Copies can disagree, operations can appear in surprising orders, threads compete for shared resources, and array lengths don't divide evenly.</p>
+  <dl class="outcome">
+    <dt>You'll be able to</dt><dd>Tell apart multiple cores, multiple hardware contexts and multiple vector elements. Explain how cached copies of shared memory stay coherent, why that still isn't enough to order operations, and how software establishes the ordering it needs.</dd>
+    <dt>Carries over</dt><dd>Caches and lines (Lesson 10), store buffers and retirement (Lesson 15), software threads and saved contexts (Lesson 7), issue ports and ILP (Lesson 13).</dd>
+    <dt>A note on models</dt><dd>Each explorer is an explicit teaching model. A coherence step is one completed transaction, an ordering step is one abstract event, an SMT step is one cycle, and a vector step is one group of elements. None of them simulates a commercial processor.</dd>
+  </dl>
+  <div class="insight">More hardware only helps if the <b>algorithm exposes independent work</b> and the <b>communication doesn't eat the benefit</b>. Keep that sentence in mind for every lesson here, and for GPUs next.</div>
+  <div class="lessonmap">
+    <a href="#l16"><b>LESSON 16</b>Share memory across cores</a>
+    <a href="#l17"><b>LESSON 17</b>Ordering &amp; synchronization</a>
+    <a href="#l18"><b>LESSON 18</b>One core, several hardware threads</a>
+    <a href="#l19"><b>LESSON 19</b>One instruction, many elements</a>
+  </div>
+</header>
+
+<!-- =============================== LESSON 16 =============================== -->
+<section class="lesson" id="l16" data-toc="Multicore & coherence" data-n="16">
+  <div class="lesson-h"><div class="kicker">Lesson 16</div><h2>Share memory across cores</h2></div>
+  <div class="card4">
+    <div class="c1"><span class="l">Limitation</span>One core can only find so much independent work in one instruction stream, and making it faster costs disproportionate power.</div>
+    <div class="c2"><span class="l">New mechanism</span>Several cores, each running its own thread, sharing one memory, with a <b>coherence protocol</b> keeping their private cached copies in agreement.</div>
+    <div class="c3"><span class="l">New state</span>A coherence state per cached line in every cache, plus sharer/owner tracking in the interconnect or a directory.</div>
+    <div class="c4"><span class="l">Cost</span>Coherence messages, invalidations, cache-to-cache transfers, and contention on shared caches and memory bandwidth.</div>
+  </div>
+
+  <h3 class="part">More cores, one memory</h3>
+  <p>A <b>multicore</b> chip puts several complete cores on one die. Each has its own PC, registers, pipeline and private caches, so each can run a different software thread at full speed. What they share is further out: usually a last-level cache, the on-chip interconnect, the memory controllers and the DRAM bandwidth. "Shared memory" means every core can <i>address</i> the same bytes. It doesn't mean every access costs the same, or that the caches are physically shared.</p>
+  <figure class="fig"><div class="sc">
+    <svg viewBox="0 0 760 236" role="img" aria-label="Four cores, each with private L1 and L2, connected by an interconnect to a shared L3 and memory controller">
+      <g id="mcCores"></g>
+      <rect x="20" y="140" width="720" height="20" class="pl"/><text x="380" y="154" class="mid sm">interconnect: carries coherence requests and cache-to-cache data</text>
+      <rect x="20" y="174" width="500" height="44" class="cu"/><text x="270" y="194" class="mid bd">shared L3 cache</text><text x="270" y="210" class="mid xs">shared capacity: one core's data can crowd out another's</text>
+      <rect x="540" y="174" width="200" height="44" class="te"/><text x="640" y="194" class="mid bd">memory controllers</text><text x="640" y="210" class="mid xs">shared DRAM bandwidth</text>
+    </svg></div>
+    <figcaption><b>Private near the core, shared further out.</b> Private caches are fast precisely because they're private. That's also what creates this lesson's problem: two private caches can each hold a copy of the same address.</figcaption></figure>
+
+  <h3 class="part">How much can more cores help? Amdahl's bound</h3>
+  <p>Split a fixed task across P equally fast cores. If a fraction <i>s</i> of the work must run serially (setup, a final combine step, a part nobody parallelized), then even with perfect scaling the best possible speedup is</p>
+  <p style="text-align:center;font:600 17px var(--mono)">speedup ≤ 1 / (s + (1 − s) / P)</p>
+  <figure class="fig"><div class="widget">
+    <div class="calc">
+      <label class="rl" for="amS">serial fraction s = <b id="amSv">10</b> %<input id="amS" type="range" min="0" max="50" step="1" value="10"></label>
+      <label class="rl" for="amP">cores P = <b id="amPv">4</b><input id="amP" type="range" min="0" max="6" step="1" value="2"></label>
+    </div>
+    <div class="sc" style="padding:8px 0 0"><svg id="amSvg" viewBox="0 0 760 250" role="img" aria-label="Amdahl speedup curve against number of cores" style="min-width:560px"></svg></div>
+    <p class="msg" id="amOut"></p>
+  </div><figcaption><b>The serial part becomes the whole story.</b> With 10% serial work, 4 cores give at most about 3.1×, and no number of cores can beat 10×. This is an upper bound under ideal assumptions. Real synchronization, load imbalance and shared-bandwidth limits pull you further below it. Changing the <i>algorithm</i> changes s, so the bound describes one specific task, not a permanent law about an application.</figcaption></figure>
+
+  <h3 class="part">The new problem: copies that disagree</h3>
+  <p>Suppose cores A and B have both cached the word x = 0. A writes x = 1 into its own cache. If B keeps reading its old copy forever, the two cores no longer share memory in any useful sense.</p>
+  <p><b>Cache coherence</b> is the promise that for each <i>single memory location</i>, all cores agree on one order of writes and eventually see the latest one. The common way to deliver it is an <b>invalidation protocol</b>, with one rule:</p>
+  <div class="insight"><b>Many readers, or one writer, per line, never both.</b> Before a core may write a line, every other copy is invalidated. After that, a reader that misses gets the current data, even if it lives in another core's cache rather than in memory.</div>
+  <p>Coherence works on whole <b>cache lines</b>, not individual variables. Keep that in mind, because it causes false sharing below. It also says nothing about the order of writes to <i>different</i> addresses. That's the next lesson.</p>
+
+  <h3 class="part">A deliberately small protocol: MSI</h3>
+  <p>Each cache labels each line it knows about with one of three states:</p>
+  <div class="tbl"><table>
+    <tr><th>State</th><th>Meaning in this cache</th><th>May read?</th><th>May write?</th></tr>
+    <tr><td class="m"><span class="badge b-I">I</span> Invalid</td><td>No usable copy. Old bits may physically remain, but must not be used.</td><td>No: miss</td><td>No</td></tr>
+    <tr><td class="m"><span class="badge b-S">S</span> Shared</td><td>A clean, readable copy. Other caches may have one too.</td><td>Yes</td><td>Only after requesting ownership</td></tr>
+    <tr><td class="m"><span class="badge b-M">M</span> Modified</td><td>The <i>only</i> valid copy, possibly newer than memory.</td><td>Yes</td><td>Yes</td></tr>
+  </table></div>
+  <figure class="fig"><div class="sc"><svg id="msiSvg" viewBox="0 0 760 250" role="img" aria-label="MSI state machine for one line in one cache"></svg></div>
+    <figcaption><b>One line, as seen by one cache.</b> Teal arrows are this core's own reads and writes. Copper arrows are requests from <i>other</i> cores that this cache observes. Real protocols add more states (the E in MESI, the O in MOESI), transient states for requests in flight, and acknowledgements. MSI keeps just the core invariant.</figcaption></figure>
+  <div class="assume">Two cores with private write-back caches. One 16-byte line holds two 4-byte words, x and y (in the "separate lines" layout, y moves to its own line). Each transaction completes before the next begins: no evictions, transient states or simultaneous requests. A read that misses enters S, even if no one else has the line (that's MSI, not MESI). If the other cache holds the line in M, a read makes it supply the data <i>and</i> update memory, and both end in S. A write steals ownership: the data moves cache to cache, and memory may stay stale.</div>
+
+  <h3 class="part">Try it: two caches, one line</h3>
+  <p>Click reads and writes, or play a preset. Watch the states, where the current value actually lives, and the counters.</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 10px"><span class="readout">Layout:</span><div class="seg" role="group" aria-label="Layout"><button data-lay="same" aria-pressed="true">x and y in one line</button><button data-lay="sep">separate lines</button></div>
+      <span class="readout" style="margin-left:8px">Presets:</span><button data-pre="text">textbook trace</button><button data-pre="false">false sharing</button></div>
+    <div class="ctrl" style="margin:0 0 12px"><button data-act="A,r,x">A reads x</button><button data-act="A,w,x">A writes x</button><button data-act="A,w,y">A writes y</button><span style="width:10px"></span><button data-act="B,r,x">B reads x</button><button data-act="B,w,x">B writes x</button><button data-act="B,w,y">B writes y</button><button id="cohReset">Reset</button></div>
+    <div class="caches" id="cohCaches"></div>
+    <p class="msg" id="cohMsg"></p>
+    <div class="stat" id="cohStat"></div>
+    <div class="log" id="cohLog"></div>
+  </div><figcaption><b>The latest value doesn't have to be in memory.</b> After "A writes x", memory still says 0 and the protocol knows A's copy is the real one. A <b>snooping</b> design finds it by having every cache watch requests on a shared fabric. A <b>directory</b> keeps a record of which caches hold each line and sends messages only to them, which scales to many cores.</figcaption></figure>
+
+  <h3 class="part">False sharing: different variables, same line</h3>
+  <p>Run the <b>false sharing</b> preset with x and y in one line. A only ever touches x and B only ever touches y. They share no data, yet every write must take ownership of the whole line away from the other core: four ownership requests and three invalidations for four writes. Switch to <b>separate lines</b> and run it again. Each core takes its own line once and then hits in M: two requests and no invalidations.</p>
+  <figure class="fig"><div class="sc"><svg id="fsSvg" viewBox="0 0 760 180" role="img" aria-label="False sharing: two counters in one line ping-pong between cores; padded counters stay put"></svg></div>
+    <figcaption><b>The line ping-pongs.</b> A classic real-world case is per-thread counters stored next to each other in an array. The fix is to pad or align each thread's hot data to its own line, or to change which data each thread writes. Padding costs memory and can hurt locality, so use the <i>actual</i> machine's line size (often 64 bytes; our 16 is a teaching choice).</figcaption></figure>
+
+  <div class="predict"><div class="ph"><b>Predict</b><span>Track permission, then data.</span></div><ol>
+    <li>In the textbook trace, after "A writes x = 1": what are A's and B's states, what does memory hold, and where is the current value?
+      <details><summary>Show answer</summary><div class="ans"><p>A = <b>M</b>, B = <b>I</b>, memory x = <b>0</b> (stale). The current value 1 lives only in A's cache. Coherence knows that, so it doesn't matter that memory is out of date.</p></div></details></li>
+    <li>Next, B reads x. What value does B get, and what happens to both states and to memory?
+      <details><summary>Show answer</summary><div class="ans"><p>B misses, and A (in M) supplies <b>1</b> and writes it back. Both end in <b>S</b>, and memory now holds 1.</p></div></details></li>
+    <li>Four alternating writes (A→x, B→y, A→x, B→y). Count ownership requests and invalidations with x, y in one line versus separate lines.
+      <details><summary>Show answer</summary><div class="ans"><p>One line: <b>4 requests, 3 invalidations</b>. Separate lines: <b>2 requests, 0 invalidations</b>, because after the first write each core keeps its own line in M.</p></div></details></li>
+    <li>With 20% serial work and 4 ideal cores, what does Amdahl predict? What's the limit with unlimited cores?
+      <details><summary>Show answer</summary><div class="ans"><p>1 / (0.2 + 0.8/4) = 1 / 0.4 = <b>2.5×</b>. With unlimited cores the limit is 1/0.2 = <b>5×</b>.</p></div></details></li>
+    <li>x is perfectly coherent. Why is that not enough to guarantee another thread sees a write to <code>data</code> before it sees <code>ready = 1</code>?
+      <details><summary>Show answer</summary><div class="ans"><p>Coherence talks about <b>one location at a time</b>: every core agrees on the order of writes to x. It says nothing about the order in which writes to <i>two different</i> locations (data, ready) become visible. That's a separate rule, the memory-consistency model, covered next.</p></div></details></li>
+  </ol></div>
+  <p class="checkpoint">For any trace, say who has permission to read or write each line, where the current data actually lives, and why two different variables can still fight over one line.</p>
+</section>
+
+<!-- =============================== LESSON 17 =============================== -->
+<section class="lesson" id="l17" data-toc="Ordering & synchronization" data-n="17">
+  <div class="lesson-h"><div class="kicker">Lesson 17</div><h2>Define ordering, then synchronize</h2></div>
+  <div class="card4">
+    <div class="c1"><span class="l">Limitation</span>Coherent caches still let different threads observe operations on <i>different</i> addresses in surprising orders.</div>
+    <div class="c2"><span class="l">New mechanism</span>A <b>memory consistency model</b> that defines which results are legal, plus synchronization (atomics, acquire/release, locks, barriers) to demand the order you need.</div>
+    <div class="c3"><span class="l">New state</span>Store buffers, the modification order of atomic variables, lock ownership, waiting queues and barrier counts.</div>
+    <div class="c4"><span class="l">Cost</span>Fences and atomics stall or drain buffers, contended atomics bounce lines between cores, and threads wait on each other.</div>
+  </div>
+
+  <h3 class="part">Why the order can look strange: store buffers</h3>
+  <p>Recall Lesson 15: a core can retire a store while the value is still sitting in its <b>store buffer</b>, waiting to be written to the cache where other cores can see it. Meanwhile the core keeps going, and a later <i>load</i> of a different address can complete right away. From another core's point of view, the load happened before the store.</p>
+  <figure class="fig"><div class="sc"><svg id="sbSvg" viewBox="0 0 760 200" role="img" aria-label="Each core has a store buffer between it and coherent memory; loads can bypass buffered stores to other addresses"></svg></div>
+    <figcaption><b>The store is committed for this thread, but not yet visible to others.</b> A load checks its own store buffer first, and otherwise reads coherent memory. Nothing here violates coherence: each address still has one agreed history. What changes is how operations on <i>different</i> addresses interleave.</figcaption></figure>
+
+  <h3 class="part">Sequential consistency: the intuitive baseline</h3>
+  <p>A <b>memory consistency model</b> is the rule that says which values loads are allowed to return. The most intuitive one is <b>sequential consistency (SC)</b>: the result must look as if all threads' operations were shuffled into <i>one</i> global sequence that keeps each thread's own program order. Real CPUs and languages mostly allow <i>more</i> behaviours than SC, for speed. x86, ARM, RISC-V, C++ and Java each define exactly which ones.</p>
+
+  <h3 class="part">Try it: can both threads read zero?</h3>
+  <p>Start with x = 0, y = 0. Thread A does <code>x = 1</code>, then reads y into rA. Thread B does <code>y = 1</code>, then reads x into rB. Step the two threads in any order you like. In the store-buffer model you also decide when each buffer <b>drains</b> to memory. Every final (rA, rB) outcome you reach is recorded below.</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 10px"><div class="seg" role="group" aria-label="Machine model"><button data-mm="sc" aria-pressed="true">Sequentially consistent</button><button data-mm="sb">Store buffers (like x86-TSO)</button></div><button id="soWit">Play a (0, 0) witness</button></div>
+    <div class="thr" id="soThr"></div>
+    <div class="memrow" id="soMem"></div>
+    <div class="ctrl"><button id="soA" class="pri">Step A ▶</button><button id="soB" class="pri">Step B ▶</button><button id="soDA">Drain A's buffer</button><button id="soDB">Drain B's buffer</button><button id="soReset">Reset run</button><button id="soClear">Clear outcomes</button></div>
+    <p class="msg" id="soMsg"></p>
+    <p class="panel-t" style="margin-top:12px">Outcomes reached (rA, rB)</p><div class="outc" id="soOut"></div>
+  </div><figcaption><b>(0, 0) is impossible under SC but allowed with store buffers.</b> Under SC you can reach (0, 1), (1, 0) and (1, 1), but never (0, 0). With store buffers, both stores can wait in their buffers while both loads read the old zeros from memory. Every cache stayed coherent the whole time.</figcaption></figure>
+  <p>Why is (0, 0) impossible under SC? Follow the "must come before" arrows:</p>
+  <figure class="fig narrow"><div class="sc"><svg id="cycSvg" viewBox="0 0 560 220" role="img" aria-label="The four ordering constraints form a cycle, so no single global order exists" style="min-width:460px"></svg></div>
+    <figcaption><b>A cycle means no single global order exists.</b> Program order puts each store before its own thread's load. Each load reading 0 means it happened before the other thread's store. The four arrows chase each other in a circle, and a circle can't be laid out in one line.</figcaption></figure>
+
+  <h3 class="part">Publishing data safely: release and acquire</h3>
+  <p>The practical question is usually "how does a consumer know the producer's data is ready?" Consider a <b>one-shot publication</b>. <code>ready</code> starts false, one producer writes <code>data = 42</code> and then sets <code>ready = true</code>, and data is never changed again. The consumer waits until it sees <code>ready</code>, then reads <code>data</code>.</p>
+  <figure class="fig"><div class="sc"><svg id="relSvg" viewBox="0 0 760 230" role="img" aria-label="Producer and consumer timelines connected by a release-acquire synchronizes-with edge"></svg></div>
+    <figcaption><b>The chain that makes it safe.</b> The producer's write to data comes before its <b>release</b> store to ready (program order). The consumer's <b>acquire</b> load <i>reads that very store</i>, so the two synchronize. The consumer's read of data comes after (program order). Together these give "the write of 42 happens before the read of data". Remove release/acquire (make both "relaxed") and the chain breaks. In C++ that's a data race on <code>data</code>, and the program's behaviour is undefined.</figcaption></figure>
+  <p>Two subtleties. An acquire load that reads <code>false</code> establishes nothing: the relationship exists only with the specific store it read. And acquire/release says nothing about <i>timing</i>, so it doesn't promise the producer runs soon or that the wait ends. The compiler turns release and acquire into whatever instructions and fences the target CPU needs. On x86 they're often free, while on ARM and RISC-V they may need special instructions.</p>
+
+  <h3 class="part">Lost updates, and the tools that fix different problems</h3>
+  <p>Two threads each run <code>counter = counter + 1</code>. Even if each load and each store is individually atomic, the <i>pair</i> isn't:</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 10px"><div class="seg" role="group" aria-label="Scenario"><button data-cn="bad" aria-pressed="true">Interleaved load/add/store</button><button data-cn="seq">One after the other</button><button data-cn="rmw">Atomic fetch_add</button></div></div>
+    <div class="sc" style="padding:0"><svg id="cnSvg" viewBox="0 0 760 200" role="img" aria-label="Timeline of two threads incrementing a shared counter" style="min-width:560px"></svg></div>
+    <p class="msg" id="cnMsg"></p>
+  </div><figcaption><b>Both threads read 0, both compute 1, both store 1: one increment vanishes.</b> An atomic <b>read-modify-write</b> (fetch_add) makes read, add and write one indivisible step, so two of them always produce 2. For this isolated counting job, even "relaxed" ordering is enough. It just doesn't publish any <i>other</i> data.</figcaption></figure>
+  <div class="tbl"><table>
+    <tr><th>Tool</th><th>What it guarantees</th><th>What it doesn't</th></tr>
+    <tr><td><b>Atomic read-modify-write</b> (fetch_add, compare-and-swap)</td><td>One variable is updated indivisibly</td><td>Consistency across several variables</td></tr>
+    <tr><td><b>Mutex / lock</b></td><td>Only one thread runs a critical section at a time, and unlock → lock also synchronizes memory</td><td>That threads are fairly scheduled. Contention serializes them.</td></tr>
+    <tr><td><b>Memory fence</b></td><td>Constrains the order of this thread's memory operations</td><td>That other threads reach any particular point</td></tr>
+    <tr><td><b>Thread barrier</b></td><td>Everyone reaches the phase boundary before anyone continues, and earlier work is visible after it</td><td>Progress if some participants never arrive (deadlock)</td></tr>
+    <tr><td><i>sleep, <code>volatile</code></i></td><td><i>Nothing about inter-thread ordering in C/C++</i></td><td><i>Not a substitute for any of the above</i></td></tr>
+  </table></div>
+  <p>Making every field of a structure individually atomic doesn't preserve an invariant that spans several fields ("balance equals the sum of entries"). That's what a lock is for. Every tool here adds shared state and waiting, so choose by the relationship your algorithm needs, then measure the contention.</p>
+
+  <div class="predict"><div class="ph"><b>Predict</b><span>Name the relationship before the hardware.</span></div><ol>
+    <li>With store buffers, why can rA and rB both be 0? Did any cache violate coherence?
+      <details><summary>Show answer</summary><div class="ans"><p>Both stores are still waiting in their buffers when both loads read memory, which still holds zeros. <b>No coherence violation</b>: each address still has a single history (0, then 1). Only the <i>cross-address</i> order looks strange.</p></div></details></li>
+    <li>State the argument that rules out (0, 0) under SC.
+      <details><summary>Show answer</summary><div class="ans"><p>A's store → A's load (program order). A's load reads y = 0 → it precedes B's store. B's store → B's load (program order). B's load reads x = 0 → it precedes A's store. That's a <b>cycle</b>, so no single global order satisfies all four constraints.</p></div></details></li>
+    <li>In the publication example, which event makes the ordinary read of data safe? Does an acquire load that reads false help?
+      <details><summary>Show answer</summary><div class="ans"><p>The acquire load <b>reading the value written by the release store</b> (synchronizes-with). A load that reads false establishes <b>nothing</b>, which is why the consumer loops until it actually sees true.</p></div></details></li>
+    <li>Why can two atomic loads and stores still lose an increment? What does fetch_add change?
+      <details><summary>Show answer</summary><div class="ans"><p>Each load and each store is atomic, but another thread's load can slip <i>between</i> them, so both threads read the same old value. fetch_add makes the read-add-write <b>one indivisible operation</b>, so the increments are serialized and none is lost.</p></div></details></li>
+    <li>Match each need to a tool: "one shared counter", "update three fields together", "all workers finish phase 1 before phase 2", "keep my stores in order relative to a later load". Does <code>volatile</code> solve any of them in C++?
+      <details><summary>Show answer</summary><div class="ans"><p>Counter → <b>atomic RMW</b>. Three fields → <b>mutex</b>. Phases → <b>barrier</b>. Store-load order → <b>fence</b> (or suitable atomics). <code>volatile</code> solves <b>none</b> of them in C++: it neither makes operations atomic nor orders them between threads.</p></div></details></li>
+  </ol></div>
+  <p class="checkpoint">Before talking about caches or buffers, identify the <b>language-level synchronization relationship</b> that makes the program correct: which store is read by which load, or which lock hand-off.</p>
+</section>
+
+<!-- =============================== LESSON 18 =============================== -->
+<section class="lesson" id="l18" data-toc="Hardware multithreading" data-n="18">
+  <div class="lesson-h"><div class="kicker">Lesson 18</div><h2>One core, several hardware threads</h2></div>
+  <div class="card4">
+    <div class="c1"><span class="l">Limitation</span>One instruction stream often leaves a wide core's issue slots empty, whether waiting on a dependency or a cache miss.</div>
+    <div class="c2"><span class="l">New mechanism</span><b>Hardware multithreading</b>: keep several architectural contexts resident in the core and pick work from whichever has some ready.</div>
+    <div class="c3"><span class="l">New state</span>Per-context PC, architectural registers (via separate rename maps), and control/exception state.</div>
+    <div class="c4"><span class="l">Cost</span>Extra context state and selection logic. Threads compete for ports, queues, caches and bandwidth, so each may run slower.</div>
+  </div>
+
+  <h3 class="part">Three ways to share a core</h3>
+  <p>In Unit 2, switching threads meant the OS saving and restoring registers: hundreds of instructions or more. Hardware multithreading instead keeps several <b>hardware contexts</b> physically resident, so switching between them costs little or nothing. Designs differ in <i>when</i> they switch:</p>
+  <figure class="fig"><div class="sc"><svg id="mtSvg" viewBox="0 0 760 250" role="img" aria-label="Issue-slot grids for coarse-grained, fine-grained and simultaneous multithreading"></svg></div>
+    <figcaption><b>Issue slots over time</b> (4 slots per cycle, 8 cycles). <b>Coarse-grained</b> multithreading runs one thread until a long stall, such as a cache miss, then switches. <b>Fine-grained</b> picks a different thread every cycle, but still one thread per cycle. <b>Simultaneous (SMT)</b> fills one cycle's slots from several threads at once. These are hardware strategies, not new kinds of software thread.</figcaption></figure>
+
+  <h3 class="part">What's duplicated, what's shared</h3>
+  <figure class="fig"><div class="sc"><svg id="ctxSvg" viewBox="0 0 760 220" role="img" aria-label="Two hardware contexts, each with PC and registers, feeding one shared set of execution resources"></svg></div>
+    <figcaption><b>Distinct contexts, shared machinery.</b> Each context must <i>logically</i> have its own PC, registers and exception state. A modern core often keeps all the register values in one shared physical register file with a separate rename map per context. Everything behind that (queues, ports, caches, predictors, bandwidth) is shared, split or duplicated depending on the design.</figcaption></figure>
+  <p>The operating system sees each hardware context as a separate <b>logical processor</b> and schedules software threads onto them. A chip with 4 cores × 2 contexts shows the OS 8 logical processors, but it doesn't have 8 cores' worth of execution hardware. The OS can still juggle many more software threads than that, saving the inactive ones to memory exactly as in Unit 2.</p>
+
+  <h3 class="part">Try it: two dependency chains, one core</h3>
+  <p>Thread A runs <code>x5 = x5 + 1</code> four times starting from 0. Thread B runs <code>x5 = x5 + 10</code> four times starting from 100. Each is a chain: every add needs the previous result, and a result is usable the next cycle. Both threads use the <i>name</i> x5, but they're different contexts, so they're different registers.</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 10px"><div class="seg" role="group" aria-label="Policy"><button data-pol="alone">A alone</button><button data-pol="fine" aria-pressed="true">One thread per cycle</button><button data-pol="smt">SMT</button></div>
+      <div class="seg" role="group" aria-label="ALU ports"><button data-port="1">1 ALU port</button><button data-port="2" aria-pressed="true">2 ALU ports</button></div></div>
+    <div class="sc" style="padding:0"><svg id="smtSvg" viewBox="0 0 760 170" role="img" aria-label="Cycle-by-port schedule of the two threads" style="min-width:560px"></svg></div>
+    <p class="msg" id="smtMsg"></p>
+  </div><figcaption><b>SMT fills a slot that one chain can't.</b> With 2 ports, one chain only ever has one ready add, so selecting one thread per cycle wastes a port every cycle. SMT issues from both and finishes in 4 cycles instead of 8. With only 1 port there's nothing to fill: both policies need 8 cycles, and SMT can't create an extra ALU.</figcaption></figure>
+
+  <h3 class="part">Throughput, not latency</h3>
+  <p>SMT can raise <b>total throughput</b> by using slots one thread would leave empty. It never promises lower <b>latency</b> for an individual thread. A thread running alone may finish sooner than when it shares a core with a sibling that competes for the same caches, queues and bandwidth. Two threads that are both limited by memory bandwidth mostly just fight each other. That's why enabling SMT isn't universally a win: it depends on the workload, on latency goals, and on the specific core. Sharing resources also leaks timing information between siblings, which matters for security isolation (Unit 2 mentioned this).</p>
+
+  <div class="predict"><div class="ph"><b>Predict</b><span>Count ports and ready operations.</span></div><ol>
+    <li>Two ALU ports: how many cycles do the two chains take with one-thread-per-cycle selection, and with SMT? What are the final x5 values?
+      <details><summary>Show answer</summary><div class="ans"><p>One thread per cycle: <b>8 cycles</b> (A finishes in cycle 7, B in 8). SMT: <b>4 cycles</b>. Either way A's x5 = <b>4</b> and B's x5 = <b>140</b>. Scheduling changes the timing, never the results.</p></div></details></li>
+    <li>With a single ALU issue slot per cycle, why do both policies take 8 cycles? What's the limit?
+      <details><summary>Show answer</summary><div class="ans"><p>There are 8 adds and only one can start per cycle. The <b>ALU issue capacity</b> is the bottleneck. SMT can fill empty slots, but it can't make new ones.</p></div></details></li>
+    <li>4 physical cores with 2 hardware contexts each: how many logical processors does the OS see? Why isn't that 8 cores?
+      <details><summary>Show answer</summary><div class="ans"><p><b>8 logical processors</b>, but only 4 sets of execution units, caches and pipelines. Pairs of logical processors share one core's resources.</p></div></details></li>
+    <li>What must stay distinct between resident hardware threads, and how does switching between them differ from an OS context switch?
+      <details><summary>Show answer</summary><div class="ans"><p>Distinct: <b>PC, architectural registers (their mappings) and control/exception state</b>. May be shared: ports, queues, caches, predictors, bandwidth. An OS context switch <i>saves and restores</i> state through memory with software. Hardware contexts are all resident at once, and the core picks among them with no save/restore.</p></div></details></li>
+    <li>Can adding an SMT sibling raise total throughput while making the original thread slower?
+      <details><summary>Show answer</summary><div class="ans"><p><b>Yes.</b> The sibling uses previously idle slots, so total work per second rises. But it also takes cache space, queue entries and bandwidth the original thread was using, so the original thread's own progress can slow.</p></div></details></li>
+  </ol></div>
+  <p class="checkpoint">Draw two register contexts connected to one shared set of execution resources. Then draw two physical cores, and explain what the second drawing has that the first doesn't.</p>
+</section>
+
+<!-- =============================== LESSON 19 =============================== -->
+<section class="lesson" id="l19" data-toc="SIMD & vectors" data-n="19">
+  <div class="lesson-h"><div class="kicker">Lesson 19</div><h2>One instruction, many data elements</h2></div>
+  <div class="card4">
+    <div class="c1"><span class="l">Limitation</span>Scalar code repeats the same fetch, decode and schedule work for every element of an array, even though the operation is identical.</div>
+    <div class="c2"><span class="l">New mechanism</span><b>SIMD / vector</b> instructions: one instruction operates on a group of elements, with masks or a vector length for partial groups.</div>
+    <div class="c3"><span class="l">New state</span>Wide vector registers, mask (predicate) registers, and a current vector length.</div>
+    <div class="c4"><span class="l">Cost</span>Wider datapaths, more register bandwidth and power. Tails and reductions need care, and memory bandwidth can become the new bottleneck.</div>
+  </div>
+
+  <h3 class="part">Scalar versus vector</h3>
+  <p>For <code>c[i] = a[i] + b[i]</code> over many elements, scalar code runs two loads, an add, a store and loop bookkeeping <i>per element</i>. A vector instruction applies the same operation to a whole group of elements at once, so the control overhead is paid once per group. This is <b>data-level parallelism</b>, the third kind in this unit, and it's the direct ancestor of how GPUs work.</p>
+  <figure class="fig"><div class="sc"><svg id="svSvg" viewBox="0 0 760 210" role="img" aria-label="Scalar loop issues one add per element; a vector add handles four elements with one instruction"></svg></div>
+    <figcaption><b>Four adds, one instruction.</b> The arithmetic is the same. What shrinks is the per-element overhead of fetching, decoding and scheduling instructions.</figcaption></figure>
+
+  <h3 class="part">Four numbers that are easy to confuse</h3>
+  <figure class="fig"><div class="sc"><svg id="vlSvg" viewBox="0 0 760 230" role="img" aria-label="A 128-bit register holding four 32-bit elements, executed on two physical lanes over two beats"></svg></div>
+    <figcaption><b>Register bits, element width, active elements and physical lanes are separate quantities.</b> A 128-bit register holds four 32-bit elements, but a design may process them on only two physical lanes over two cycles ("beats"). How many elements an instruction <i>names</i> doesn't tell you how many are processed <i>at once</i>.</figcaption></figure>
+  <p><b>Fixed-width</b> SIMD (x86 SSE/AVX, Arm NEON) bakes the register width into the instruction set. <b>Scalable</b> vector ISAs (Arm SVE, RISC-V V) let the same program run on hardware with different vector lengths. The loop asks "how many elements can you do now?" and uses the answer:</p>
+  <div class="asm">
+    <div class="r"><span class="a"></span><span class="i">remaining = N</span><span class="c"></span></div>
+    <div class="r"><span class="a"></span><span class="i">while remaining > 0:</span><span class="c"></span></div>
+    <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;vl = set_length(remaining)</span><span class="c">hardware returns how many it will do (≤ its maximum)</span></div>
+    <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;process vl elements</span><span class="c">vector loads, add, store</span></div>
+    <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;advance pointers by vl; remaining −= vl</span><span class="c">use the <i>returned</i> vl, never an assumed width</span></div>
+  </div>
+  <p>In RISC-V V, the maximum is VLMAX = VLEN × LMUL / SEW: register length times register grouping, divided by element width. With VLEN = 128 bits, LMUL = 1 and SEW = 32 bits, VLMAX = 4. That's an instruction-set quantity. It doesn't promise four physical lanes or a one-cycle instruction.</p>
+
+  <h3 class="part">Try it: the tail problem</h3>
+  <p>Ten elements don't divide into groups of four. The last group needs a <b>mask</b> that turns off the positions past the end. In our model, masked-off positions do <b>no memory access at all</b>: they neither read past the array nor write output. That matters. Loading past the end of an array and throwing the extra values away later is <i>not</i> equivalent, because it can touch memory that isn't yours.</p>
+  <figure class="fig"><div class="widget">
+    <div class="calc"><label class="rl" for="vN">elements N = <b id="vNv">10</b><input id="vN" type="range" min="1" max="20" value="10"></label>
+      <div><span class="readout">vector width:</span> <div class="seg" role="group" aria-label="Width"><button data-vw="4" aria-pressed="true">4</button><button data-vw="8">8</button></div></div></div>
+    <div id="vArr" style="margin-top:12px"></div>
+    <div id="vRegs" style="margin-top:10px"></div>
+    <p class="msg" id="vMsg"></p>
+    <div class="ctrl"><button id="vBack">◀ Back</button><button id="vStep" class="pri">Next group ▶</button><button id="vAll">Run all</button><button id="vReset">Reset</button></div>
+    <div class="stat" id="vStat"></div>
+  </div><figcaption><b>a = [1, 2, 3, …], b = [100, 101, 102, …], so c[i] = 2i + 101.</b> Coloured underlines show which group handles each element. With 10 elements and width 4 there are 3 groups using 10 of 12 positions (83%). Width 8 needs only 2 groups but uses 10 of 16 (62.5%). Lower utilization doesn't prove it's slower, since fewer instructions may still win. SIMD also doesn't reduce the useful bytes: every element still needs two 4-byte inputs and one 4-byte output, 12 bytes each.</figcaption></figure>
+
+  <h3 class="part">What vectorizes, and what doesn't</h3>
+  <p>Elementwise work vectorizes because every output is independent. Two kinds of loop don't pack so simply:</p>
+  <figure class="fig"><div class="sc"><svg id="redSvg" viewBox="0 0 760 240" role="img" aria-label="Left: a loop-carried dependence chain across iterations. Right: a tree reduction summing eight elements in three levels"></svg></div>
+    <figcaption><b>Left, a loop-carried dependence:</b> <code>a[i] = a[i−1] + 1</code> needs the previous iteration's result, so four iterations can't simply run side by side. Compilers must prove there's no such dependence, and no overlap (aliasing) between arrays, before they vectorize. <b>Right, a reduction:</b> a sum needs values from different lanes to meet. That's done with partial sums or a tree, where 8 numbers take 3 levels. Regrouping a floating-point sum changes rounding, so the result may not be bit-identical to the sequential loop.</figcaption></figure>
+  <p>Layout matters here too. Vector loads want the elements they combine to be contiguous, which favours a <b>structure of arrays</b> (all x's together, all y's together) over an array of structures. Gathers can load scattered addresses, but they don't make scattered memory traffic cheap. Once the arithmetic is vectorized, the bottleneck often moves to memory bandwidth.</p>
+
+  <div class="predict"><div class="ph"><b>Predict</b><span>Use the explorer to check.</span></div><ol>
+    <li>Ten elements, width 4: how many groups, what's the last group's mask, and which outputs does it write?
+      <details><summary>Show answer</summary><div class="ans"><p><b>3 groups</b>. The last covers positions 8–11 with mask <b>1 1 0 0</b>, and it writes only <b>c[8] = 117 and c[9] = 119</b>. Positions 10–11 do no memory access.</p></div></details></li>
+    <li>Compare position utilization at widths 4 and 8 for 10 elements. Is the lower one necessarily slower?
+      <details><summary>Show answer</summary><div class="ans"><p>Width 4: 10/12 = <b>83.3%</b>. Width 8: 10/16 = <b>62.5%</b>. <b>Not necessarily slower.</b> Width 8 needs 2 instructions instead of 3, and the real time depends on throughput per instruction, masks and memory behaviour.</p></div></details></li>
+    <li>How many useful bytes cross the array boundary for 10 elementwise 32-bit additions? Why might actual memory traffic differ?
+      <details><summary>Show answer</summary><div class="ans"><p>12 bytes per element × 10 = <b>120 bytes</b>. Actual traffic moves whole cache lines, can include bytes you don't use, may read the output line before writing it (write-allocate), and depends on what's already cached.</p></div></details></li>
+    <li>VLEN = 128, SEW = 32, LMUL = 1: what's VLMAX? Does it tell you the number of physical lanes or the instruction latency?
+      <details><summary>Show answer</summary><div class="ans"><p><b>VLMAX = 4</b>. It does <b>not</b> tell you lanes or latency. The hardware could process the 4 elements on 1, 2 or 4 lanes over several cycles.</p></div></details></li>
+    <li>Why is a sum different from an elementwise add? Give a reason a compiler can't vectorize every loop by packing adjacent iterations.
+      <details><summary>Show answer</summary><div class="ans"><p>A sum combines values from different lanes, so it needs <b>cross-lane (horizontal) communication</b> or partial sums. A compiler can't pack iterations that <b>depend on each other</b> (a[i] uses a[i−1]), or arrays that <b>might overlap</b> without a runtime check, or floating-point sums where regrouping changes the result, unless it's allowed to.</p></div></details></li>
+  </ol></div>
+  <p class="checkpoint">Distinguish a <b>software thread</b>, a <b>hardware context</b>, a <b>vector element</b> and a <b>physical lane</b>. Then handle a tail safely with a mask or a returned vector length.</p>
+</section>
+
+<section class="lesson" id="wrap" data-toc="Putting it together" data-n="✓">
+  <div class="lesson-h"><div class="kicker">Unit 4 · Summary</div><h2>Putting it together</h2></div>
+  <p>Suppose two software threads each add a 10-element slice of two arrays, on two different physical cores. Each uses the width-4 vector model. The output slices don't overlap, but each thread increments its own "done" counter, and the two counters sit in the same cache line.</p>
+  <details class="predict" style="padding:0"><summary style="margin:12px 16px">Work it out, then open</summary><div class="ans" style="margin:0 16px 16px">
+    <p><b>Vector groups:</b> 3 per thread, so <b>6</b> in total. <b>Useful array traffic:</b> 12 bytes × 20 elements = <b>240 bytes</b>.</p>
+    <p><b>Coherence:</b> the two counters are different variables in one line, which is <b>false sharing</b>. Each increment takes ownership away from the other core. Pad them onto separate lines.</p>
+    <p><b>Knowing the work is done:</b> the coordinator should <b>join</b> both threads, or use a correct release/acquire publication (each worker release-stores its flag, and the coordinator acquire-loads until it reads it). Coherent caches alone aren't a correctness argument. The language's synchronization rules are.</p>
+    <p><b>Move both threads onto SMT siblings of one core</b> and the estimate changes. Their contexts remain separate, but they now compete for that one core's vector units, front end and cache bandwidth.</p>
+  </div></details>
+  <div class="tbl"><table>
+    <tr><th>Form of parallelism</th><th>What is independent?</th><th>What stays shared or limiting?</th></tr>
+    <tr><td>Instruction-level (Unit 3)</td><td>Operations within one thread</td><td>Dependencies, ports, front end, queues</td></tr>
+    <tr><td>Multicore thread-level (Lesson 16)</td><td>Instruction streams on different cores</td><td>Memory bandwidth, shared caches, coherence, synchronization</td></tr>
+    <tr><td>Hardware multithreading / SMT (Lesson 18)</td><td>Resident contexts on one core</td><td>Execution ports, queues, caches, front end</td></tr>
+    <tr><td>SIMD / vector data-level (Lesson 19)</td><td>Element operations within one instruction</td><td>Vector throughput, masks, reductions, data supply</td></tr>
+  </table></div>
+  <p>A real program can use all four at once, and none of them speeds anything up just by existing. The next unit carries these distinctions into GPUs, where they're pushed to the extreme: thousands of logical threads, grouped for lockstep SIMD-style execution, scheduled across many hardware contexts, and limited by the memory traffic that feeds them.</p>
+  <div class="nextunit"><a href="unit-03-faster-core.html"><small>← Unit 3</small>Make one CPU core faster</a><a href="index.html"><small>Back to</small>Course map →</a></div>
+</section>
+
+</main>
+</div>
+
+<script>
+(function(){
+const {$,$$,RM}=NOTES;
+
+/* ---------- L16 cores figure ---------- */
+(function(){let h='';for(let i=0;i<4;i++){const x=20+i*182;
+  h+=`<rect x="${x}" y="14" width="172" height="40" class="cu"/><text x="${x+86}" y="39" class="mid bd">Core ${i}</text><rect x="${x}" y="60" width="172" height="24" class="bx"/><text x="${x+86}" y="77" class="mid sm">private L1</text><rect x="${x}" y="90" width="172" height="24" class="bx"/><text x="${x+86}" y="107" class="mid sm">private L2</text><path d="M${x+86} 114 V138" class="w"/>`;}
+  $('#mcCores').innerHTML=h;})();
+
+/* ---------- L16 Amdahl ---------- */
+(function(){
+  function r(){const s=+$('#amS').value/100,P=2**+$('#amP').value;$('#amSv').textContent=Math.round(s*100);$('#amPv').textContent=P;
+    const f=p=>1/(s+(1-s)/p),lim=s>0?1/s:Infinity,ymax=Math.min(64,Math.max(8,Math.ceil((s>0?lim:64)*1.15)));
+    const X=p=>80+Math.log2(p)/6*640,Y=v=>220-Math.min(v,ymax)/ymax*190;let h='';
+    const step=ymax<=10?2:ymax<=24?4:ymax<=40?8:16;
+    for(let v=0;v<=ymax;v+=step)h+=`<line x1="80" y1="${Y(v)}" x2="720" y2="${Y(v)}" class="w" style="stroke:var(--line);stroke-width:1"/><text x="72" y="${Y(v)+4}" class="end xs">${v}×</text>`;
+    for(let k=0;k<=6;k++)h+=`<text x="${X(2**k)}" y="238" class="mid xs">${2**k}</text>`;
+    h+=`<path d="M${X(1)} ${Y(1)} L${X(Math.min(64,ymax))} ${Y(Math.min(64,ymax))}" class="w dash"/><text x="${X(Math.min(64,ymax))-6}" y="${Y(Math.min(64,ymax))+14}" class="end xs">perfect scaling</text>`;
+    if(s>0&&lim<=ymax)h+=`<line x1="80" y1="${Y(lim)}" x2="720" y2="${Y(lim)}" class="wb dash"/><text x="716" y="${Y(lim)-5}" class="end sm tbad">limit 1/s = ${lim.toFixed(1)}×</text>`;
+    let d='';for(let k=0;k<=60;k++){const p=2**(k/10);d+=(k?'L':'M')+X(p)+' '+Y(f(p));}
+    h+=`<path d="${d}" class="wc" style="stroke-width:2.4"/><circle cx="${X(P)}" cy="${Y(f(P))}" r="6" class="mkc"/><text x="${X(P)+10}" y="${Y(f(P))+18}" class="sm bd">${P} cores: ${f(P).toFixed(2)}×</text>`;
+    h+='<text x="400" y="250" class="mid xs"></text>';
+    $('#amSvg').innerHTML=h;
+    $('#amOut').innerHTML=`1 / (${s.toFixed(2)} + ${(1-s).toFixed(2)} / ${P}) = <b>${f(P).toFixed(2)}×</b> on ${P} core${P>1?'s':''} (efficiency ${(f(P)/P*100).toFixed(0)}%). ${s>0?`No number of cores can beat <b>${lim.toFixed(1)}×</b>.`:'With no serial part, scaling is perfect in this ideal model.'}`;}
+  $('#amS').oninput=r;$('#amP').oninput=r;r();
+})();
+
+/* ---------- L16 MSI diagram ---------- */
+(function(){
+  const S={I:[130,125],S:[380,125],M:[630,125]};let h='';
+  Object.entries(S).forEach(([k,[x,y]])=>h+=`<circle cx="${x}" cy="${y}" r="46" class="${k==='I'?'bg2':k==='S'?'te':'cu'}" style="stroke-width:2"/><text x="${x}" y="${y-2}" class="mid hd" style="font-size:26px">${k}</text><text x="${x}" y="${y+16}" class="mid xs">${{I:'invalid',S:'shared',M:'modified'}[k]}</text><text x="${x}" y="${y+29}" class="mid xs">${{I:'all misses',S:'reads hit',M:'all hit'}[k]}</text>`);
+  const arc=(d,cls,mk,lx,ly,l,a)=>`<path d="${d}" class="${cls}" marker-end="url(#${mk})"/><text x="${lx}" y="${ly}" class="${a||'mid'} xs">${l}</text>`;
+  h+=arc('M170 102 Q255 62 338 102','wt','aht',255,66,'my read (miss)');
+  h+=arc('M418 102 Q505 62 590 102','wt','aht',505,66,'my write: invalidate others');
+  h+=arc('M150 84 Q380 -20 612 84','wt','aht',380,20,'my write from I: get line + ownership');
+  h+=arc('M590 150 Q505 190 420 150','wc','ahc',505,196,'other core reads: supply data');
+  h+=arc('M340 150 Q255 190 170 150','wc','ahc',255,196,'other core writes');
+  h+=arc('M620 168 Q380 290 140 168','wc','ahc',380,236,'other core writes: give up the line');
+  
+  $('#msiSvg').innerHTML=h;
+})();
+
+/* ---------- L16 coherence explorer ---------- */
+(function(){
+  let lay='same',st,log,cnt,flash;
+  const lineOf=v=>lay==='same'?0:(v==='x'?0:1);
+  function reset(){st={mem:{x:0,y:0},c:{A:{},B:{}}};['A','B'].forEach(c=>{st.c[c][0]={s:'I',d:{x:0,y:0}};st.c[c][1]={s:'I',d:{x:0,y:0}};});log=[];cnt={rm:0,rfo:0,inv:0,c2c:0};flash=null;render('<b>Empty caches.</b> Both lines are Invalid everywhere, and memory holds x = 0, y = 0.');}
+  const vars=L=>lay==='same'?['x','y']:[L===0?'x':'y'];
+  function act(core,op,v){
+    const o=core==='A'?'B':'A',L=lineOf(v),me=st.c[core][L],ot=st.c[o][L];let msg='';
+    if(op==='r'){
+      if(me.s!=='I')msg=`${core} reads ${v} = <b>${me.d[v]}</b>: hit in ${me.s}. No messages.`;
+      else{cnt.rm++;
+        if(ot.s==='M'){cnt.c2c++;vars(L).forEach(k=>{st.mem[k]=ot.d[k];});me.d={...ot.d};ot.s='S';me.s='S';msg=`${core} misses on ${v}. ${o} holds the line in M, so ${o} <b>supplies ${me.d[v]}</b> and writes the line back to memory. Both end in <b>S</b>.`;}
+        else{me.d={...st.mem};me.s='S';msg=`${core} misses on ${v} and gets <b>${me.d[v]}</b> from memory. ${core}: I → <b>S</b>${ot.s==='S'?` (${o} stays S: many readers are fine)`:''}.`;}}
+    }else{
+      const val=cur(v)+1;
+      if(me.s==='M'){me.d[v]=val;msg=`${core} writes ${v} = <b>${val}</b>: hit in M. It already owns the line, so no messages are needed.`;}
+      else{cnt.rfo++;let inv='';
+        if(ot.s!=='I'){cnt.inv++;if(ot.s==='M'){cnt.c2c++;me.d={...ot.d};inv=` ${o} was in M, so it passes the current line directly to ${core} (memory stays stale) and is invalidated.`;}else{if(me.s==='I')me.d={...st.mem};inv=` ${o}'s copy is <b>invalidated</b>.`;}ot.s='I';}
+        else if(me.s==='I')me.d={...st.mem};
+        me.s='M';me.d[v]=val;msg=`${core} requests <b>ownership</b> of the line containing ${v}.${inv} ${core} → <b>M</b> and writes ${v} = <b>${val}</b>.`;}
+    }
+    flash=core;log.push(`${core} ${op==='r'?'reads':'writes'} ${v} → A:${lay==='same'?st.c.A[0].s:st.c.A[0].s+'/'+st.c.A[1].s} B:${lay==='same'?st.c.B[0].s:st.c.B[0].s+'/'+st.c.B[1].s}`);
+    render(msg);
+  }
+  function cur(v){const L=lineOf(v);for(const c of ['A','B'])if(st.c[c][L].s==='M')return st.c[c][L].d[v];return st.mem[v];}
+  function render(msg){
+    const lines=lay==='same'?[0]:[0,1];
+    const panel=c=>`<div class="cpanel ${flash===c?'flash':''}"><h6>Core ${c}'s cache</h6>`+lines.map(L=>{const e=st.c[c][L];return `<div class="lrow"><span>line ${L}</span><span class="badge b-${e.s}">${e.s}</span><span class="v">${vars(L).map(k=>`<span class="${e.s==='I'?'stale':''}">${k}=${e.s==='I'?'—':e.d[k]}</span>`).join('')}</span></div>`;}).join('')+'</div>';
+    $('#cohCaches').innerHTML=panel('A')+panel('B')+`<div class="cpanel"><h6>Memory (lower level)</h6>`+['x','y'].map(k=>`<div class="lrow"><span>${k}</span><span></span><span class="v"><span class="${st.mem[k]!==cur(k)?'stale':''}">${st.mem[k]}</span>${st.mem[k]!==cur(k)?` <small style="color:var(--cu)">current: ${cur(k)} in a cache</small>`:''}</span></div>`).join('')+`<div class="lrow"><span></span><span></span><span class="xs" style="font:11px var(--mono);color:var(--mute)">${lay==='same'?'x at 0x100, y at 0x104: one line':'x at 0x100 (line 0), y at 0x110 (line 1)'}</span></div></div>`;
+    $('#cohMsg').innerHTML=msg;
+    $('#cohStat').innerHTML=[['read misses',cnt.rm],['ownership requests',cnt.rfo],['invalidations',cnt.inv],['cache-to-cache transfers',cnt.c2c]].map(([a,b])=>`<div>${a}<b>${b}</b></div>`).join('');
+    $('#cohLog').innerHTML=log.length?log.map((l,i)=>`<div><b>${i+1}.</b> ${l}</div>`).join(''):'<div>No transactions yet.</div>';$('#cohLog').scrollTop=1e6;
+    $$('[data-lay]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.lay===lay));
+  }
+  $$('[data-act]').forEach(b=>b.onclick=()=>{const [c,o,v]=b.dataset.act.split(',');act(c,o,v);});
+  $$('[data-lay]').forEach(b=>b.onclick=()=>{lay=b.dataset.lay;reset();});
+  $('#cohReset').onclick=reset;
+  $$('[data-pre]').forEach(b=>b.onclick=()=>{reset();const seq=b.dataset.pre==='text'?[['A','r','x'],['B','r','x'],['A','w','x'],['B','r','x'],['B','w','x']]:[['A','w','x'],['B','w','y'],['A','w','x'],['B','w','y']];seq.forEach(s=>act(...s));});
+  reset();
+})();
+
+/* ---------- L16 false sharing figure ---------- */
+(function(){
+  let h='<text x="190" y="18" class="mid bd">same line: ping-pong</text><text x="570" y="18" class="mid bd">padded: each core keeps its line</text>';
+  const core=(x,y,l)=>`<rect x="${x}" y="${y}" width="90" height="34" class="cu"/><text x="${x+45}" y="${y+22}" class="mid bd">${l}</text>`;
+  h+=core(30,40,'Core A')+core(260,40,'Core B');
+  h+=`<rect x="130" y="110" width="120" height="34" class="bad"/><text x="160" y="132" class="mid bd">cA</text><text x="220" y="132" class="mid bd">cB</text><line x1="190" y1="110" x2="190" y2="144" class="w"/><text x="190" y="164" class="mid xs">one 16-byte line</text>`;
+  h+=`<path d="M100 74 C 110 100, 130 110, 150 108" class="wb" marker-end="url(#ahb)"/><path d="M290 74 C 280 100, 250 110, 230 108" class="wb" marker-end="url(#ahb)"/><path d="M160 108 C 200 70, 230 70, 272 76" class="wb dash" marker-end="url(#ahb)"/><text x="190" y="54" class="mid xs tbad">ownership</text><text x="190" y="66" class="mid xs tbad">bounces each write</text>`;
+  h+=core(420,40,'Core A')+core(650,40,'Core B');
+  h+=`<rect x="430" y="110" width="70" height="34" class="okf"/><text x="465" y="132" class="mid bd">cA</text><rect x="660" y="110" width="70" height="34" class="okf"/><text x="695" y="132" class="mid bd">cB</text><text x="465" y="164" class="mid xs">line 0 (M in A)</text><text x="695" y="164" class="mid xs">line 1 (M in B)</text>`;
+  h+='<path d="M465 74 V108" class="wt" marker-end="url(#aht)"/><path d="M695 74 V108" class="wt" marker-end="url(#aht)"/>';
+  $('#fsSvg').innerHTML=h;
+})();
+
+/* ---------- L17 store buffer figure ---------- */
+(function(){
+  let h='';
+  [['Core A',30],['Core B',420]].forEach(([n,x],i)=>{h+=`<rect x="${x}" y="16" width="310" height="44" class="cu"/><text x="${x+155}" y="36" class="mid bd">${n}</text><text x="${x+155}" y="52" class="mid xs">${i?'store y = 1, then load x':'store x = 1, then load y'}</text>`;
+    h+=`<rect x="${x+20}" y="84" width="150" height="36" class="bad" style="fill:var(--warn-soft);stroke:var(--warn)"/><text x="${x+95}" y="100" class="mid sm">store buffer</text><text x="${x+95}" y="113" class="mid xs">${i?'y = 1 (waiting)':'x = 1 (waiting)'}</text>`;
+    h+=`<path d="M${x+95} 60 V82" class="w" marker-end="url(#ah)"/><path d="M${x+95} 120 V148" class="w dash" marker-end="url(#ah)"/><text x="${x+100}" y="138" class="xs">drains later</text>`;
+    h+=`<path d="M${x+240} 150 V62" class="wt" marker-end="url(#aht)"/><text x="${x+248}" y="104" class="xs tte">load reads</text><text x="${x+248}" y="116" class="xs tte">memory now</text>`;});
+  h+='<rect x="30" y="150" width="700" height="36" class="te"/><text x="380" y="173" class="mid bd">coherent memory: x = 0, y = 0 (for now)</text>';
+  $('#sbSvg').innerHTML=h;
+})();
+
+/* ---------- L17 litmus explorer ---------- */
+(function(){
+  let mode='sc',s,seen={sc:new Set(),sb:new Set()};
+  const OPS={A:[['st','x'],['ld','y','rA']],B:[['st','y'],['ld','x','rB']]};
+  function reset(){s={pc:{A:0,B:0},mem:{x:0,y:0},buf:{A:[],B:[]},r:{},ev:[]};render('<b>Ready.</b> Choose which thread takes the next step.');}
+  function step(t){
+    if(s.pc[t]>=2)return;const [op,a,reg]=OPS[t][s.pc[t]];let m;
+    if(op==='st'){if(mode==='sc'){s.mem[a]=1;m=`${t}: <b>${a} = 1</b> goes straight to memory.`;}else{s.buf[t].push(a);m=`${t}: <b>${a} = 1</b> enters ${t}'s store buffer. Other cores can't see it yet.`;}}
+    else{const f=s.buf[t].includes(a);s.r[reg]=f?1:s.mem[a];m=`${t}: loads ${a} → <b>${reg} = ${s.r[reg]}</b>${f?' (forwarded from its own buffer)':' from memory'}.`;}
+    s.pc[t]++;s.ev.push(m.replace(/<[^>]+>/g,''));done(m);
+  }
+  function drain(t){if(!s.buf[t].length)return;const a=s.buf[t].shift();s.mem[a]=1;s.ev.push(`${t}'s buffer drains: ${a} = 1 in memory`);done(`${t}'s buffer drains: <b>${a} = 1</b> becomes visible in memory.`);}
+  function done(m){if(s.pc.A>=2&&s.pc.B>=2&&!s.buf.A.length&&!s.buf.B.length){const k=`(${s.r.rA}, ${s.r.rB})`;seen[mode].add(k);m+=` <b>Finished: (rA, rB) = ${k}</b>${k==='(0, 0)'?' — impossible under SC!':''}`;}render(m);}
+  function render(m){
+    const box=t=>`<div><h6>Thread ${t}</h6>`+OPS[t].map(([op,a,reg],i)=>`<div class="op ${i<s.pc[t]?'done':i===s.pc[t]?'next':''}">${op==='st'?`${a} = 1`:`${reg} = ${a}`}</div>`).join('')+(mode==='sb'?`<p class="panel-t" style="margin:8px 0 4px">store buffer</p><div class="sbuf">${s.buf[t].length?s.buf[t].map(a=>`<span>${a} = 1</span>`).join(''):'<i style="color:var(--mute);font-size:12px">empty</i>'}</div>`:'')+'</div>';
+    $('#soThr').innerHTML=box('A')+box('B');
+    $('#soMem').innerHTML=`<div><small>memory x</small>${s.mem.x}</div><div><small>memory y</small>${s.mem.y}</div><div style="border-color:var(--cu)"><small>rA</small>${s.r.rA??'—'}</div><div style="border-color:var(--cu)"><small>rB</small>${s.r.rB??'—'}</div>`;
+    $('#soMsg').innerHTML=m;
+    $('#soOut').innerHTML=['(0, 1)','(1, 0)','(1, 1)','(0, 0)'].map(k=>`<span class="${seen[mode].has(k)?'seen':''} ${mode==='sc'&&k==='(0, 0)'?'forbid':''}">${k}${mode==='sc'&&k==='(0, 0)'?' never under SC':''}</span>`).join('');
+    $('#soDA').hidden=$('#soDB').hidden=mode!=='sb';$('#soDA').disabled=!s.buf.A.length;$('#soDB').disabled=!s.buf.B.length;
+    $('#soA').disabled=s.pc.A>=2;$('#soB').disabled=s.pc.B>=2;$('#soWit').hidden=mode!=='sb';
+    $$('[data-mm]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.mm===mode));
+  }
+  $('#soA').onclick=()=>step('A');$('#soB').onclick=()=>step('B');$('#soDA').onclick=()=>drain('A');$('#soDB').onclick=()=>drain('B');
+  $('#soReset').onclick=reset;$('#soClear').onclick=()=>{seen[mode].clear();reset();};
+  $('#soWit').onclick=()=>{reset();step('A');step('B');step('A');step('B');drain('A');drain('B');};
+  $$('[data-mm]').forEach(b=>b.onclick=()=>{mode=b.dataset.mm;reset();});
+  reset();
+})();
+
+/* ---------- L17 SC cycle figure ---------- */
+(function(){
+  const N=[['A: store x = 1',140,40],['A: load y → 0',140,170],['B: store y = 1',420,170],['B: load x → 0',420,40]];let h='';
+  N.forEach(([t,x,y],i)=>h+=`<rect x="${x-90}" y="${y-18}" width="180" height="36" class="${i<2?'cu':'pl'}"/><text x="${x}" y="${y+5}" class="mid bd">${t}</text>`);
+  h+='<path d="M140 58 V150" class="wc" marker-end="url(#ahc)"/><text x="130" y="108" class="end xs">program order</text>';
+  h+='<path d="M232 170 H326" class="wb" marker-end="url(#ahb)"/><text x="279" y="160" class="mid xs tbad">read 0 ⇒ before</text>';
+  h+='<path d="M420 152 V60" class="wp" marker-end="url(#ahp)"/><text x="430" y="108" class="xs">program order</text>';
+  h+='<path d="M328 40 H234" class="wb" marker-end="url(#ahb)"/><text x="279" y="30" class="mid xs tbad">read 0 ⇒ before</text>';
+  h+='<text x="280" y="212" class="mid sm tbad">every arrow says "before", and they form a circle</text>';
+  $('#cycSvg').innerHTML=h;
+})();
+
+/* ---------- L17 release/acquire figure ---------- */
+(function(){
+  let h='<text x="20" y="40" class="hd">Producer</text><text x="20" y="160" class="hd">Consumer</text><line x1="110" y1="34" x2="750" y2="34" class="w" style="stroke:var(--line)"/><line x1="110" y1="154" x2="750" y2="154" class="w" style="stroke:var(--line)"/>';
+  const ev=(x,y,t,c,w)=>`<rect x="${x-w/2}" y="${y-18}" width="${w}" height="36" class="${c}"/><text x="${x}" y="${y+5}" class="mid" style="font-size:11.5px">${t}</text>`;
+  h+=ev(200,34,'data = 42','bx',140)+ev(450,34,'ready = true (release)','cu',190);
+  h+=ev(250,154,'load ready → false','bg2',160)+ev(470,154,'load ready → true (acquire)','te',200)+ev(670,154,'read data → 42','okf',140);
+  h+='<path d="M270 34 H353" class="w" marker-end="url(#ah)"/><text x="311" y="24" class="mid xs">program order</text>';
+  h+='<path d="M570 154 H598" class="w" marker-end="url(#ah)"/>';
+  h+='<path d="M450 52 C 455 90, 465 100, 470 134" class="wc" style="stroke-width:2.5" marker-end="url(#ahc)"/><text x="482" y="86" class="xs tcu bd">synchronizes-with</text><text x="482" y="98" class="xs tcu">(the acquire read this store)</text>';
+  h+='<text x="175" y="190" class="xs">reading false proves nothing yet: keep waiting</text>';
+  h+='<path d="M140 52 V208 H670 V174" class="wt dash" marker-end="url(#aht)"/><text x="405" y="224" class="mid sm tte">so "data = 42" happens before "read data"</text>';
+  $('#relSvg').innerHTML=h;
+})();
+
+/* ---------- L17 counter race ---------- */
+(function(){
+  const SC={
+    bad:{A:[[1,'load 0'],[3,'add → 1'],[5,'store 1']],B:[[2,'load 0'],[4,'add → 1'],[6,'store 1']],c:[0,0,0,0,0,1,1],msg:'Both threads loaded 0 before either stored. Both store 1: <b>final counter = 1</b>. One increment was lost, even though each individual load and store was atomic.'},
+    seq:{A:[[1,'load 0'],[2,'add → 1'],[3,'store 1']],B:[[4,'load 1'],[5,'add → 2'],[6,'store 2']],c:[0,0,0,1,1,1,2],msg:'B happened to start after A finished: <b>final counter = 2</b>. That\'s correct, but only by luck of timing. Nothing forced this order.'},
+    rmw:{A:[[1,'fetch_add: 0 → 1']],B:[[2,'fetch_add: 1 → 2']],c:[0,1,2],msg:'Each fetch_add reads, adds and writes as <b>one indivisible step</b>. Whatever the timing, the second sees the first\'s result: <b>final counter = 2</b>, always.'}};
+  let k='bad';
+  function r(){const S=SC[k],n=S.c.length-1,x0=160,cw=Math.min(95,580/n);let h='';
+    for(let c=1;c<=n;c++)h+=`<text x="${x0+(c-0.5)*cw}" y="18" class="mid xs">t${c}</text>`;
+    h+='<text x="20" y="50" class="bd">Thread A</text><text x="20" y="100" class="bd">Thread B</text><text x="20" y="160" class="bd">counter</text>';
+    [['A',32],['B',82]].forEach(([t,y])=>S[t].forEach(([c,l])=>h+=`<rect x="${x0+(c-1)*cw+2}" y="${y}" width="${cw-4}" height="30" class="${t==='A'?'cu':'pl'}"/><text x="${x0+(c-0.5)*cw}" y="${y+19}" class="mid" style="font-size:11px">${l}</text>`));
+    for(let c=0;c<=n;c++)h+=`<rect x="${x0+(c-0.5)*cw-16}" y="140" width="32" height="30" class="${c===n?(S.c[c]===2?'okf':'bad'):'bx'}"/><text x="${x0+(c-0.5)*cw}" y="160" class="mid bd">${S.c[c]}</text>`;
+    h+=`<text x="${x0-24}" y="190" class="xs">start</text>`;
+    $('#cnSvg').innerHTML=h;$('#cnMsg').innerHTML=S.msg;$$('[data-cn]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.cn===k));}
+  $$('[data-cn]').forEach(b=>b.onclick=()=>{k=b.dataset.cn;r();});r();
+})();
+
+/* ---------- L18 multithreading grids ---------- */
+(function(){
+  const pats={
+    'Coarse-grained':['AAA.','AA..','A...','BBB.','BB..','BBBB','B...','AA..'],
+    'Fine-grained':['AAA.','BB..','AA..','BBB.','A...','BBBB','AA..','B...'],
+    'SMT':['AABB','AAB.','ABBB','AABB','ABB.','ABBB','AABB','AB..']};
+  let h='';Object.entries(pats).forEach(([n,p],k)=>{const x0=40+k*245;let used=0;h+=`<text x="${x0+80}" y="18" class="mid bd">${n}</text>`;
+    p.forEach((row,r)=>[...row].forEach((ch,c)=>{if(ch!=='.')used++;h+=`<rect x="${x0+c*40}" y="${30+r*22}" width="37" height="19" class="${ch==='A'?'cu':ch==='B'?'pl':'bg2'}" style="${ch==='.'?'opacity:.45':''}"/>`;}));
+    h+=`<text x="${x0+80}" y="${30+8*22+16}" class="mid sm">${Math.round(100*used/32)}% of slots used</text>`;});
+  h+='<text x="40" y="244" class="xs">each row = one cycle, each column = one issue slot · copper = thread A · violet = thread B · grey = empty</text>';
+  $('#mtSvg').innerHTML=h;
+})();
+
+/* ---------- L18 contexts figure ---------- */
+(function(){
+  let h='';[['Context A','cu',30],['Context B','pl',210]].forEach(([n,c,x])=>{h+=`<rect x="${x}" y="20" width="160" height="90" class="${c}"/><text x="${x+80}" y="42" class="mid bd">${n}</text><text x="${x+80}" y="62" class="mid xs">PC</text><text x="${x+80}" y="78" class="mid xs">architectural registers</text><text x="${x+80}" y="94" class="mid xs">control / exception state</text><path d="M${x+80} 110 V146" class="w" marker-end="url(#ah)"/>`;});
+  h+='<rect x="30" y="148" width="700" height="56" class="te"/><text x="380" y="170" class="mid bd">shared by both: front end · rename · issue queues · execution ports · caches · predictors · bandwidth</text><text x="380" y="190" class="mid xs">shared, partitioned or duplicated, depending on the design</text>';
+  h+='<rect x="420" y="20" width="310" height="90" class="bg2"/><text x="575" y="44" class="mid bd">OS view</text><text x="575" y="66" class="mid sm">2 logical processors</text><text x="575" y="84" class="mid xs">but only 1 core\'s worth of execution hardware</text>';
+  $('#ctxSvg').innerHTML=h;
+})();
+
+/* ---------- L18 SMT explorer ---------- */
+(function(){
+  let pol='fine',ports=2;
+  function sched(){const T={A:{n:0,ready:1,x:0,inc:1,done:0},B:{n:0,ready:1,x:100,inc:10,done:0}},cyc=[];let turn='A';
+    const threads=pol==='alone'?['A']:['A','B'];
+    for(let c=1;c<30;c++){const slots=[];
+      if(pol==='fine'){const t=T[turn];if(threads.includes(turn)&&t.n<4&&t.ready<=c){while(slots.length<ports&&t.n<4&&t.ready<=c&&slots.length<1){t.n++;t.x+=t.inc;t.ready=c+1;slots.push(turn);if(t.n===4)t.done=c;}}turn=turn==='A'?'B':'A';}
+      else{let order=c%2?threads:[...threads].reverse();for(const k of order){const t=T[k];if(slots.length<ports&&t.n<4&&t.ready<=c){t.n++;t.x+=t.inc;t.ready=c+1;slots.push(k);if(t.n===4)t.done=c;}}}
+      cyc.push(slots);if(threads.every(k=>T[k].n>=4))break;}
+    return {cyc,T};}
+  function r(){const {cyc,T}=sched(),x0=110,cw=Math.min(70,620/cyc.length);let h='';
+    for(let p=0;p<ports;p++)h+=`<text x="20" y="${48+p*44}" class="bd">port ${p}</text>`;
+    cyc.forEach((sl,c)=>{h+=`<text x="${x0+c*cw+cw/2}" y="18" class="mid xs">${c+1}</text>`;for(let p=0;p<ports;p++){const t=sl[p];h+=`<rect x="${x0+c*cw+2}" y="${28+p*44}" width="${cw-4}" height="34" class="${t==='A'?'cu':t==='B'?'pl':'bg2'}" style="${t?'':'opacity:.45'}"/>`+(t?`<text x="${x0+c*cw+cw/2}" y="${50+p*44}" class="mid bd">${t}</text>`:'');}});
+    const used=cyc.reduce((a,s)=>a+s.length,0),tot=cyc.length*ports;
+    h+=`<text x="${x0}" y="${40+ports*44}" class="sm">cycle →  ·  ${used} of ${tot} port-slots used (${Math.round(100*used/tot)}%)</text>`;
+    const svg=$('#smtSvg');svg.setAttribute('viewBox',`0 0 760 ${54+ports*44}`);svg.innerHTML=h;
+    $('#smtMsg').innerHTML=`Done in <b>${cyc.length} cycles</b>. A finishes in cycle ${T.A.done} with x5 = <b>${T.A.x}</b>${pol!=='alone'?`; B finishes in cycle ${T.B.done} with x5 = <b>${T.B.x}</b>`:''}. ${pol==='alone'?'A alone still takes 4 cycles: it is a chain, so its second port sits idle.':pol==='fine'?(ports===2?'Only one thread may issue per cycle, and a chain has just one ready add, so a port idles every cycle.':'With one port, one add per cycle is all the hardware allows.'):(ports===2?'Both threads issue every cycle, filling both ports.':'SMT alternates between the threads, but with one port it cannot beat 8 cycles.')}`;
+    $$('[data-pol]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.pol===pol));$$('[data-port]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.port===ports));}
+  $$('[data-pol]').forEach(b=>b.onclick=()=>{pol=b.dataset.pol;r();});$$('[data-port]').forEach(b=>b.onclick=()=>{ports=+b.dataset.port;r();});r();
+})();
+
+/* ---------- L19 scalar vs vector figure ---------- */
+(function(){
+  let h='<text x="20" y="22" class="bd">Scalar: 4 instructions</text>';
+  for(let i=0;i<4;i++){const x=20+i*90;h+=`<rect x="${x}" y="34" width="80" height="30" class="bx"/><text x="${x+40}" y="54" class="mid" style="font-size:11px">add a${i}+b${i}</text>`;}
+  h+='<text x="20" y="90" class="xs">each one fetched, decoded, scheduled and retired separately</text>';
+  h+='<text x="420" y="22" class="bd">Vector: 1 instruction</text>';
+  ['a','b','c'].forEach((r,k)=>{const y=34+k*52;h+=`<text x="416" y="${y+20}" class="end sm">${r==='c'?'c =':r}</text>`;for(let i=0;i<4;i++)h+=`<rect x="${426+i*76}" y="${y}" width="70" height="30" class="${r==='c'?'cu':'te'}"/><text x="${461+i*76}" y="${y+20}" class="mid">${r}${i}</text>`;});
+  h+='<text x="580" y="100" class="mid hd">+</text><text x="580" y="200" class="mid xs">vadd c, a, b: one fetch, one decode, four sums</text>';
+  $('#svSvg').innerHTML=h;
+})();
+
+/* ---------- L19 register / element / lane figure ---------- */
+(function(){
+  let h='<text x="20" y="24" class="bd">128-bit vector register (SEW = 32-bit elements)</text>';
+  for(let i=0;i<4;i++){h+=`<rect x="${20+i*150}" y="34" width="146" height="40" class="te"/><text x="${93+i*150}" y="52" class="mid bd">element ${i}</text><text x="${93+i*150}" y="67" class="mid xs">bits ${i*32}–${i*32+31}</text>`;}
+  h+='<text x="20" y="110" class="bd">hardware with 2 physical lanes processes it in 2 beats</text>';
+  [['beat 1',0],['beat 2',1]].forEach(([b,k])=>{const y=124+k*48;h+=`<text x="20" y="${y+24}" class="sm">${b}</text>`;for(let l=0;l<2;l++){h+=`<rect x="${90+l*170}" y="${y}" width="160" height="38" class="${k?'pl':'cu'}"/><text x="${170+l*170}" y="${y+24}" class="mid">lane ${l}: element ${k*2+l}</text>`;}});
+  h+='<text x="450" y="146" class="sm">4 elements named by the instruction</text><text x="450" y="164" class="sm">≠ 2 elements processed at once</text><text x="450" y="194" class="sm">≠ 128 register bits</text>';
+  $('#vlSvg').innerHTML=h;
+})();
+
+/* ---------- L19 tail / mask explorer ---------- */
+(function(){
+  let N=10,W=4,g=0;
+  function r(){
+    const G=Math.ceil(N/W),slots=G*W;$('#vNv').textContent=N;
+    const cols=G*W;let a=`<div class="arr" style="--n:${cols}"><span></span>`;for(let i=0;i<cols;i++)a+=`<span class="h">${i}</span>`;
+    ['a','b','c'].forEach(row=>{a+=`<span class="l">${row}</span>`;for(let i=0;i<cols;i++){const grp=Math.floor(i/W),inb=i<N;const v=row==='a'?i+1:row==='b'?100+i:(grp<g&&inb?2*i+101:'');
+      a+=`<span class="c g${grp%5} ${grp===g-1&&inb?'cur':''} ${row==='c'&&grp<g&&inb?'done':''}" style="${inb?'':'opacity:.3;background:transparent;border:1px dashed var(--line)'}">${inb?v:'·'}</span>`;}});
+    $('#vArr').innerHTML=a+'</div>';
+    if(g>0){const base=(g-1)*W;const m=Array.from({length:W},(_,k)=>base+k<N?1:0);
+      const reg=(n,f)=>`<div class="vreg"><span class="n">${n}</span>${m.map((on,k)=>`<span class="e ${on?(n==='mask'?'m1':''):'off'}">${on?f(base+k):(n==='mask'?'0':'—')}</span>`).join('')}</div>`;
+      $('#vRegs').innerHTML=reg('mask',()=>1)+reg('va',i=>i+1)+reg('vb',i=>100+i)+reg('vc',i=>2*i+101);
+      const act=m.filter(x=>x).length;
+      $('#vMsg').innerHTML=`<b>Group ${g}</b> covers positions ${base}–${base+W-1}, with vl = ${act}${act<W?` (the tail: mask ${m.join(' ')})`:''}. Two masked vector loads, one vector add, one masked store. ${act<W?`Positions ${base+act}–${base+W-1} make <b>no memory access</b> and write nothing.`:'All positions active.'}`;}
+    else{$('#vRegs').innerHTML='';$('#vMsg').innerHTML=`<b>Ready.</b> ${N} elements at width ${W} need ${G} group${G>1?'s':''}.`;}
+    $('#vStat').innerHTML=[['vector groups',G],['positions used',`${N} / ${slots}`],['utilization',`${(100*N/slots).toFixed(1)}%`],['useful bytes',`12 × ${N} = ${12*N}`],['scalar adds replaced',N]].map(([x,y])=>`<div>${x}<b>${y}</b></div>`).join('');
+    $('#vBack').disabled=g===0;$('#vStep').disabled=g>=G;$$('[data-vw]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.vw===W));
+  }
+  $('#vN').oninput=e=>{N=+e.target.value;g=0;r();};$$('[data-vw]').forEach(b=>b.onclick=()=>{W=+b.dataset.vw;g=0;r();});
+  $('#vStep').onclick=()=>{g++;r();};$('#vBack').onclick=()=>{g--;r();};$('#vAll').onclick=()=>{g=Math.ceil(N/W);r();};$('#vReset').onclick=()=>{g=0;r();};r();
+})();
+
+/* ---------- L19 dependence + reduction figure ---------- */
+(function(){
+  let h='<text x="160" y="18" class="mid bd">loop-carried: a[i] = a[i−1] + 1</text>';
+  for(let i=0;i<4;i++){const y=34+i*48;h+=`<rect x="100" y="${y}" width="120" height="32" class="cu"/><text x="160" y="${y+21}" class="mid">iteration ${i+1}</text>`;if(i<3)h+=`<path d="M160 ${y+32} V${y+46}" class="wb" marker-end="url(#ahb)"/>`;}
+  h+='<text x="160" y="232" class="mid xs tbad">each needs the one before: a chain, not 4 lanes</text>';
+  h+='<text x="560" y="18" class="mid bd">tree reduction: sum of 1…8</text>';
+  const L=[[1,2,3,4,5,6,7,8],[3,7,11,15],[10,26],[36]];
+  L.forEach((row,k)=>{const y=34+k*52,n=row.length,w=Math.min(46,330/n-6);row.forEach((v,i)=>{const x=400+(i+0.5)*(320/n);h+=`<rect x="${x-w/2}" y="${y}" width="${w}" height="30" class="${k===3?'okf':'te'}"/><text x="${x}" y="${y+20}" class="mid bd">${v}</text>`;
+    if(k<3){const cx=400+(Math.floor(i/2)+0.5)*(320/(n/2));h+=`<path d="M${x} ${y+30} L${cx} ${y+50}" class="w" marker-end="url(#ah)"/>`;}});});
+  h+='<text x="560" y="232" class="mid xs">log₂ 8 = 3 levels of cross-lane combining</text>';
+  $('#redSvg').innerHTML=h;
+})();
+})();
+</script>
+</body>
+</html>

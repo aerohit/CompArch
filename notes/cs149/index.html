@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Stanford CS149 · Lecture Companions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../assets/notes.css">
+<script src="../assets/notes.js"></script>
+<style>
+main{max-width:980px;margin:0 auto}
+.lecs{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;margin:22px 0}
+.lec{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:16px 18px;display:flex;flex-direction:column;gap:8px;text-decoration:none;color:var(--ink)}
+a.lec:hover{border-color:var(--cu);box-shadow:0 0 0 3px var(--cu-soft)}
+.lec .k{font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--cu)}
+.lec h3{font-family:var(--display);font-size:26px;line-height:1.05;margin:0}
+.lec ul{margin:0;padding-left:18px;font-size:14px;color:var(--mute)}
+.lec .ms{font-size:13.5px;border-top:1px dashed var(--line);padding-top:8px;margin-top:auto}
+.lec.planned{opacity:.6;background:transparent;border-style:dashed}
+.lec.planned .k{color:var(--mute)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar"><div class="in">
+  <a class="brand" href="../index.html">Gates <span>→</span> GPUs · Notes</a>
+  <nav class="unitnav" aria-label="Sections"><a href="../index.html">Course map</a><a href="../unit-01-build-a-computer.html">1 · Build a computer</a><a href="../unit-02-registers-programs-contexts.html">2 · Programs &amp; contexts</a><a href="../unit-03-faster-core.html">3 · A faster core</a><a href="../unit-04-parallelism.html">4 · Parallelism</a><a href="index.html" aria-current="page">CS149 lectures</a></nav>
+  <button class="themebtn" type="button">☾ Dark</button>
+</div>
+<nav class="subnav" aria-label="CS149 lectures"><span class="sl">CS149</span><a href="index.html" aria-current="page">All lectures</a><a href="lecture-02-modern-multicore.html">L2 · A modern multi-core processor</a></nav>
+</header>
+<main id="main">
+<header class="hero">
+  <div class="kicker">Companion notes</div>
+  <h1>Stanford CS149: <em>Parallel Computing</em></h1>
+  <p class="lede">Self-contained study pages, one per lecture of Stanford's CS149 (Fall 2023, taught by Kayvon Fatahalian and Kunle Olukotun). Each follows its lecture's argument, explains every concept from the ground up, and adds diagrams, worked examples and explorers you can manipulate.</p>
+  <p style="max-width:68ch;color:var(--mute)">These pages complement the main course notes. CS149 looks at hardware <i>from a software engineer's point of view</i>: what each architectural feature demands from your program. Where a lecture relies on background from the course notes, the page recaps it and links to the relevant unit.</p>
+</header>
+<div class="lecs">
+  <div class="lec planned"><span class="k">Lecture 1</span><h3>Why parallelism? Why efficiency?</h3><ul><li>Not added yet</li></ul><div class="ms">Add its slides to <code>Stan-CS149/</code> to create this page.</div></div>
+  <a class="lec" href="lecture-02-modern-multicore.html"><span class="k">Lecture 2 · ready</span><h3>A modern multi-core processor</h3>
+    <ul><li>Review: instructions, ILP, superscalar, caches</li><li>Idea 1: multi-core, and expressing parallelism</li><li>Idea 2: SIMD, divergence, explicit vs implicit</li><li>Memory stalls, caches, prefetching</li><li>Idea 3: hardware multithreading and latency hiding</li><li>Real chips: Kaby Lake core, V100 SM</li><li>Every combination: what saturates the chip?</li></ul>
+    <div class="ms"><b>8 explorers</b>: ILP scheduling · cache · SIMD divergence · thread utilization · bandwidth · build-a-chip · permutation matrix · saturation simulator. Related notes: Units 3–4.</div></a>
+  <div class="lec planned"><span class="k">Lecture 3 and later</span><h3>More lectures</h3><ul><li>Latency vs bandwidth, programming models, GPUs, …</li></ul><div class="ms">Add slides to <code>Stan-CS149/</code> and ask for a companion page.</div></div>
+</div>
+<p class="credit">CS149 materials are © Stanford University and the course instructors. These companion pages are independent study notes: the explanations, diagrams and interactive models are original, and they reference the lectures' structure and examples for learning purposes. See the <a href="https://gfxcourses.stanford.edu/cs149/fall23">course site</a> for the official slides and videos.</p>
+<div class="nextunit"><a href="../index.html"><small>← Back to</small>Course map</a><a href="lecture-02-modern-multicore.html"><small>Start with</small>Lecture 2 · A modern multi-core processor →</a></div>
+</main>
+</body>
+</html>

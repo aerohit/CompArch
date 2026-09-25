@@ -1,0 +1,14 @@
+# Course slides are copyrighted (Stanford CS149): keep them local, never publish.
+Stan-CS149/*.pdf
+Stan-CS149/*.pptx
+Stan-CS149/*.key
+
+# Duplicate archive of the ChatGPT reference files
+chatgpt-reference/**/*.zip
+
+# OS / editor clutter
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+.idea/

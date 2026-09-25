@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Unit 2 · Programs and Contexts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="assets/notes.css">
+<script src="assets/notes.js"></script>
+<style>
+.stepper{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:16px}
+@media (max-width:760px){.stepper{grid-template-columns:1fr}}
+.stepper .asm .r{grid-template-columns:52px minmax(140px,auto) 1fr;gap:10px;padding:3px 10px}
+.memw{font-family:var(--mono);font-size:13px;border:1px solid var(--line);border-radius:4px;overflow:hidden}
+.memw div{display:grid;grid-template-columns:70px 1fr auto;gap:8px;padding:4px 10px;border-top:1px solid var(--panel2)}
+.memw div:first-child{border-top:0}
+.memw .a{color:var(--mute)}
+.memw .n{color:var(--mute);font-size:11.5px}
+.memw .r{background:var(--te-soft)} .memw .w{background:var(--cu-soft)}
+.memw .frame{box-shadow:inset 3px 0 0 var(--pl)}
+.bars{display:grid;gap:8px;margin-top:10px}
+.bar{display:grid;grid-template-columns:150px 1fr 40px;gap:10px;align-items:center;font:500 12.5px var(--mono)}
+.bar .t{height:18px;background:var(--panel2);border-radius:2px;position:relative;overflow:hidden}
+.bar .t i{position:absolute;inset:0 auto 0 0;background:var(--cu);border-radius:2px;transition:width .3s}
+.bar .t i.rd{background:var(--te)}
+.seqchips{display:flex;flex-wrap:wrap;gap:4px;min-height:30px;align-items:center}
+.seqchips span{font:600 12px var(--mono);padding:3px 8px;border-radius:3px}
+.op-lw{background:var(--te-soft);color:var(--te)} .op-add{background:var(--cu-soft);color:var(--cu)} .op-sw{background:var(--pl-soft);color:var(--pl)} .op-beq{background:var(--panel2);color:var(--ink)}
+.tcb{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tcb > div{border:1px solid var(--line);border-radius:4px;padding:8px 12px;background:var(--panel);font-family:var(--mono);font-size:13px}
+.tcb > div.run{border-color:var(--cu);box-shadow:0 0 0 2px var(--cu-soft)}
+.tcb h6{margin:0 0 4px;font:600 11px var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--mute)}
+.hwctx{border:2px solid var(--ink);border-radius:5px;padding:10px 14px;margin:10px 0;background:var(--panel)}
+.hwctx h6{margin:0 0 6px;font:600 11px var(--mono);letter-spacing:.07em;text-transform:uppercase}
+.evlog{font:500 12.5px var(--mono);max-height:180px;overflow-y:auto;background:var(--panel2);border-radius:4px;padding:8px 12px;margin-top:10px}
+.evlog div{padding:1px 0}
+.evlog .k{color:var(--cu)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar"><div class="in">
+  <a class="brand" href="index.html">Gates <span>→</span> GPUs · Notes</a>
+  <nav class="unitnav" aria-label="Units"><a href="index.html">Course map</a><a href="unit-01-build-a-computer.html">1 · Build a computer</a><a href="unit-02-registers-programs-contexts.html" aria-current="page">2 · Programs &amp; contexts</a><a href="unit-03-faster-core.html">3 · A faster core</a><a href="unit-04-parallelism.html">4 · Parallelism</a><a href="cs149/index.html">CS149 lectures</a></nav>
+  <button class="themebtn" type="button">☾ Dark</button>
+</div></header>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk"/></marker>
+  <marker id="ahc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkc"/></marker>
+  <marker id="aht" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkt"/></marker>
+  <pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--panel)"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--line);stroke-width:3"/></pattern>
+  <marker id="ahp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkp"/></marker>
+</defs></svg>
+
+<div class="wrap">
+<nav class="toc" aria-label="On this page"></nav>
+<main id="main">
+
+<header class="hero">
+  <div class="kicker">Unit 2 · Lessons 5–7</div>
+  <h1>Registers, programs &amp; <em>execution contexts</em></h1>
+  <p class="lede">Unit 1 ended with a machine that works but chokes on its single accumulator. This unit gives it many registers and moves to a real instruction set (RISC-V). Then it separates three things that are easy to blur: the <b>contract</b> software relies on, the <b>hardware</b> that implements it, and the <b>conventions</b> that let pieces of software cooperate and be paused and resumed.</p>
+  <dl class="outcome">
+    <dt>You'll be able to</dt><dd>Trace where every value lives in a register machine, show that one instruction set can have very different hardware, and explain exactly what must be saved to return from a function or to resume a paused thread.</dd>
+    <dt>Carries over</dt><dd>Everything from Unit 1: state, clock edges, fetch–decode–execute, PC, and the idea of a saved context.</dd>
+    <dt>A note on models</dt><dd>The steppers below advance one <i>whole instruction</i> at a time. They're small teaching models of a few RISC-V instructions, not full emulators. Only the Lesson 6 comparison models elapsed time.</dd>
+  </dl>
+  <div class="lessonmap">
+    <a href="#l5"><b>LESSON 5</b>Keep working values in registers</a>
+    <a href="#l6"><b>LESSON 6</b>One contract, different hardware</a>
+    <a href="#l7"><b>LESSON 7</b>Calls, stacks &amp; saved contexts</a>
+  </div>
+</header>
+
+<!-- =============================== LESSON 5 =============================== -->
+<section class="lesson" id="l5" data-toc="Registers & RISC-V" data-n="5">
+  <div class="lesson-h"><div class="kicker">Lesson 5</div><h2>Keep working values in registers</h2></div>
+  <div class="card4">
+    <div class="c1"><span class="l">Limitation</span>With one accumulator, every intermediate result has to detour through memory.</div>
+    <div class="c2"><span class="l">New mechanism</span>A register file, plus a load/store instruction set where arithmetic only touches registers.</div>
+    <div class="c3"><span class="l">New state</span>32 architectural registers (x0 is always 0), named by number in each instruction.</div>
+    <div class="c4"><span class="l">Cost</span>Storage, read/write ports, wiring, and instruction bits to name registers. Registers are still finite, so values sometimes spill to memory.</div>
+  </div>
+
+  <h3 class="part">The accumulator bottleneck, measured</h3>
+  <p>Take a small calculation with values a = 10, b = 6, c = 3:</p>
+  <p style="text-align:center;font:600 17px var(--mono)">y = (a + b) + (a − c) = 16 + 7 = 23</p>
+  <p>On NIB-8, the moment we compute a − c, the accumulator overwrites a + b. So we must <b>store it to a temporary memory location</b> and add it back later. Everything goes through memory:</p>
+  <div class="asm">
+    <div class="r"><span class="a">0</span><span class="i">LOAD a</span><span class="c">ACC = 10</span></div>
+    <div class="r"><span class="a">1</span><span class="i">ADD b</span><span class="c">ACC = 16</span></div>
+    <div class="r"><span class="a">2</span><span class="i">STORE t</span><span class="c">save the first partial result, or it's lost</span></div>
+    <div class="r"><span class="a">3</span><span class="i">LOAD a</span><span class="c">re-read a, which we just had</span></div>
+    <div class="r"><span class="a">4</span><span class="i">SUB c</span><span class="c">ACC = 7</span></div>
+    <div class="r"><span class="a">5</span><span class="i">ADD t</span><span class="c">ACC = 7 + 16 = 23</span></div>
+    <div class="r"><span class="a">6</span><span class="i">STORE y</span><span class="c">write the answer</span></div>
+  </div>
+  <p>That's seven instructions with <b>five data reads and two data writes</b>. Three of those accesses (STORE t, the re-read of a, and ADD t) exist only because there was nowhere else to keep a value. A clever programmer could reorder this particular sum as a + b + a − c and avoid the temporary. We keep the expression's structure fixed so the storage difference is visible. For most real calculations, such rearranging isn't possible.</p>
+
+  <h3 class="part">A register file</h3>
+  <p>A <b>register file</b> is a small array of registers selected by number, built for speed. The common arrangement has <b>two read ports and one write port</b>, so one instruction can read two operands and write one result in the same cycle. An instruction like <code>add x28, x5, x6</code> means "read registers 5 and 6, add them, write register 28". Every operand and the destination are named explicitly.</p>
+  <figure class="fig"><div class="sc">
+    <svg viewBox="0 0 760 250" role="img" aria-label="Register file with two read ports feeding the ALU and one write port for the result">
+      <rect x="250" y="20" width="200" height="210" class="te"/><text x="350" y="42" class="mid hd">Register file</text>
+      <g id="rfRows"></g>
+      <path d="M40 70 H248" class="w" marker-end="url(#ah)"/><text x="40" y="62" class="sm">read reg 1 (rs1 = 5)</text>
+      <path d="M40 120 H248" class="w" marker-end="url(#ah)"/><text x="40" y="112" class="sm">read reg 2 (rs2 = 6)</text>
+      <path d="M40 170 H248" class="w" marker-end="url(#ah)"/><text x="40" y="162" class="sm">write reg (rd = 28)</text>
+      <path d="M40 210 H248" class="wc" marker-end="url(#ahc)"/><text x="40" y="202" class="sm tcu">write data (at clock edge)</text>
+      <path d="M450 80 H568" class="wt" marker-end="url(#aht)"/><text x="508" y="72" class="mid sm">value 10</text>
+      <path d="M450 140 H568" class="wt" marker-end="url(#aht)"/><text x="508" y="132" class="mid sm">value 6</text>
+      <polygon points="570,56 640,86 640,134 570,164 570,122 584,110 570,98" class="cu"/><text x="608" y="115" class="mid bd">ALU</text>
+      <path d="M640 110 H700 V244 H20 V210 H40" class="wc"/><text x="690" y="236" class="end sm tcu">16 goes back to x28</text>
+    </svg></div>
+    <figcaption><b>Two reads and one write every cycle.</b> Selecting a register by a 5-bit number is fast because the array is tiny and sits right next to the ALU. That is why intermediate values belong here and not in memory.</figcaption></figure>
+  <p>More registers aren't free. Each one costs storage and wiring, and every instruction needs more bits to name them: 32 registers need 5 bits per register field. The register file's delay also grows with its size and port count. That's why real instruction sets settle on 16 to 32 general-purpose registers.</p>
+
+  <h3 class="part">Stepping onto a real instruction set: RV32I</h3>
+  <p>From here on we use <b>RISC-V</b>, specifically its 32-bit base integer set, <b>RV32I</b>. It's a real, openly documented ISA, and it's clean enough to learn from. What changes from NIB-8:</p>
+  <div class="tbl"><table>
+    <tr><th>Feature</th><th>NIB-8</th><th>RV32I</th></tr>
+    <tr><td>Working registers</td><td>1 (ACC)</td><td>32, named <code>x0</code>–<code>x31</code>. <code>x0</code> always reads 0 and ignores writes.</td></tr>
+    <tr><td>Register width</td><td class="m">8 bits</td><td class="m">32 bits</td></tr>
+    <tr><td>An address names…</td><td>one 8-bit word</td><td>one <b>byte</b>. A 32-bit word takes 4 consecutive addresses.</td></tr>
+    <tr><td>Instruction size</td><td class="m">1 byte</td><td class="m">4 bytes (so PC advances by 4)</td></tr>
+    <tr><td>Arithmetic operands</td><td>ACC and one memory word</td><td>registers only (load/store design)</td></tr>
+  </table></div>
+  <p>We'll use just a few instructions:</p>
+  <div class="tbl"><table>
+    <tr><th>Instruction</th><th>Meaning</th></tr>
+    <tr><td class="m">add rd, rs1, rs2</td><td>rd ← rs1 + rs2</td></tr>
+    <tr><td class="m">sub rd, rs1, rs2</td><td>rd ← rs1 − rs2</td></tr>
+    <tr><td class="m">addi rd, rs1, imm</td><td>rd ← rs1 + imm, where imm is a constant stored inside the instruction</td></tr>
+    <tr><td class="m">lw rd, offset(base)</td><td>rd ← the 32-bit word at byte address <i>base + offset</i></td></tr>
+    <tr><td class="m">sw rs2, offset(base)</td><td>store rs2's value at byte address <i>base + offset</i></td></tr>
+    <tr><td class="m">beq rs1, rs2, label</td><td>jump to label if rs1 = rs2</td></tr>
+  </table></div>
+
+  <h3 class="part">Four different kinds of number in one instruction</h3>
+  <p>A load instruction mixes several kinds of number, and they must be kept apart. Take <code>lw x6, 4(x10)</code> with x10 = 0x100:</p>
+  <figure class="fig"><div class="sc">
+    <svg viewBox="0 0 760 256" role="img" aria-label="Anatomy of lw x6, 4(x10): register number, immediate offset, base register contents, effective address, loaded data">
+      <g style="font-size:22px" class="bd"><text x="150" y="34" class="mid" style="font-size:22px">lw</text><text x="290" y="34" class="mid tcu" style="font-size:22px">x6,</text><text x="430" y="34" class="mid tpl" style="font-size:22px">4</text><text x="570" y="34" class="mid tte" style="font-size:22px">(x10)</text></g>
+      <path d="M290 44 V92" class="wc" marker-end="url(#ahc)"/><path d="M430 44 V92" class="wp" marker-end="url(#ahp)"/><path d="M570 44 V92" class="wt" marker-end="url(#aht)"/>
+      <rect x="220" y="96" width="140" height="52" class="cu"/><text x="290" y="116" class="mid bd">6</text><text x="290" y="134" class="mid xs">destination register #</text>
+      <rect x="370" y="96" width="120" height="52" class="pl"/><text x="430" y="116" class="mid bd">4</text><text x="430" y="134" class="mid xs">immediate offset</text>
+      <rect x="500" y="96" width="140" height="52" class="te"/><text x="570" y="116" class="mid bd">x10 = 0x100</text><text x="570" y="134" class="mid xs">base (register contents)</text>
+      <path d="M430 148 V176 H494" class="wp"/><path d="M570 148 V176 H506" class="wt"/><text x="500" y="172" class="mid bd">+</text>
+      <rect x="400" y="180" width="200" height="40" class="bx"/><text x="500" y="205" class="mid bd">address = 0x104</text>
+      <path d="M600 200 H668" class="w" marker-end="url(#ah)"/><rect x="670" y="180" width="80" height="40" class="bx"/><text x="710" y="198" class="mid bd">6</text><text x="710" y="212" class="mid xs">M[0x104]</text>
+      <path d="M710 220 V238 H290 V150" class="wc dash" marker-end="url(#ahc)"/><text x="300" y="252" class="sm tcu">…and the loaded value 6 goes into x6</text>
+    </svg></div>
+    <figcaption><b>Five numbers, five roles.</b> 6 is a register number. 4 is an immediate, a constant baked into the instruction. 0x100 is the <i>contents</i> of x10. 0x104 is the <b>effective address</b> computed from them. The loaded word is whatever sits at 0x104, here b = 6. <code>lw</code> never loads the number 4 just because "4" appears in the instruction.</figcaption></figure>
+  <p>Because addresses name bytes, that 32-bit word occupies four addresses. RISC-V is <b>little-endian</b>: the lowest address holds the least significant byte.</p>
+  <figure class="fig narrow"><div class="sc">
+    <svg viewBox="0 0 560 130" role="img" aria-label="The word 6 stored little-endian at addresses 0x104 to 0x107">
+      <g id="leBytes"></g>
+    </svg></div><figcaption><b>Little-endian layout</b> of the word 0x00000004 at 0x104. Read the bytes from the highest address down to recover the value.</figcaption></figure>
+
+  <h3 class="part">Try it: the same calculation, two machines</h3>
+  <p>Step through both versions and watch the memory-traffic counters. The register version keeps a in x5 the whole time, so it's never re-read, and both partial results stay in registers.</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 12px"><div class="seg" role="group" aria-label="Machine"><button data-m="reg" aria-pressed="true">RV32I registers</button><button data-m="acc">Accumulator (NIB-8 style)</button></div></div>
+    <div class="stepper">
+      <div><div class="asm" id="s5asm" style="margin:0"></div><p class="msg" id="s5msg"></p></div>
+      <div><p class="panel-t">Registers</p><div class="regs" id="s5regs"></div>
+        <p class="panel-t" style="margin-top:12px">Data memory (words)</p><div class="memw" id="s5mem"></div></div>
+    </div>
+    <div class="ctrl"><button id="s5back">◀ Back</button><button id="s5step" class="pri">Step instruction ▶</button><button id="s5run">Run to end</button><button id="s5reset">Reset</button></div>
+    <div class="bars" id="s5bars"></div>
+  </div><figcaption><b>Same answer, less memory traffic:</b> 3 reads and 1 write instead of 5 and 2. That shows one benefit of registers. It doesn't prove a particular speedup, because the two machines differ in instruction width, clock and memory system, and a "memory access" later won't even mean "a trip to DRAM" (Unit 3's caches).</figcaption></figure>
+
+  <h3 class="part">Registers are not variables</h3>
+  <p>The ISA knows nothing about the names in your source code. The <b>compiler</b> decides where each value lives at each moment. A variable might sit in a register for a while, be stored to memory, be kept in two places, or vanish entirely if it's optimized away. One register holds many different variables over a program's life. When a program needs more live values than there are registers, the compiler must <b>spill</b> some to memory and reload them later.</p>
+  <figure class="fig"><div class="sc"><svg id="spillSvg" viewBox="0 0 760 170" role="img" aria-label="Ten live values competing for four registers: six must spill to memory"></svg></div>
+    <figcaption><b>Register pressure.</b> Ten values are needed at once, but only four registers are free, so six live in memory and cost loads and stores. More registers relieve this. So does restructuring code so fewer values are live at the same time. GPUs face the same problem, and it's severe there (a later unit).</figcaption></figure>
+
+  <div class="predict"><div class="ph"><b>Predict</b><span>Use the stepper only to check.</span></div><ol>
+    <li>In the RV32I version, what are x5, x28, x29 and M[0x10C] immediately after the instruction at 0x50?
+      <details><summary>Show answer</summary><div class="ans"><p>x5 = 10, x28 = 16, x29 = 7, and M[0x10C] is still <b>0</b>. The <code>add x30</code> and the <code>sw</code> still have to run before y is written.</p></div></details></li>
+    <li>What happens to x0 after <code>addi x0, x0, 9</code>? What does <code>addi x5, x0, 9</code> put in x5?
+      <details><summary>Show answer</summary><div class="ans"><p>x0 stays <b>0</b>, because writes to it are discarded. The second instruction puts <b>9</b> in x5: 0 + 9. This is how RISC-V loads small constants without a special instruction.</p></div></details></li>
+    <li>With x10 = 0x100, which byte addresses does <code>lw x6, 4(x10)</code> read? If they hold 06, 00, 00, 00 (lowest address first), what arrives in x6?
+      <details><summary>Show answer</summary><div class="ans"><p>0x104, 0x105, 0x106 and 0x107. Little-endian means the lowest address is the least significant byte, so the value is 0x00000006 = <b>6</b>.</p></div></details></li>
+    <li>The data accesses dropped from 7 to 4. Why doesn't that mean the register version runs 7/4 = 1.75× faster?
+      <details><summary>Show answer</summary><div class="ans"><p>Run time depends on instruction count, cycles per instruction and clock period, not just data accesses. Instruction fetches still happen, the machines have different clocks and widths, and how much each access costs depends on the memory system (caches can make some nearly free). Counting accesses isolates <i>one</i> effect. It isn't a timing model.</p></div></details></li>
+    <li>A calculation needs 10 values alive at once but only 4 registers are free. Why does having registers still leave memory traffic?
+      <details><summary>Show answer</summary><div class="ans"><p>The six values that don't fit must be <b>spilled</b>: stored to memory and reloaded when needed. Registers remove traffic only for the values they can actually hold. Reducing how many values are live at once (register pressure) matters as much as the register count.</p></div></details></li>
+  </ol></div>
+  <p class="checkpoint">For any instruction, point at each number and say which it is: a register number, an immediate constant, a byte address, or the contents at that address.</p>
+</section>
+
+<!-- =============================== LESSON 6 =============================== -->
+<section class="lesson" id="l6" data-toc="ISA vs implementation" data-n="6">
+  <div class="lesson-h"><div class="kicker">Lesson 6</div><h2>One contract, different hardware</h2></div>
+  <div class="card4">
+    <div class="c1"><span class="l">Limitation</span>If every instruction must finish in one clock cycle, the whole machine runs at the speed of its slowest instruction.</div>
+    <div class="c2"><span class="l">New mechanism</span>Separate the <i>contract</i> (ISA) from its <i>implementation</i>. For example, a multicycle design reuses hardware across short phases.</div>
+    <div class="c3"><span class="l">New state</span>Internal latches (instruction, operands, ALU result, loaded data) that software can't see.</div>
+    <div class="c4"><span class="l">Cost</span>More latches, muxes and control. The per-cycle overhead can erase the gain.</div>
+  </div>
+
+  <h3 class="part">What the ISA promises, and what it doesn't</h3>
+  <p>An <b>instruction set architecture</b> is a contract. It specifies the instructions, the registers, and the precise effect of each instruction on that visible state. It deliberately says nothing about <i>how</i> or <i>how fast</i>. A <b>microarchitecture</b> is one particular hardware design that honours the contract.</p>
+  <figure class="fig"><div class="sc">
+    <svg viewBox="0 0 760 200" role="img" aria-label="One ISA contract implemented by three different microarchitectures">
+      <rect x="200" y="14" width="360" height="56" class="te"/><text x="380" y="38" class="mid hd">RV32I contract</text><text x="380" y="56" class="mid sm">"add x28, x5, x6 sets x28 to x5 + x6, then PC += 4"</text>
+      <path d="M270 70 L130 118 M380 70 V118 M490 70 L630 118" class="w dash"/>
+      <rect x="30" y="120" width="210" height="64" class="bx"/><text x="135" y="144" class="mid bd">single-cycle</text><text x="135" y="162" class="mid sm">1 long cycle per instruction</text>
+      <rect x="275" y="120" width="210" height="64" class="bx"/><text x="380" y="144" class="mid bd">multicycle</text><text x="380" y="162" class="mid sm">3–5 short cycles, reused parts</text>
+      <rect x="520" y="120" width="210" height="64" class="bx"/><text x="625" y="144" class="mid bd">pipelined / out-of-order</text><text x="625" y="162" class="mid sm">Unit 3: many in flight at once</text>
+    </svg></div>
+    <figcaption><b>Same contract, different machines.</b> A tiny microcontroller and a high-end core can run the <i>same binary</i> and agree on every visible result. They differ in cycles, internal state and cost. Only the visible results at defined points (after each instruction, for now) must match.</figcaption></figure>
+
+  <h3 class="part">Design 1: single-cycle</h3>
+  <p>Do everything for an instruction in one clock cycle: fetch it, decode it, read registers, use the ALU, access data memory and write a register. The trouble is that the clock period must fit the <b>longest</b> chain, which is a load. An add finishes its real work sooner, but it still waits for the next clock edge.</p>
+  <figure class="fig"><div class="sc"><svg id="scSvg" viewBox="0 0 760 180" role="img" aria-label="Single-cycle design: every instruction takes the load's full delay"></svg></div>
+    <figcaption><b>Wasted tails.</b> Hatched regions are time an instruction spends finished but waiting for the clock. A single-cycle design also needs separate instruction and data memories (or two ports), because a load needs both in the same cycle.</figcaption></figure>
+
+  <h3 class="part">Design 2: multicycle</h3>
+  <p>Instead, split each instruction into short <b>phases</b>, one per clock cycle, and let each instruction use only the phases it needs. Values that must survive from one phase to the next are captured in <b>internal latches</b>: registers that exist only inside the implementation.</p>
+  <figure class="fig"><div class="sc">
+    <svg viewBox="0 0 760 210" role="img" aria-label="Multicycle phases F, D, E, M, W with internal latches between them">
+      <g id="mcPhases"></g>
+    </svg></div>
+    <figcaption><b>Five phases, four internal latches.</b> IR, A/B, ALUout and MDR are microarchitectural state. No RISC-V instruction can read them, and a different implementation might not have them at all. The one memory can serve fetch in F and data in M, because they happen in different cycles.</figcaption></figure>
+  <div class="tbl"><table>
+    <tr><th>Instruction</th><th>Phases used</th><th>Cycles</th><th>Why it skips some</th></tr>
+    <tr><td class="m">lw</td><td class="m">F D E M W</td><td>5</td><td>Uses everything: address in E, read in M, write register in W</td></tr>
+    <tr><td class="m">add / sub / addi</td><td class="m">F D E W</td><td>4</td><td>No data-memory access</td></tr>
+    <tr><td class="m">sw</td><td class="m">F D E M</td><td>4</td><td>No register to write</td></tr>
+    <tr><td class="m">beq</td><td class="m">F D E</td><td>3</td><td>E compares and updates the PC if taken</td></tr>
+  </table></div>
+  <div class="worked">
+    <p>Watch the latches during <code>lw x6, 4(x10)</code> with x10 = 0x100 and M[0x104] = 6:</p>
+    <p><b>F:</b> IR ← the instruction. <b>D:</b> A ← x10 = 0x100. <b>E:</b> ALUout ← 0x100 + 4 = <b>0x104</b> (an address, not data!). <b>M:</b> MDR ← M[0x104] = <b>6</b>. <b>W:</b> x6 ← 6. Apart from PC += 4 back in F, only W changes visible state: x6 receives its value only there.</p>
+  </div>
+
+  <h3 class="part">Compare elapsed time, not cycle counts</h3>
+  <p>Which design is faster? It depends on the instruction mix and on the clock period each design achieves. Build a sequence and adjust the periods. The bars are drawn to scale.</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 8px"><span class="readout">Add:</span><button data-add="lw">+ lw</button><button data-add="add">+ add</button><button data-add="sw">+ sw</button><button data-add="beq">+ beq</button><button id="tcUndo">Undo</button><button id="tcClear">Clear</button>
+      <span class="readout" style="margin-left:8px">Presets:</span><button data-pre="mix">mixed</button><button data-pre="loads">5 loads</button><button data-pre="adds">5 adds</button></div>
+    <div class="seqchips" id="tcSeq"></div>
+    <div class="ctrl"><label class="rl" for="tcS">single-cycle period: <b id="tcSv">5.0</b> ns<input id="tcS" type="range" min="3" max="7" step="0.5" value="5"></label><label class="rl" for="tcM">multicycle period: <b id="tcMv">1.0</b> ns<input id="tcM" type="range" min="0.8" max="1.6" step="0.1" value="1"></label></div>
+    <div class="sc" style="padding:8px 0 0"><svg id="tcSvg" viewBox="0 0 760 170" role="img" aria-label="Timelines of the two designs drawn to scale" style="min-width:560px"></svg></div>
+    <p class="msg" id="tcMsg"></p>
+  </div><figcaption><b>Synthetic teaching timings</b> include all register and control overhead, assume memory always answers within its phase, and model one instruction at a time. With the defaults, the mixed sequence takes 25 ns single-cycle and 20 ns multicycle. Nudge the multicycle period to 1.3 ns and it loses. More phases are not automatically faster.</figcaption></figure>
+
+  <div class="pitfall">Multicycle is <b>not pipelining</b>. Here one instruction still finishes completely before the next begins: we split <i>one instruction's</i> work across time. Pipelining (Unit 3) overlaps <i>different instructions</i>. Also, "F, D, E, M, W" is a teaching decomposition, not a claim that every real CPU has exactly these five steps.</div>
+
+  <div class="predict"><div class="ph"><b>Predict</b><span>Calculate first, then use the comparator.</span></div><ol>
+    <li>After phase E of <code>lw x6, 4(x10)</code> (x10 = 0x100), does ALUout hold 0x104 or 6? Has x6 changed yet?
+      <details><summary>Show answer</summary><div class="ans"><p>ALUout holds the <b>address 0x104</b>. The data (6) arrives in M, and x6 changes only in W. Confusing the address with the data is the classic mistake here.</p></div></details></li>
+    <li>For the sequence lw, add, add, sw, beq, compute each design's total time and average CPI (single 5 ns, multicycle 1 ns).
+      <details><summary>Show answer</summary><div class="ans"><p>Single-cycle: 5 instructions × 5 ns = <b>25 ns</b>, CPI 1. Multicycle: 5 + 4 + 4 + 4 + 3 = 20 cycles × 1 ns = <b>20 ns</b>, CPI 20/5 = 4. The design with <i>four times</i> the CPI is faster, because its cycle is five times shorter.</p></div></details></li>
+    <li>For five loads, does the multicycle design's 5× faster clock give a 5× speedup?
+      <details><summary>Show answer</summary><div class="ans"><p>No, there's no speedup at all: single-cycle 5 × 5 = 25 ns, multicycle 5 × 5 × 1 = 25 ns. Loads use every phase, so there's nothing to skip.</p></div></details></li>
+    <li>If the extra latches and muxes push the multicycle period to 1.3 ns, how long does the mixed sequence take?
+      <details><summary>Show answer</summary><div class="ans"><p>20 × 1.3 = <b>26 ns</b>, now <i>slower</i> than single-cycle's 25 ns. The overhead of adding state and control is real.</p></div></details></li>
+    <li>A CPU's documentation says it uses F–D–E–M–W internally. Does that prove it's pipelined? What would?
+      <details><summary>Show answer</summary><div class="ans"><p>No. A multicycle machine uses those phases one instruction at a time. Pipelining is shown by <b>overlap</b>: a second instruction being fetched while the first is still in a later phase, so instructions complete more often than one per full phase sequence.</p></div></details></li>
+  </ol></div>
+  <p class="checkpoint">Describe <code>lw x6, 4(x10)</code> in three separate ways: as an <b>architectural state change</b>, as an <b>internal sequence of micro-operations</b>, and as an <b>elapsed-time cost</b> on each design.</p>
+</section>
+
+<!-- =============================== LESSON 7 =============================== -->
+<section class="lesson" id="l7" data-toc="Calls, stacks, contexts" data-n="7">
+  <div class="lesson-h"><div class="kicker">Lesson 7</div><h2>Calls, stacks &amp; saved contexts</h2></div>
+  <div class="card4">
+    <div class="c1"><span class="l">Limitation</span>A jump forgets where it came from, and an interrupted program would lose the values in its registers.</div>
+    <div class="c2"><span class="l">New mechanism</span>Link registers for returning, a stack by convention, trap entry into privileged handlers, and saved thread contexts.</div>
+    <div class="c3"><span class="l">New state</span>ra and sp, stack frames in ordinary memory, the OS's saved contexts (one per thread), and trap/privilege registers.</div>
+    <div class="c4"><span class="l">Cost</span>Saving and restoring takes instructions and memory traffic. Every context switch has overhead.</div>
+  </div>
+
+  <h3 class="part">A call must remember the way back</h3>
+  <p>A plain jump says where to go but not where to come back to. RISC-V's <code>jal rd, target</code> ("jump and link") does both: it writes the address of the <i>next</i> instruction (PC + 4) into <code>rd</code>, then jumps. To return, <code>jalr x0, 0(ra)</code> jumps to the address held in ra, and writing the link to x0 throws it away. (The assembler shorthand for this is <code>ret</code>.)</p>
+  <figure class="fig"><div class="sc">
+    <svg viewBox="0 0 760 186" role="img" aria-label="jal saves the return address in ra and jumps; jalr jumps back through ra">
+      <rect x="30" y="20" width="220" height="116" class="bx"/><text x="40" y="40" class="bd tcu">main:</text>
+      <text x="44" y="64" class="sm">0x40  addi a0, x0, 5</text>
+      <rect x="36" y="72" width="208" height="22" class="cu"/><text x="44" y="87">0x44  jal  ra, f</text>
+      <text x="44" y="112" class="sm">0x48  … continues here</text>
+      <rect x="510" y="20" width="220" height="116" class="bx"/><text x="520" y="40" class="bd tcu">f:</text>
+      <text x="524" y="64" class="sm">0x80  …</text><text x="524" y="84" class="sm">…    (f's work)</text>
+      <rect x="516" y="96" width="208" height="22" class="te"/><text x="524" y="111">0x9C jalr x0, 0(ra)</text>
+      <path d="M244 83 C 360 60, 420 56, 508 62" class="wc" marker-end="url(#ahc)"/><text x="376" y="48" class="mid sm tcu">① PC ← 0x80</text>
+      <rect x="320" y="140" width="120" height="36" class="pl"/><text x="380" y="163" class="mid bd">ra = 0x48</text>
+      <path d="M200 94 C 230 150, 280 158, 318 158" class="wp" marker-end="url(#ahp)"/><text x="40" y="158" class="sm tpl">② ra ← PC + 4</text>
+      <path d="M516 118 C 460 170, 300 120, 246 108" class="wt" marker-end="url(#aht)"/><text x="470" y="178" class="sm tte">③ return: PC ← ra</text>
+    </svg></div>
+    <figcaption><b>jal does two things at once:</b> it records the return address in ra and jumps. The hardware has no idea what a "function" is. <code>jal</code> and <code>jalr</code> are just control transfers, and the notion of a function comes from how software uses them.</figcaption></figure>
+
+  <h3 class="part">The calling convention: a software agreement</h3>
+  <p>Separately compiled pieces of code can only cooperate if they agree on which registers carry arguments, which hold the return address and stack pointer, and which a called function may freely overwrite. That agreement is part of the <b>ABI</b> (application binary interface), and it's layered <i>on top of</i> the ISA:</p>
+  <div class="tbl"><table>
+    <tr><th>Name</th><th>Register</th><th>Role by convention</th><th>Preserved across a call?</th></tr>
+    <tr><td class="m">ra</td><td class="m">x1</td><td>return address</td><td>No: each call overwrites it</td></tr>
+    <tr><td class="m">sp</td><td class="m">x2</td><td>stack pointer</td><td>Yes: restored before returning</td></tr>
+    <tr><td class="m">a0–a7</td><td class="m">x10–x17</td><td>arguments; a0 (and a1) also carry return values</td><td>No</td></tr>
+    <tr><td class="m">t0–t6</td><td class="m">x5–7, x28–31</td><td>temporaries: the <i>caller</i> saves them if it still needs them</td><td>No</td></tr>
+    <tr><td class="m">s0–s11</td><td class="m">x8–9, x18–27</td><td>saved: the <i>callee</i> must restore them if it uses them</td><td>Yes</td></tr>
+  </table></div>
+  <p>The stack also follows conventions: it <b>grows toward lower addresses</b>, sp stays 16-byte aligned, and each function call that needs storage reserves a <b>stack frame</b>. To the hardware, the stack is just ordinary memory plus a register the software agrees to treat as a pointer.</p>
+
+  <h3 class="part">Nested calls overwrite ra, so save it</h3>
+  <p>Our example computes <b>f(5) = double(double(5)) + 1 = 21</b>. Here's the problem. When <code>f</code> calls <code>double</code>, that <code>jal</code> overwrites ra, and ra held <code>main</code>'s return address. So <code>f</code> first saves ra in its own stack frame and restores it just before returning.</p>
+  <figure class="fig"><div class="sc">
+    <svg viewBox="0 0 760 240" role="img" aria-label="Stack frame of f: 16 bytes from 0x1F0 to 0x1FF, with main's return address saved at 0x1FC">
+      <g id="frameFig"></g>
+    </svg></div>
+    <figcaption><b>f's 16-byte frame.</b> <code>addi sp, sp, -16</code> reserves it and <code>sw ra, 12(sp)</code> writes 0x48 to 0x1FC. Only 4 of the 16 bytes are used, but the convention keeps sp 16-byte aligned. <code>double</code> is a <b>leaf</b> function (it calls nobody), so it needs no frame at all.</figcaption></figure>
+
+  <h3 class="part">Try it: trace the calls, then break them</h3>
+  <p>Step through and watch ra, sp and the stack. Then switch on <b>Remove save/restore</b>, which turns <code>sw ra</code> and <code>lw ra</code> into no-ops, and step again to see exactly where things go wrong.</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 12px"><button id="c7bug" aria-pressed="false">Remove save/restore of ra</button><span class="readout">Initial state: PC = 0x40, sp = 0x200, ra = 0, a0 = 0</span></div>
+    <div class="stepper">
+      <div><div class="asm" id="c7asm" style="margin:0"></div></div>
+      <div><p class="panel-t">Registers</p><div class="regs" id="c7regs"></div>
+        <p class="panel-t" style="margin-top:12px">Stack memory</p><div class="memw" id="c7mem"></div></div>
+    </div>
+    <p class="msg" id="c7msg"></p>
+    <div class="sc" style="padding:6px 0 0"><svg id="c7tl" viewBox="0 0 760 150" role="img" aria-label="Call depth over time" style="min-width:560px"></svg></div>
+    <div class="ctrl"><button id="c7back">◀ Back</button><button id="c7step" class="pri">Step instruction ▶</button><button id="c7run">Run</button><button id="c7reset">Reset</button></div>
+  </div><figcaption><b>The timeline shows which function is running</b> after each instruction. With the save and restore removed, <code>f</code>'s final return jumps to 0x90, which is inside <code>f</code> itself. It adds 1 again, pops a frame that was never pushed, and loops forever. Following the addresses makes a "mysterious" crash completely mechanical.</figcaption></figure>
+  <div class="insight">Releasing a frame (<code>addi sp, sp, 16</code>) just moves the boundary. It <b>doesn't erase</b> anything. The old 0x48 is still sitting at 0x1FC afterwards, and it will be overwritten by whoever uses that stack space next.</div>
+
+  <h3 class="part">Interrupts: when the running code didn't agree to stop</h3>
+  <p>A function call is <i>planned</i>. The caller follows the convention, so it knows which registers the callee may clobber. An <b>interrupt</b> is different. A timer or a device can demand attention between <i>any</i> two instructions, and the interrupted code has made no arrangements at all. Related events:</p>
+  <ul>
+    <li><b>Synchronous exception</b>: caused by the current instruction, for example an illegal instruction or a bad memory access.</li>
+    <li><b>Interrupt</b>: asynchronous, caused by something outside the instruction stream, such as a timer tick or a network packet.</li>
+    <li><b>System call</b>: an intentional request for OS service. On RISC-V that's the <code>ecall</code> instruction.</li>
+  </ul>
+  <p>All of these cause a <b>trap</b>. The hardware records a small amount of control information (on RISC-V, the interrupted PC goes into a special register and the cause into another), switches to a privileged mode (from user code, a higher <b>privilege level</b>), and jumps to a handler. The hardware does <i>not</i> automatically save all 31 registers. The handler's software must save any registers it will use and restore them before returning, so the interrupted code never notices.</p>
+  <figure class="fig"><div class="sc"><svg id="xferSvg" viewBox="0 0 760 230" role="img" aria-label="Three kinds of control transfer: function call, trap handled and returned, and trap leading to a switch to another thread"></svg></div>
+    <figcaption><b>Three transfers that are easy to confuse.</b> Entering the kernel does <i>not</i> mean switching threads. Often the handler just deals with the event and returns to the same thread. A context switch happens only when the OS scheduler decides that a different thread should run.</figcaption></figure>
+
+  <h3 class="part">Program, process, thread, hardware context</h3>
+  <figure class="fig"><div class="sc">
+    <svg viewBox="0 0 760 276" role="img" aria-label="A process contains an address space and two threads, each with registers and a stack; one physical core provides one hardware context that runs one thread at a time">
+      <rect x="20" y="20" width="440" height="230" class="bx" style="stroke-width:2"/><text x="36" y="42" class="hd">Process</text><text x="120" y="42" class="sm">an OS container: address space + resources</text>
+      <rect x="36" y="56" width="408" height="50" class="bg2"/><text x="240" y="78" class="mid bd">shared: code · global data · heap · open files</text><text x="240" y="96" class="mid sm">(one address space)</text>
+      <rect x="36" y="118" width="196" height="118" class="cu"/><text x="134" y="140" class="mid bd">Thread A</text><text x="134" y="162" class="mid sm">own PC + registers</text><text x="134" y="180" class="mid sm">own stack (by convention)</text><text x="134" y="204" class="mid sm">continuation: "what's next"</text>
+      <rect x="248" y="118" width="196" height="118" class="pl"/><text x="346" y="140" class="mid bd">Thread B</text><text x="346" y="162" class="mid sm">own PC + registers</text><text x="346" y="180" class="mid sm">own stack</text><text x="346" y="204" class="mid sm">continuation</text>
+      <rect x="520" y="60" width="220" height="130" class="te" style="stroke-width:2"/><text x="630" y="84" class="mid hd">Physical core</text>
+      <rect x="540" y="98" width="180" height="74" class="bx"/><text x="630" y="120" class="mid bd">hardware context</text><text x="630" y="138" class="mid sm">live PC + x1…x31</text><text x="630" y="156" class="mid sm">(+ privilege, CSRs)</text>
+      <path d="M460 136 H538" class="wc dash" marker-end="url(#ahc)"/><text x="499" y="126" class="mid xs tcu">loads A or B</text><text x="380" y="264" class="mid sm">The OS loads one thread's saved context into the hardware context. The other thread waits as saved data in OS memory.</text>
+    </svg></div>
+    <figcaption><b>Layers of "who is running".</b> A core with SMT (a later unit) provides <i>several</i> hardware contexts. Without it, as here, one core runs exactly one thread at a time. The others exist only as saved register values.</figcaption></figure>
+  <div class="tbl"><table>
+    <tr><th>Term</th><th>What it is in our model</th></tr>
+    <tr><td><b>Program</b></td><td>Code and data definitions: a description of work, e.g. a file on disk.</td></tr>
+    <tr><td><b>Process</b></td><td>A running instance of a program: an address space plus OS resources. It contains one or more threads.</td></tr>
+    <tr><td><b>Software thread</b></td><td>One sequence of execution: its own PC, register values, stack and continuation.</td></tr>
+    <tr><td><b>Hardware context</b></td><td>The live architectural state the processor provides to run one instruction stream.</td></tr>
+    <tr><td><b>Physical core</b></td><td>The hardware that executes instructions. It provides one hardware context, or several with SMT.</td></tr>
+  </table></div>
+  <div class="pitfall">Two threads in one process have separate stacks, but <b>the hardware doesn't protect one thread's stack from the other</b>. They share the address space, so a thread with a valid pointer into another's stack can read or write it. Separate stacks are a software discipline, not isolation.</div>
+
+  <h3 class="part">Try it: two threads, one hardware context</h3>
+  <p>Thread A counts up by 2 and thread B counts down by 1. <b>Both use register x5.</b> There's only one real x5, so every switch must save the running thread's value and restore the other's. The switch below is summarized as one action. A real one executes hundreds to thousands of kernel instructions, plus indirect costs such as cold caches.</p>
+  <figure class="fig"><div class="widget">
+    <div class="grid2">
+      <div><div class="asm" id="t7asm" style="margin:0"></div></div>
+      <div>
+        <div class="hwctx" id="t7hw"></div>
+        <p class="panel-t">Saved contexts in OS memory</p><div class="tcb" id="t7tcb"></div>
+      </div>
+    </div>
+    <div class="ctrl"><button id="t7step" class="pri">Run 1 instruction ▶</button><button id="t7int">Interrupt, same thread resumes</button><button id="t7sw">Timer interrupt → switch threads ⇄</button><button id="t7reset">Reset</button></div>
+    <div class="evlog" id="t7log"></div>
+  </div><figcaption><b>Watch x5.</b> After a switch, the same hardware register holds the other thread's value. Switch back and the first thread's value reappears, restored from its saved context, and it continues <i>exactly</i> where it stopped, even between two instructions of its loop. A real switch saves more (all integer registers, floating-point and vector state, privilege state) and may change address spaces between processes. It never copies the process's memory.</figcaption></figure>
+
+  <div class="tbl"><table>
+    <tr><th>Event</th><th>Why control moves</th><th>Does the running thread change?</th></tr>
+    <tr><td>Function call / return</td><td>Run another routine, then come back</td><td><b>No</b></td></tr>
+    <tr><td>Trap: syscall, exception, interrupt</td><td>Request a service or handle an event, at a higher privilege level</td><td><b>Not necessarily</b>: usually returns to the same thread</td></tr>
+    <tr><td>Context switch</td><td>The scheduler gives the hardware context to a different thread</td><td><b>Yes</b></td></tr>
+  </table></div>
+
+  <div class="predict"><div class="ph"><b>Predict</b><span>Trace addresses, not intentions.</span></div><ol>
+    <li>Right after the first <code>jal ra, double</code> at 0x88 enters <code>double</code>, what are ra, sp and the word at 0x1FC? Why do we need two different return addresses?
+      <details><summary>Show answer</summary><div class="ans"><p>ra = <b>0x8C</b>, sp = <b>0x1F0</b>, M[0x1FC] = <b>0x48</b>. <code>double</code> must return to 0x8C inside <code>f</code>, and later <code>f</code> must return to 0x48 inside <code>main</code>. One ra can hold only one of them, so the outer one waits in memory.</p></div></details></li>
+    <li>At the end of the correct run, what are a0, PC and sp? Is the saved 0x48 gone from 0x1FC?
+      <details><summary>Show answer</summary><div class="ans"><p>a0 = <b>21</b>, PC = <b>0x48</b>, sp = <b>0x200</b>. The value 0x48 is <b>still at 0x1FC</b>: releasing the frame moved sp and erased nothing.</p></div></details></li>
+    <li>With the save and restore removed, where does f's final <code>jalr</code> jump, and why?
+      <details><summary>Show answer</summary><div class="ans"><p>To <b>0x90</b>. The second <code>jal ra, double</code> (at 0x8C) set ra = 0x90, and nothing restored main's 0x48. At 0x90 it adds 1 again, bumps sp by another 16, returns to 0x90 again, and loops forever.</p></div></details></li>
+    <li>Does every interrupt cause a thread switch? How can the same thread resume?
+      <details><summary>Show answer</summary><div class="ans"><p><b>No.</b> The handler saves the registers it will use, handles the event (say, a key press), restores them, and returns to the saved PC with a trap-return instruction. The same thread continues, unaware anything happened. A switch occurs only if the OS decides another thread should run. Try "Interrupt, same thread resumes" in the explorer.</p></div></details></li>
+    <li>In the two-thread explorer: run one instruction of A, switch, run one of B, switch back. What are the live PC and x5, and what does A execute next?
+      <details><summary>Show answer</summary><div class="ans"><p>After A's <code>addi</code>, A has x5 = 2 and PC = 0x44. After the switch, B runs one <code>addi</code> (x5 50 → 49). Switching back restores <b>PC = 0x44, x5 = 2</b>, so A executes its <code>jal x0, 0x40</code> next. Its pending instruction is neither skipped nor replaced.</p></div></details></li>
+    <li>Two threads in one process have different sp values. Does that mean two cores, two protected address spaces, or two isolated stacks?
+      <details><summary>Show answer</summary><div class="ans"><p><b>None of these.</b> They may share one core by taking turns, they share one address space, and their stacks are just different regions of it that either thread could access. What's truly distinct is each thread's <b>register state and continuation</b>.</p></div></details></li>
+  </ol></div>
+  <p class="checkpoint">Draw a function return and a thread resumption side by side as two different uses of saved state. For each, say what lives in registers, what lives in memory, and which software convention gives the saved bits their meaning.</p>
+</section>
+
+<section class="lesson" id="wrap" data-toc="Putting it together" data-n="✓">
+  <div class="lesson-h"><div class="kicker">Unit 2 · Summary</div><h2>Putting it together</h2></div>
+  <div class="tbl"><table>
+    <tr><th>Lesson</th><th>Mechanism</th><th>State it adds</th><th>Who defines it</th><th>Limitation that remains</th></tr>
+    <tr><td>5</td><td>Register file, load/store ISA</td><td>32 architectural registers</td><td>ISA</td><td>Finite registers, so spills</td></tr>
+    <tr><td>6</td><td>ISA vs. microarchitecture; multicycle</td><td>Internal latches (invisible)</td><td>Hardware designer</td><td>Still one instruction at a time</td></tr>
+    <tr><td>7</td><td>Calls, stacks, traps, context switches</td><td>ra/sp, frames, saved contexts, privilege</td><td>ABI and OS conventions + ISA trap rules</td><td>Switching costs time</td></tr>
+  </table></div>
+  <p>Closing exercise: explain (1) why a processor can run the <i>same program</i> faster without changing its ISA, and (2) why running several software threads doesn't by itself mean several instructions execute at the same moment. Unit 3 answers the first question in depth, by overlapping instructions inside one core.</p>
+  <div class="nextunit"><a href="unit-01-build-a-computer.html"><small>← Unit 1</small>Build a computer</a><a href="unit-03-faster-core.html"><small>Next · Unit 3</small>Make one CPU core faster →</a></div>
+</section>
+
+</main>
+</div>
+
+<script>
+(function(){
+const {$,$$,RM,hex}=NOTES;
+const H=v=>'0x'+(v>>>0).toString(16).toUpperCase();
+
+/* ---------- L5 figures ---------- */
+(function(){
+  const rows=[['x0 = 0 (hardwired)',''],['x5 = 10','te'],['x6 = 6','te'],['…',''],['x28 ← 16','cu'],['…  x31','']];
+  $('#rfRows').innerHTML=rows.map(([t,c],i)=>`<rect x="262" y="${54+i*28}" width="176" height="24" class="${c||'bx'}"/><text x="272" y="${71+i*28}" class="${c?'bd':'sm'}">${t}</text>`).join('');
+  let le='';['06','00','00','00'].forEach((b,i)=>{const x=60+i*110;le+=`<text x="${x+50}" y="22" class="mid sm">${H(0x104+i)}</text><rect x="${x}" y="30" width="100" height="50" class="${i?'bg2':'cu'}"/><text x="${x+50}" y="62" class="mid bd" style="font-size:18px">${b}</text>`;});
+  le+='<text x="110" y="104" class="mid sm">least significant</text><text x="440" y="104" class="mid sm">most significant</text><text x="275" y="124" class="mid bd">word value = 0x00000006 = 6</text>';
+  $('#leBytes').innerHTML=le;
+  let sp='<text x="20" y="14" class="sm">10 values needed at the same time</text>';
+  for(let i=0;i<10;i++){const x=20+i*56,inR=i<4;sp+=`<rect x="${x}" y="22" width="48" height="30" class="${inR?'te':'cu'}"/><text x="${x+24}" y="42" class="mid bd">v${i+1}</text>`;}
+  sp+='<text x="20" y="160" class="sm">4 free registers</text>';
+  for(let i=0;i<4;i++){const x=20+i*80;sp+=`<rect x="${x}" y="104" width="70" height="36" class="te"/><text x="${x+35}" y="127" class="mid">v${i+1}</text><path d="M${44+i*56} 52 L${x+35} 102" class="wt" marker-end="url(#aht)"/>`;}
+  sp+='<rect x="380" y="96" width="360" height="56" class="bg2"/><text x="560" y="114" class="mid sm">memory (stack): spilled, needs sw now and lw later</text>';
+  for(let i=4;i<10;i++){const x=392+(i-4)*57;sp+=`<rect x="${x}" y="122" width="48" height="24" class="cu"/><text x="${x+24}" y="139" class="mid sm">v${i+1}</text>`;}
+  $('#spillSvg').innerHTML=sp;
+})();
+
+/* ---------- L5 stepper ---------- */
+(function(){
+  const PR={
+    reg:{regs:['PC','x5','x6','x7','x10','x28','x29','x30'],init:{PC:0x40,x5:0,x6:0,x7:0,x10:0x100,x28:0,x29:0,x30:0},
+      code:[['0x40','lw x5, 0(x10)','x5 ← a','lw',5,10,0],['0x44','lw x6, 4(x10)','x6 ← b','lw',6,10,4],['0x48','lw x7, 8(x10)','x7 ← c','lw',7,10,8],['0x4C','add x28, x5, x6','a + b','add',28,5,6],['0x50','sub x29, x5, x7','a − c (x5 still holds a!)','sub',29,5,7],['0x54','add x30, x28, x29','both partial results are in registers','add',30,28,29],['0x58','sw x30, 12(x10)','y ← result','sw',30,10,12]]},
+    acc:{regs:['PC','ACC'],init:{PC:0,ACC:0},
+      code:[['0','LOAD a','ACC ← a','LOAD',0x100],['1','ADD b','ACC ← ACC + b','ADD',0x104],['2','STORE t','save a+b, or lose it','STORE',0x110],['3','LOAD a','re-read a','LOAD',0x100],['4','SUB c','ACC ← ACC − c','SUB',0x108],['5','ADD t','bring back a+b','ADD',0x110],['6','STORE y','y ← result','STORE',0x10C]]}
+  };
+  const NAMES={0x100:'a',0x104:'b',0x108:'c',0x10C:'y',0x110:'t'};
+  const st={};let m='reg';
+  function fresh(k){return {r:{...PR[k].init},mem:{0x100:10,0x104:6,0x108:3,0x10C:0,0x110:0},i:0,rd:0,wr:0,ev:null,hist:[]};}
+  st.reg=fresh('reg');st.acc=fresh('acc');
+  function step(){
+    const S=st[m],P=PR[m];if(S.i>=P.code.length)return false;
+    S.hist.push(JSON.stringify({...S,hist:null}));
+    const c=P.code[S.i],ev={regs:[],mr:[],mw:[]};
+    if(m==='reg'){const [,t,,op,a,b,x]=c,R=S.r,g=n=>n===0?0:R['x'+n];
+      if(op==='lw'){const ad=g(b)+x;R['x'+a]=S.mem[ad];S.rd++;ev.regs=['x'+a];ev.mr=[ad];ev.msg=`<b>${t}</b>: address = x${b} + ${x} = ${H(ad)}; x${a} ← M[${H(ad)}] = <b>${S.mem[ad]}</b>. One data read.`;}
+      else if(op==='sw'){const ad=g(b)+x;S.mem[ad]=g(a);S.wr++;ev.mw=[ad];ev.msg=`<b>${t}</b>: M[${H(ad)}] ← x${a} = <b>${g(a)}</b>. One data write.`;}
+      else{const v=op==='add'?g(b)+g(x):g(b)-g(x);R['x'+a]=v;ev.regs=['x'+a];ev.msg=`<b>${t}</b>: x${a} ← ${g(b)} ${op==='add'?'+':'−'} ${g(x)} = <b>${v}</b>. Registers only, no memory access.`;}
+      R.PC+=4;}
+    else{const [,t,,op,ad]=c,R=S.r;
+      if(op==='LOAD'){R.ACC=S.mem[ad];S.rd++;ev.mr=[ad];ev.regs=['ACC'];ev.msg=`<b>${t}</b>: ACC ← ${NAMES[ad]} = <b>${R.ACC}</b>. Data read.`;}
+      else if(op==='STORE'){S.mem[ad]=R.ACC;S.wr++;ev.mw=[ad];ev.msg=`<b>${t}</b>: ${NAMES[ad]} ← ACC = <b>${R.ACC}</b>. Data write${ad===0x110?'. This temporary exists only because ACC is about to be reused.':'.'}`;}
+      else{const v=S.mem[ad];R.ACC=op==='ADD'?R.ACC+v:R.ACC-v;S.rd++;ev.mr=[ad];ev.regs=['ACC'];ev.msg=`<b>${t}</b>: ACC ← ${op==='ADD'?'ACC + ':'ACC − '}${NAMES[ad]} = <b>${R.ACC}</b>. Data read.`;}
+      R.PC+=1;}
+    ev.regs.push('PC');S.ev=ev;S.i++;return true;
+  }
+  function render(){
+    const S=st[m],P=PR[m];
+    $('#s5asm').innerHTML=P.code.map((c,i)=>`<div class="r ${i===S.i?'cur':''} ${i<S.i?'done':''}"><span class="a">${c[0]}</span><span class="i">${c[1]}</span><span class="c">${c[2]}</span></div>`).join('')+(S.i>=P.code.length?'<div class="r"><span class="a"></span><span class="i" style="color:var(--mute)">— end of fragment —</span><span class="c"></span></div>':'');
+    $('#s5regs').innerHTML=P.regs.map(n=>`<div class="reg ${S.ev&&S.ev.regs.includes(n)?'w':''}"><small>${n}</small><b>${n==='PC'?(m==='reg'?H(S.r.PC):S.r.PC):n==='x10'?H(S.r[n]):S.r[n]}</b></div>`).join('');
+    const addrs=m==='reg'?[0x100,0x104,0x108,0x10C]:[0x100,0x104,0x108,0x10C,0x110];
+    $('#s5mem').innerHTML=addrs.map(a=>`<div class="${S.ev&&S.ev.mr.includes(a)?'r':''}${S.ev&&S.ev.mw.includes(a)?'w':''}"><span class="a">${H(a)}</span><span><b>${S.mem[a]}</b></span><span class="n">${NAMES[a]}${a===0x110?' (temp)':''}</span></div>`).join('');
+    $('#s5msg').innerHTML=S.ev?S.ev.msg:(m==='reg'?'<b>Ready.</b> x10 = 0x100 points at the data block: a, b, c, then y.':'<b>Ready.</b> One accumulator. Watch how often it has to go to memory.');
+    const mx=5,bar=(l,v,c)=>`<div class="bar"><span>${l}</span><span class="t"><i class="${c}" style="width:${v/mx*100}%"></i></span><b>${v}</b></div>`;
+    $('#s5bars').innerHTML=bar('RV32I reads',st.reg.rd,'rd')+bar('RV32I writes',st.reg.wr,'')+bar('Accum. reads',st.acc.rd,'rd')+bar('Accum. writes',st.acc.wr,'');
+    $('#s5back').disabled=!S.hist.length;$('#s5step').disabled=S.i>=P.code.length;
+    $$('[data-m]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.m===m));
+  }
+  $('#s5step').onclick=()=>{step();render();};
+  $('#s5run').onclick=()=>{while(step());render();};
+  $('#s5back').onclick=()=>{const S=st[m];const h=S.hist.pop();if(!h)return;const o=JSON.parse(h);o.hist=S.hist;st[m]=o;render();};
+  $('#s5reset').onclick=()=>{st[m]=fresh(m);render();};
+  $$('[data-m]').forEach(b=>b.onclick=()=>{m=b.dataset.m;render();});
+  render();
+})();
+
+/* ---------- L6 single-cycle figure ---------- */
+(function(){
+  const seg={F:['fetch','bg2',1.0],R:['regs','pl',0.8],A:['ALU','cu',1.2],M:['mem','te',1.2],W:['write','bx',0.8]};
+  const rows=[['lw','FRAMW'],['add','FRAW'],['sw','FRAM'],['beq','FRA']];const s=100,x0=110;let h='';
+  rows.forEach(([n,ph],i)=>{const y=24+i*36;let x=x0;h+=`<text x="20" y="${y+18}" class="bd">${n}</text>`;
+    [...ph].forEach(p=>{const [l,c,d]=seg[p];h+=`<rect x="${x}" y="${y}" width="${d*s}" height="26" class="${c}"/>`;if(i===0)h+=`<text x="${x+d*s/2}" y="${y+17}" class="mid xs">${l}</text>`;x+=d*s;});
+    if(x<x0+500)h+=`<rect x="${x}" y="${y}" width="${x0+500-x}" height="26" fill="url(#hatch)" style="stroke:var(--line)"/><text x="${(x+x0+500)/2}" y="${y+17}" class="mid xs">waiting</text>`;});
+  h+=`<line x1="${x0+500}" y1="16" x2="${x0+500}" y2="170" class="wc dash"/><text x="${x0+508}" y="30" class="sm tcu">clock period</text><text x="${x0+508}" y="46" class="sm tcu">= 5 ns (set by lw)</text>`;
+  h+=`<text x="${x0}" y="172" class="xs">0 ns</text><text x="${x0+500}" y="172" class="mid xs">5 ns</text>`;
+  $('#scSvg').innerHTML=h;
+})();
+
+/* ---------- L6 multicycle phases figure ---------- */
+(function(){
+  const P=[['F','fetch','IR ← M[PC];PC += 4'],['D','decode','A ← rs1;B ← rs2'],['E','execute','ALUout ←;result or address'],['M','memory','MDR ← M[ALUout];(or store B)'],['W','writeback','rd ← ALUout;or MDR']];
+  const L=['IR','A / B','ALUout','MDR'];let h='';
+  P.forEach(([k,n,w],i)=>{const x=20+i*146;h+=`<rect x="${x}" y="64" width="112" height="60" class="${['bg2','pl','cu','te','bx'][i]}"/><text x="${x+56}" y="90" class="mid hd">${k}</text><text x="${x+56}" y="108" class="mid sm">${n}</text><text x="${x+56}" y="146" class="mid xs">${w.split(';')[0]}</text>${w.includes(';')?`<text x="${x+56}" y="160" class="mid xs">${w.split(';')[1]}</text>`:''}`;
+    if(i<4){const lx=x+118;h+=`<rect x="${lx}" y="50" width="22" height="88" class="bx" style="stroke-width:1.6"/><text x="${lx+11}" y="42" class="mid xs bd">${L[i]}</text><path d="M${x+112} 94 H${lx}" class="w"/><path d="M${lx+22} 94 H${lx+28}" class="w" marker-end="url(#ah)"/>`;}});
+  h+='<text x="380" y="190" class="mid sm">latches hold each phase\'s result so the next cycle can use it after the combinational outputs change</text>';
+  h+='<text x="380" y="22" class="mid sm tpl">internal latches (microarchitectural, invisible to software)</text>';
+  $('#mcPhases').innerHTML=h;
+})();
+
+/* ---------- L6 timing comparator ---------- */
+(function(){
+  const CY={lw:5,add:4,sw:4,beq:3};const PRE={mix:['lw','add','add','sw','beq'],loads:['lw','lw','lw','lw','lw'],adds:['add','add','add','add','add']};
+  let seq=PRE.mix.slice();
+  function render(){
+    const Ts=+$('#tcS').value,Tm=+$('#tcM').value;$('#tcSv').textContent=Ts.toFixed(1);$('#tcMv').textContent=Tm.toFixed(1);
+    $('#tcSeq').innerHTML=seq.length?seq.map(o=>`<span class="op-${o}">${o}</span>`).join(''):'<span class="readout">empty: add some instructions</span>';
+    const cyc=seq.reduce((a,o)=>a+CY[o],0),ts=seq.length*Ts,tm=cyc*Tm,mx=Math.max(ts,tm,1),sc=550/mx,x0=130;
+    let h='<text x="20" y="46" class="bd">single-cycle</text><text x="20" y="116" class="bd">multicycle</text>';
+    let x=x0;seq.forEach(o=>{const w=Ts*sc;h+=`<rect x="${x}" y="28" width="${w}" height="30" class="${{lw:'te',add:'cu',sw:'pl',beq:'bg2'}[o]}"/>`+(w>26?`<text x="${x+w/2}" y="48" class="mid xs bd">${o}</text>`:'');x+=w;});
+    h+=`<text x="${x+6}" y="48" class="sm bd">${ts.toFixed(1)} ns</text>`;
+    x=x0;seq.forEach(o=>{const n=CY[o],w=Tm*sc;for(let k=0;k<n;k++){h+=`<rect x="${x}" y="98" width="${w}" height="30" class="${{lw:'te',add:'cu',sw:'pl',beq:'bg2'}[o]}"/>`;if(w>13)h+=`<text x="${x+w/2}" y="117" class="mid xs">${({lw:'FDEMW',add:'FDEW',sw:'FDEM',beq:'FDE'}[o])[k]}</text>`;x+=w;}});
+    h+=`<text x="${x+6}" y="118" class="sm bd">${tm.toFixed(1)} ns</text>`;
+    const step=mx>40?10:5;for(let t=0;t<=mx+0.001;t+=step)h+=`<line x1="${x0+t*sc}" y1="136" x2="${x0+t*sc}" y2="142" class="w"/><text x="${x0+t*sc}" y="156" class="mid xs">${t} ns</text>`;
+    $('#tcSvg').innerHTML=h;
+    const n=seq.length;
+    $('#tcMsg').innerHTML=n?`Single-cycle: ${n} × ${Ts.toFixed(1)} ns = <b>${ts.toFixed(1)} ns</b> (CPI 1). Multicycle: ${cyc} cycles × ${Tm.toFixed(1)} ns = <b>${tm.toFixed(1)} ns</b> (CPI ${(cyc/n).toFixed(2)}). ${Math.abs(ts-tm)<1e-9?'A tie.':ts<tm?'<b>Single-cycle wins</b> here.':'<b>Multicycle wins</b> here, despite the higher CPI.'}`:'Add instructions to compare.';
+  }
+  $$('[data-add]').forEach(b=>b.onclick=()=>{if(seq.length<14)seq.push(b.dataset.add);render();});
+  $$('[data-pre]').forEach(b=>b.onclick=()=>{seq=PRE[b.dataset.pre].slice();render();});
+  $('#tcUndo').onclick=()=>{seq.pop();render();};$('#tcClear').onclick=()=>{seq=[];render();};
+  $('#tcS').oninput=render;$('#tcM').oninput=render;render();
+})();
+
+/* ---------- L7 stack frame figure ---------- */
+(function(){
+  const rows=[[0x1FC,'0x48','saved ra (main\'s return)','cu'],[0x1F8,'—','unused (alignment)','bg2'],[0x1F4,'—','unused','bg2'],[0x1F0,'—','unused','bg2'],[0x1EC,'','free (below the stack)','bx'],[0x1E8,'','free','bx']];let h='';
+  h+='<text x="520" y="18" class="sm">higher addresses ↑</text>';
+  rows.forEach(([a,v,n,c],i)=>{const y=26+i*32;h+=`<text x="252" y="${y+21}" class="end sm">${H(a)}</text><rect x="260" y="${y}" width="140" height="30" class="${c}"/><text x="330" y="${y+20}" class="mid bd">${v}</text><text x="412" y="${y+20}" class="sm">${n}</text>`;});
+  h+='<path d="M600 26 H640" class="w"/><path d="M40 26 H258" class="wt" marker-end="url(#aht)"/><text x="40" y="20" class="sm tte">sp before the call = 0x200 (top edge)</text>';
+  h+='<path d="M40 154 H258" class="wp" marker-end="url(#ahp)"/><text x="40" y="148" class="sm tpl">sp inside f = 0x1F0</text>';
+  h+='<path d="M622 26 V154" class="wp"/><path d="M616 26 H622 M616 154 H622" class="wp"/><text x="632" y="86" class="sm tpl">f\'s frame</text><text x="632" y="102" class="sm tpl">16 bytes</text>';
+  h+='<text x="330" y="226" class="mid sm">stack grows downward ↓</text>';
+  $('#frameFig').innerHTML=h;
+})();
+
+/* ---------- L7 call stepper ---------- */
+(function(){
+  const PROG=[
+    {lbl:'main:'},{pc:0x40,t:'addi a0, x0, 5',c:'argument x = 5',op:'addi',rd:'a0',rs:'x0',imm:5},{pc:0x44,t:'jal ra, f',c:'call f; ra ← 0x48',op:'jal',rd:'ra',tg:0x80},{pc:0x48,t:'(end of example)',c:'main continues here',op:'end'},
+    {lbl:'f:'},{pc:0x80,t:'addi sp, sp, -16',c:'reserve a 16-byte frame',op:'addi',rd:'sp',rs:'sp',imm:-16},{pc:0x84,t:'sw ra, 12(sp)',c:'save main\'s return address',op:'sw',rs2:'ra',rs:'sp',imm:12,save:1},{pc:0x88,t:'jal ra, double',c:'ra ← 0x8C (overwrites!)',op:'jal',rd:'ra',tg:0xC0},{pc:0x8C,t:'jal ra, double',c:'ra ← 0x90',op:'jal',rd:'ra',tg:0xC0},{pc:0x90,t:'addi a0, a0, 1',c:'+1',op:'addi',rd:'a0',rs:'a0',imm:1},{pc:0x94,t:'lw ra, 12(sp)',c:'restore main\'s return address',op:'lw',rd:'ra',rs:'sp',imm:12,save:1},{pc:0x98,t:'addi sp, sp, 16',c:'release the frame',op:'addi',rd:'sp',rs:'sp',imm:16},{pc:0x9C,t:'jalr x0, 0(ra)',c:'return',op:'jalr',rs:'ra'},
+    {lbl:'double:'},{pc:0xC0,t:'add a0, a0, a0',c:'a0 ← 2 × a0',op:'add',rd:'a0',rs:'a0',rs2:'a0'},{pc:0xC4,t:'jalr x0, 0(ra)',c:'return (leaf: no frame)',op:'jalr',rs:'ra'}
+  ];
+  const byPc={};PROG.forEach(p=>{if(p.pc!==undefined)byPc[p.pc]=p;});
+  const fn=pc=>pc>=0xC0?2:pc>=0x80?1:0;
+  let bug=false,s,hist,trail,timer=null;
+  function reset(){stop();s={pc:0x40,ra:0,sp:0x200,a0:0,x0:0,mem:{},n:0,ev:null,done:false,loop:false};hist=[];trail=[{f:0}];render();}
+  function step(){
+    if(s.done)return false;const I=byPc[s.pc];if(!I||I.op==='end'){s.done=true;return false;}
+    hist.push(JSON.stringify({s,trail}));
+    const R=s,ev={regs:[],mr:[],mw:[]},g=r=>r==='x0'?0:R[r];let next=R.pc+4;
+    if(bug&&I.save){ev.msg=`<b>${H(I.pc)}</b>: removed (acts as a no-op). ${I.op==='sw'?'main\'s return address is NOT saved.':'ra is NOT restored; it still holds '+H(R.ra)+'.'}`;}
+    else if(I.op==='addi'){R[I.rd]=g(I.rs)+I.imm;ev.regs=[I.rd];ev.msg=`<b>${I.t}</b>: ${I.rd} ← ${I.rd==='sp'?H(R[I.rd]):R[I.rd]}.`;}
+    else if(I.op==='add'){R[I.rd]=g(I.rs)+g(I.rs2);ev.regs=[I.rd];ev.msg=`<b>${I.t}</b>: a0 ← <b>${R.a0}</b>.`;}
+    else if(I.op==='sw'){const a=g(I.rs)+I.imm;R.mem[a]=g(I.rs2);ev.mw=[a];ev.msg=`<b>${I.t}</b>: M[${H(a)}] ← ra = ${H(R.ra)}.`;}
+    else if(I.op==='lw'){const a=g(I.rs)+I.imm;R[I.rd]=R.mem[a]??0;ev.mr=[a];ev.regs=[I.rd];ev.msg=`<b>${I.t}</b>: ra ← M[${H(a)}] = ${H(R.ra)}.`;}
+    else if(I.op==='jal'){R[I.rd]=R.pc+4;next=I.tg;ev.regs=[I.rd];ev.msg=`<b>${I.t}</b>: ra ← ${H(R.pc+4)}, jump to ${H(I.tg)}.`;}
+    else if(I.op==='jalr'){next=R[I.rs]&~1;ev.msg=`<b>${I.t}</b>: jump to ra = <b>${H(next)}</b>${fn(next)===fn(R.pc)&&next<R.pc?' — back into the same function!':'.'}`;}
+    R.pc=next;ev.regs.push('pc');R.n++;R.ev=ev;trail.push({f:fn(R.pc)});
+    if(R.pc===0x48){R.done=true;R.ev.msg+=` <b>Done:</b> back in main with a0 = ${R.a0}, sp = ${H(R.sp)}.`;}
+    if(bug&&R.n>=30){R.done=true;R.loop=true;R.ev.msg+=` <b>Stopped after 30 instructions:</b> the program is stuck in a loop (a0 = ${R.a0}, sp = ${H(R.sp)} and climbing).`;}
+    return true;
+  }
+  function render(){
+    $('#c7asm').innerHTML=PROG.map(p=>p.lbl?`<div class="r"><span class="lbl">${p.lbl}</span><span></span><span></span></div>`:`<div class="r ${p.pc===s.pc&&!s.done?'cur':''}"><span class="a">${H(p.pc)}</span><span class="i" style="${bug&&p.save?'text-decoration:line-through;color:var(--mute)':''}">${p.t}</span><span class="c">${bug&&p.save?'removed':p.c}</span></div>`).join('');
+    $('#c7regs').innerHTML=[['pc',H(s.pc)],['ra',H(s.ra)],['sp',H(s.sp)],['a0',s.a0]].map(([n,v])=>`<div class="reg ${s.ev&&s.ev.regs.includes(n)?'w':''}"><small>${n}</small><b>${v}</b></div>`).join('');
+    const addrs=[0x1FC,0x1F8,0x1F4,0x1F0];
+    $('#c7mem').innerHTML=`<div><span class="a">sp →</span><span>${H(s.sp)}</span><span class="n">${s.sp<0x200?'frame in use':s.sp>0x200?'above the stack top!':'no frame'}</span></div>`+addrs.map(a=>`<div class="${s.ev&&s.ev.mw.includes(a)?'w':''}${s.ev&&s.ev.mr.includes(a)?'r':''} ${a>=s.sp&&a<0x200?'frame':''}"><span class="a">${H(a)}</span><span><b>${s.mem[a]!==undefined?H(s.mem[a]):'—'}</b></span><span class="n">${a===0x1FC?'ra slot':''}</span></div>`).join('');
+    $('#c7msg').innerHTML=s.ev?s.ev.msg:'<b>Ready.</b> The first instruction puts the argument 5 in a0.';
+    const L=['main','f','double'],N=trail.length,dx=Math.min(40,640/Math.max(1,N-1));
+    let t=L.map((l,i)=>`<text x="84" y="${34+i*40}" class="end sm">${l}</text><line x1="92" y1="${30+i*40}" x2="750" y2="${30+i*40}" class="w" style="stroke:var(--line);stroke-dasharray:2 4"/>`).join('');
+    let d='';trail.forEach((p,i)=>{const x=100+i*dx,y=30+p.f*40;d+=(i?'L':'M')+x+' '+y;});
+    t+=`<path d="${d}" class="${s.loop?'wb':'wc'}" style="stroke-width:2.2"/>`;
+    trail.forEach((p,i)=>{t+=`<circle cx="${100+i*dx}" cy="${30+p.f*40}" r="3.5" class="${s.loop?'mkb':'mkc'}"/>`;});
+    t+=`<text x="100" y="146" class="xs">instructions executed: ${s.n} →</text>`;
+    $('#c7tl').innerHTML=t;
+    $('#c7back').disabled=!hist.length;$('#c7step').disabled=s.done;$('#c7bug').setAttribute('aria-pressed',bug);
+  }
+  function stop(){if(timer){clearInterval(timer);timer=null;$('#c7run').textContent='Run';}}
+  $('#c7step').onclick=()=>{stop();step();render();};
+  $('#c7back').onclick=()=>{stop();const h=hist.pop();if(!h)return;const o=JSON.parse(h);s=o.s;trail=o.trail;render();};
+  $('#c7reset').onclick=reset;
+  $('#c7bug').onclick=()=>{bug=!bug;reset();};
+  $('#c7run').onclick=()=>{if(timer){stop();return;}if(RM){while(step());render();return;}$('#c7run').textContent='Pause';timer=setInterval(()=>{if(!step()){stop();}render();},380);};
+  reset();
+})();
+
+/* ---------- L7 transfers figure ---------- */
+(function(){
+  const lane=(y,title,segs)=>{let h=`<text x="20" y="${y-8}" class="bd">${title}</text>`;segs.forEach(([x,w,c,l,dy])=>{h+=`<rect x="${x}" y="${y+(dy||0)}" width="${w}" height="26" class="${c}"/><text x="${x+w/2}" y="${y+(dy||0)+17}" class="mid xs">${l}</text>`;});return h;};
+  let h='';
+  h+=lane(28,'Function call',[[20,200,'cu','thread A: main'],[220,160,'cu','thread A: f (callee)',18],[380,360,'cu','thread A: main continues']]);
+  h+=lane(104,'Trap handled, same thread resumes',[[20,240,'cu','thread A'],[260,170,'te','kernel handler (privileged)',18],[430,310,'cu','thread A resumes at saved PC']]);
+  h+=lane(180,'Trap → context switch',[[20,240,'cu','thread A'],[260,80,'te','handler',18],[340,180,'te','scheduler: save A, load B',18],[520,220,'pl','thread B continues']]);
+  h+='<text x="740" y="226" class="end xs">time →</text>';
+  $('#xferSvg').innerHTML=h;
+})();
+
+/* ---------- L7 two threads ---------- */
+(function(){
+  const CODE={A:[[0x40,'addi x5, x5, 2','count up by 2'],[0x44,'jal x0, 0x40','loop']],B:[[0x80,'addi x5, x5, -1','count down by 1'],[0x84,'jal x0, 0x80','loop']]};
+  let hw,saved,run,log;
+  function reset(){saved={A:{pc:0x40,x5:0,sp:0x3000},B:{pc:0x80,x5:50,sp:0x4000}};run='A';hw={...saved.A};log=['<span class="k">start</span>: hardware context loaded with thread A'];render(null);}
+  function exec(){const c=CODE[run].find(x=>x[0]===hw.pc);
+    if(c[1].startsWith('addi')){hw.x5+=run==='A'?2:-1;hw.pc+=4;log.push(`${run} ran <b>${c[1]}</b>: x5 = ${hw.x5}`);return ['x5','pc'];}
+    hw.pc=run==='A'?0x40:0x80;log.push(`${run} ran <b>${c[1]}</b>: PC = ${H(hw.pc)}`);return ['pc'];}
+  function render(chg){
+    const other=run==='A'?'B':'A';
+    $('#t7asm').innerHTML=['A','B'].map(t=>`<div class="r"><span class="lbl">thread ${t}:</span><span></span><span></span></div>`+CODE[t].map(([pc,tx,c])=>{const cur=(t===run&&hw.pc===pc)||(t!==run&&saved[t].pc===pc);return `<div class="r ${cur?'cur':''}" style="${cur&&t!==run?'background:var(--pl-soft)':''}"><span class="a">${H(pc)}</span><span class="i">${tx}</span><span class="c">${c}${cur?(t===run?' ← next':' ← will resume here'):''}</span></div>`;}).join('')).join('');
+    $('#t7hw').innerHTML=`<h6>Live hardware context — running thread <span style="color:var(--cu)">${run}</span></h6><div class="regs">`+[['PC',H(hw.pc),'pc'],['x5',hw.x5,'x5'],['sp',H(hw.sp),'sp']].map(([n,v,k])=>`<div class="reg ${chg&&chg.includes(k)?'w':''}"><small>${n}</small><b>${v}</b></div>`).join('')+'</div>';
+    $('#t7tcb').innerHTML=['A','B'].map(t=>`<div class="${t===run?'run':''}"><h6>thread ${t}${t===run?' (running: this copy is stale)':' (waiting)'}</h6>PC ${H(saved[t].pc)}<br>x5 ${saved[t].x5}<br>sp ${H(saved[t].sp)}</div>`).join('');
+    $('#t7log').innerHTML=log.slice(-14).map(l=>`<div>${l}</div>`).join('');$('#t7log').scrollTop=1e6;
+  }
+  $('#t7step').onclick=()=>render(exec());
+  $('#t7int').onclick=()=>{log.push(`<span class="k">interrupt</span>: trap to kernel; handler saves the registers it uses, handles the event, restores them, returns to ${H(hw.pc)}. Thread ${run} continues, x5 still ${hw.x5}.`);render(null);};
+  $('#t7sw').onclick=()=>{const o=run==='A'?'B':'A';saved[run]={...hw};log.push(`<span class="k">timer interrupt</span>: trap to kernel → save thread ${run} (PC ${H(hw.pc)}, x5 ${hw.x5}) → scheduler picks ${o} → restore ${o} (PC ${H(saved[o].pc)}, x5 ${saved[o].x5}) → return`);run=o;hw={...saved[o]};render(['pc','x5','sp']);};
+  $('#t7reset').onclick=reset;reset();
+})();
+})();
+</script>
+</body>
+</html>

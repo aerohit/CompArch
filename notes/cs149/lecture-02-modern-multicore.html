@@ -1,0 +1,914 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CS149 Lecture 2 · A Modern Multi-Core Processor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../assets/notes.css">
+<script src="../assets/notes.js"></script>
+<style>
+.calc{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;align-items:end}
+.stat{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:12px}
+.stat div{background:var(--panel2);border-radius:4px;padding:6px 10px;font:500 11px var(--mono);color:var(--mute)}
+.stat b{display:block;font-size:17px;color:var(--ink)}
+.bytes{display:grid;grid-template-columns:repeat(16,minmax(0,1fr));gap:3px;font:500 11px var(--mono)}
+.bytes div{text-align:center;padding:4px 0;border-radius:3px;background:var(--panel2)}
+.bytes div small{display:block;font-size:9px;color:var(--mute)}
+.bytes div.l0{box-shadow:inset 0 -3px 0 var(--te)} .bytes div.l1{box-shadow:inset 0 -3px 0 var(--pl)} .bytes div.l2{box-shadow:inset 0 -3px 0 var(--cu)} .bytes div.l3{box-shadow:inset 0 -3px 0 var(--warn)}
+.bytes div.cur{outline:2px solid var(--ink)}
+.bytes div.inc{background:var(--te-soft)}
+.slots{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.slots div{border:1px solid var(--line);border-radius:4px;padding:6px 12px;font:500 13px var(--mono);min-width:120px;background:var(--panel)}
+.slots div small{display:block;font-size:10px;color:var(--mute)}
+.slots div.fill{background:var(--cu-soft);border-color:var(--cu)}
+.slots div.hit{background:var(--ok-soft);border-color:var(--ok)}
+.strip{display:flex;flex-wrap:wrap;gap:3px;margin-top:10px}
+.strip span{min-width:40px;padding:3px 4px;border-radius:3px;font:600 11px var(--mono);text-align:center}
+.strip small{display:block;font-weight:500;font-size:9px}
+.strip .h{background:var(--ok-soft);color:var(--ok)} .strip .c{background:var(--bad-soft);color:var(--bad)} .strip .p{background:var(--warn-soft);color:var(--warn)} .strip .n{background:var(--panel2);color:var(--mute)} .strip .cur{outline:2px solid var(--ink)}
+.lanes{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:4px}
+.lanes button{height:54px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font:600 13px var(--mono)}
+.lanes button small{font-size:10px;font-weight:500}
+.lanes button.T{background:var(--te-soft);border-color:var(--te);color:var(--ink)}
+.lanes button.F{background:var(--pl-soft);border-color:var(--pl);color:var(--ink)}
+.cfg{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.cfg > div{display:flex;flex-direction:column;gap:4px}
+.cfg .readout{font-size:11.5px}
+.glossary{display:grid;grid-template-columns:minmax(150px,max-content) 1fr;gap:6px 18px;font-size:15px}
+.glossary dt{font:600 13px var(--mono);color:var(--te);padding-top:2px}
+.glossary dd{margin:0}
+@media (max-width:560px){.glossary{grid-template-columns:1fr}.glossary dd{margin-bottom:8px}}
+
+.pmx{display:grid;grid-template-columns:120px repeat(3,minmax(0,1fr));gap:8px;align-items:stretch}
+@media (max-width:760px){.pmx{grid-template-columns:repeat(1,minmax(0,1fr))}.pmx .rh,.pmx .ch{display:none}}
+.pmx .ch{font:600 11px var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--mute);text-align:center;align-self:end;padding-bottom:4px}
+.pmx .rh{font-size:13px;display:flex;flex-direction:column;justify-content:center;gap:2px;padding-right:6px}
+.pmx .rh b{font-family:var(--display);font-size:18px}
+.pmx .rh small{color:var(--mute);font:500 11px var(--mono)}
+.pcard{background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:8px 10px;cursor:pointer;text-align:left;font:inherit;color:var(--ink);display:flex;flex-direction:column;gap:4px}
+.pcard:hover{border-color:var(--cu)}
+.pcard[aria-pressed="true"]{border-color:var(--cu);box-shadow:0 0 0 3px var(--cu-soft);background:var(--panel)}
+.pcard svg{width:100%;height:auto;min-width:0}
+.pcard .pk{font:600 11px var(--mono);color:var(--cu)}
+.pcard .need{font-size:12.5px;line-height:1.4;color:var(--ink)}
+.pcard .need i{font-style:normal;color:var(--mute)}
+.chk{display:grid;gap:6px;margin-top:12px}
+.chk div{display:grid;grid-template-columns:26px 1fr;gap:8px;align-items:start;padding:7px 10px;border-radius:4px;font-size:14px;background:var(--panel2)}
+.chk div.ok{background:var(--ok-soft)} .chk div.no{background:var(--bad-soft)} .chk div.na{opacity:.6}
+.chk div > span:first-child{font:700 15px var(--mono)}
+.chk div.ok > span:first-child{color:var(--ok)} .chk div.no > span:first-child{color:var(--bad)}
+.recipe{counter-reset:r}
+
+/* slide-style architecture drawings */
+.sl-core{fill:var(--panel2);stroke:var(--mute);stroke-width:1.2}
+.sl-mem{fill:var(--panel);stroke:var(--ink);stroke-width:1.4}
+.sl-cache{fill:#bdbdbd;stroke:#6f6f6f;stroke-width:1.2}
+.sl-fd{fill:#d9763a;stroke:#8f4718;stroke-width:1.2}
+.sl-alu{fill:#f3c24c;stroke:#a87a12;stroke-width:1.2}
+.sl-ctx{fill:#8e9bba;stroke:#3d4a6b;stroke-width:1.4}
+.sl-reg{fill:#b9c5e2;stroke:#7d8bb0;stroke-width:.6}
+svg text.sd{fill:#1b1b1b!important}
+svg text.sw{fill:#fff!important}
+.pmx .pcard svg{background:transparent}
+.sl-pale{fill:#e6e6e6;stroke:#9a9a9a;stroke-width:1}
+.sl-row{fill:#ececec} .sl-row-on{fill:#d9763a}
+.sm-ws{fill:#f1ddd0;stroke:#b98a6a;stroke-width:1} .sm-fp32{fill:#f3c24c;stroke:#a87a12;stroke-width:.8} .sm-int{fill:#ee8a60;stroke:#a8502a;stroke-width:.8} .sm-fp64{fill:#b07a86;stroke:#6e4450;stroke-width:.8} .sm-ten{fill:#bf2f1f;stroke:#7a1a10;stroke-width:.8} .sm-ls{fill:#5d9a3c;stroke:#355f1f;stroke-width:.8} .sm-reg{fill:#c9d6f2;stroke:#6c7fae;stroke-width:.8}
+
+.partbar{margin-top:90px;padding:14px 18px;border-radius:5px;background:var(--ink);color:var(--panel)}
+.partbar .kicker{color:var(--cu-soft)}
+.partbar h2{font-family:var(--display);font-size:clamp(32px,5vw,44px);line-height:1;margin:4px 0 4px;color:var(--panel)}
+.partbar p{margin:0;color:var(--panel);opacity:.8;max-width:68ch}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar"><div class="in">
+  <a class="brand" href="../index.html">Gates <span>→</span> GPUs · Notes</a>
+  <nav class="unitnav" aria-label="Sections"><a href="../index.html">Course map</a><a href="../unit-01-build-a-computer.html">1 · Build a computer</a><a href="../unit-02-registers-programs-contexts.html">2 · Programs &amp; contexts</a><a href="../unit-03-faster-core.html">3 · A faster core</a><a href="../unit-04-parallelism.html">4 · Parallelism</a><a href="index.html" aria-current="page">CS149 lectures</a></nav>
+  <button class="themebtn" type="button">☾ Dark</button>
+</div>
+<nav class="subnav" aria-label="CS149 lectures"><span class="sl">CS149</span><a href="index.html">All lectures</a><a href="lecture-02-modern-multicore.html" aria-current="page">L2 · A modern multi-core processor</a></nav>
+</header>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk"/></marker>
+  <marker id="ahc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkc"/></marker>
+  <marker id="aht" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkt"/></marker>
+  <marker id="ahp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkp"/></marker>
+  <marker id="ahb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkb"/></marker>
+</defs></svg>
+
+<div class="wrap">
+<nav class="toc" aria-label="On this page"></nav>
+<main id="main">
+
+<header class="hero">
+  <div class="kicker">Stanford CS149 · Lecture 2 companion</div>
+  <h1>A modern <em>multi-core</em> processor</h1>
+  <p class="lede">Why does a laptop chip have several cores, each with 8-wide vector units and two hardware threads, and why does a GPU take the same ideas to an extreme? This lecture answers with <b>three ideas</b> for executing more work in parallel, and one for coping with slow memory. It looks at them from a <b>software engineer's point of view</b>: what each one demands from your program.</p>
+  <dl class="outcome">
+    <dt>You'll be able to</dt><dd>Explain multi-core, SIMD and hardware multithreading. Say what kind of parallelism each exploits and what the program must provide for each to pay off. Calculate the peak throughput of a real chip, and work out how many threads are needed to hide a given memory latency.</dd>
+    <dt>Background</dt><dd>Helpful: Units 1–4 of these notes (especially caches, superscalar execution, SMT and SIMD). This page recaps everything it needs, so it can be read on its own.</dd>
+    <dt>Source</dt><dd>Follows the structure and examples of Stanford CS149 <i>Parallel Computing</i>, Fall 2023, Lecture 2, "A Modern Multi-Core Processor" (Kayvon Fatahalian and Kunle Olukotun). The explanations, diagrams and explorers here are original study material, not a copy of the slides.</dd>
+  </dl>
+  <div class="insight">The whole lecture fits in one sentence. To run fast on a modern chip, a program must supply <b>enough independent work</b> for every core and execution unit, work that <b>follows the same instruction sequence</b> in groups (so SIMD lanes stay busy), and <b>even more work than that</b> so the chip can switch to something else while waiting on memory.</div>
+</header>
+
+<!-- ================================ PART 0 ================================ -->
+<div class="partbar" id="p0"><div class="kicker">Part 0 · Review</div><h2>What a processor does, and what memory is</h2><p>A quick rebuild of the basic model, because every later idea modifies one of its three boxes.</p></div>
+
+<section class="lesson" id="s1" data-toc="What a processor does" data-n="1" style="margin-top:36px">
+  <div class="lesson-h"><div class="kicker">Section 1</div><h2>A program is a list of instructions</h2></div>
+  <p>A compiler turns a C function into a <b>sequence of machine instructions</b>: loads, multiplies, adds, compares, jumps, stores. The processor's only job is to execute that sequence. The simplest useful processor has three parts:</p>
+  <figure class="fig"><div class="sc"><svg id="simpleCore" viewBox="0 0 760 230" role="img" aria-label="Simple processor: fetch/decode, ALU, execution context with registers"></svg></div>
+    <figcaption><b>The three boxes.</b> <b>Fetch/decode</b> works out which instruction runs next. The <b>ALU</b> (execution unit) performs it. The <b>execution context</b> holds the program's state: registers, and the PC that says where we are. This simple processor completes one instruction per clock. Keep these three boxes in mind, because every idea in this lecture duplicates one of them.</figcaption></figure>
+  <p>Each clock, the processor fetches the instruction at the PC, decodes it, the ALU executes it, and the result goes back into a register (or memory). Then the PC advances. Unit 1 builds exactly this machine from gates.</p>
+</section>
+
+<section class="lesson" id="s2" data-toc="ILP & superscalar" data-n="2">
+  <div class="lesson-h"><div class="kicker">Section 2</div><h2>Instruction-level parallelism and superscalar cores</h2></div>
+  <p>Instructions in a program are written in order, but many don't actually depend on each other. Draw an arrow from each instruction to every instruction that uses its result, and you get a <b>dependency graph</b>. Instructions with no path between them could run at the same time. That's <b>instruction-level parallelism (ILP)</b>.</p>
+  <figure class="fig"><div class="widget">
+    <div class="grid2">
+      <div><div class="asm" id="ilpAsm" style="margin:0"></div></div>
+      <div><svg id="ilpGraph" class="fit" viewBox="0 0 360 330" role="img" aria-label="Dependency graph of the program" style="width:100%;height:auto"></svg></div>
+    </div>
+    <div class="ctrl"><span class="readout">Issue width:</span><div class="seg" role="group" aria-label="Issue width"><button data-iw="1">1 per clock</button><button data-iw="2" aria-pressed="true">2 per clock</button><button data-iw="3">3 per clock</button><button data-iw="8">unlimited</button></div></div>
+    <div class="sc" style="padding:8px 0 0"><svg id="ilpSched" viewBox="0 0 760 120" role="img" aria-label="Schedule of instructions per clock" style="min-width:520px"></svg></div>
+    <p class="msg" id="ilpMsg"></p>
+  </div><figcaption><b>Width helps until the dependency chain takes over.</b> The longest chain through the graph (00 → 02 → 05 → 07 → 08 → 09) is 6 instructions long, so no processor can finish in fewer than 6 clocks, however wide. The branch at 08 depends on h, and only one of 09/10 runs (here h = 7 > 5, so 09).</figcaption></figure>
+  <p>A <b>superscalar</b> processor exploits ILP automatically. It has several fetch/decode units and several ALUs, and <b>out-of-order control logic</b> that finds independent instructions in the stream and issues them together. It still has <b>one execution context</b>: this is parallelism <i>within</i> one instruction stream.</p>
+  <div class="pitfall"><b>"Respecting program order"</b> doesn't mean executing instructions strictly in sequence. It means the <i>results</i> must be exactly what sequential execution would produce: dependencies honoured, and visible state updated as if one instruction ran at a time. Unit 3's reorder buffer is how cores guarantee this.</div>
+  <p>The catch: real programs typically contain only a few independent instructions at a time. Beyond about 4-wide, extra issue width buys little for ordinary code. That's the wall the rest of this lecture climbs over.</p>
+</section>
+
+<section class="lesson" id="s3" data-toc="Memory & caches" data-n="3">
+  <div class="lesson-h"><div class="kicker">Section 3</div><h2>Memory: an array of bytes, implemented with caches</h2></div>
+  <p>From the program's point of view, <b>memory is one big array of bytes</b>. Each byte has an <b>address</b> (its index), and a load or store names an address. That's the <i>abstraction</i>. The <i>implementation</i> is much more complicated, but it never changes what a program computes, only how fast.</p>
+  <p>A <b>cache</b> is small on-chip storage that keeps copies of recently used parts of memory. If an address is in the cache, loading it is fast. If not, the data must come from DRAM, which is slow. Caches work in fixed-size chunks called <b>cache lines</b>: a miss brings in the whole line containing the address.</p>
+  <h3>Try it: a two-line cache</h3>
+  <p>A 16-byte array and a tiny cache with <b>4-byte lines</b>, fully associative, with <b>LRU</b> (least recently used) replacement. Choose 2 or 4 lines of capacity and step through an access sequence.</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 8px"><span class="readout">Capacity:</span><div class="seg" role="group" aria-label="Cache capacity"><button data-cap="2" aria-pressed="true">2 lines (8 B)</button><button data-cap="4">4 lines (16 B)</button></div>
+      <span class="readout" style="margin-left:8px">Sequence:</span><button data-cs="loc">locality demo</button><button data-cs="scan">read array twice</button></div>
+    <div class="bytes" id="cBytes"></div>
+    <div class="slots" id="cSlots"></div>
+    <p class="msg" id="cMsg"></p>
+    <div class="strip" id="cStrip"></div>
+    <div class="ctrl"><button id="cBack">◀ Back</button><button id="cStep" class="pri">Next access ▶</button><button id="cAll">Run all</button><button id="cReset">Reset</button><span class="readout" id="cOut"></span></div>
+  </div><figcaption><b>Two kinds of locality.</b> <b>Spatial</b>: loading one byte brings its whole line, so neighbouring bytes then hit. <b>Temporal</b>: reusing an address soon after using it hits. In "read array twice" with 2 lines, the second pass misses on every line, even though every byte was read moments before. The cache is too small to hold the whole array (a <b>capacity miss</b>). With 4 lines, the second pass hits everywhere.</figcaption></figure>
+  <h3>The hierarchy, and why it matters</h3>
+  <p>Real machines stack several caches: small, fast L1 next to each core, larger and slower L2, a big shared L3, and then DRAM. The instruction "load address X into R0" may be served by any of them. Here's what that costs on an Intel Kaby Lake desktop CPU at 4 GHz:</p>
+  <figure class="fig"><div class="sc"><svg id="latSvg" viewBox="0 0 760 200" role="img" aria-label="Access latency bars: L1 4 cycles, L2 12, L3 38, DRAM about 248"></svg></div>
+    <figcaption><b>About 60× between an L1 hit and DRAM.</b> Figures are for a Kaby Lake CPU, as quoted in the lecture. A core that can issue several instructions per clock does nothing for ~250 cycles while it waits for DRAM, unless something else is available to run. Part 2 of this lecture is about exactly that problem.</figcaption></figure>
+  <div class="predict"><div class="ph"><b>Predict</b><span>Answer before opening.</span></div><ol>
+    <li>In "read array twice" with a 2-line cache, why is the second read of address 0x0 a miss? What about 0x4?
+      <details><summary>Show answer</summary><div class="ans"><p>After the first pass the cache holds only the last two lines, 0x8 and 0xC. Line 0x0 was evicted (least recently used) when 0x8 arrived, so 0x0 misses. Loading it evicts 0x8, the LRU line, and then line 0x4 is also gone (it was evicted when 0xC came in), so 0x4 misses too. Every line misses on the second pass: a textbook <b>capacity</b> problem.</p></div></details></li>
+    <li>Would the answer change with 4 lines?
+      <details><summary>Show answer</summary><div class="ans"><p><b>Yes.</b> 4 lines × 4 bytes = 16 bytes, the whole array. After 4 cold misses in the first pass, every access of the second pass hits.</p></div></details></li>
+  </ol></div>
+</section>
+
+<!-- ================================ PART 1 ================================ -->
+<div class="partbar" id="p1"><div class="kicker">Part 1 · Parallel execution</div><h2>Three ways to do more work per clock</h2><p>Superscalar execution ran out of steam. Here's what chip designers did with their transistors instead.</p></div>
+
+<section class="lesson" id="s4" data-toc="Running example: sin(x)" data-n="4" style="margin-top:36px">
+  <div class="lesson-h"><div class="kicker">Section 4</div><h2>The running example: sin(x) for a whole array</h2></div>
+  <p>The lecture uses one program throughout. Compute sin(x) for each of N numbers using the <b>Taylor series</b>:</p>
+  <p style="text-align:center;font:600 17px var(--mono)">sin(x) = x − x³/3! + x⁵/5! − x⁷/7! + …</p>
+  <div class="asm">
+    <div class="r"><span class="a"></span><span class="i">for i = 0 … N−1:</span><span class="c">one iteration per array element</span></div>
+    <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;value = x[i]; numer = x[i]³; denom = 6; sign = −1</span><span class="c">first term x, then set up x³/3!</span></div>
+    <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;for j = 1 … terms:</span><span class="c">add one more term each time</span></div>
+    <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;&nbsp;&nbsp;value += sign · numer / denom</span><span class="c"></span></div>
+    <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;&nbsp;&nbsp;numer ·= x[i]²; denom ·= (2j+2)(2j+3); sign = −sign</span><span class="c">next power, next factorial, flip sign</span></div>
+    <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;y[i] = value</span><span class="c">write the result</span></div>
+  </div>
+  <figure class="fig"><div class="sc"><svg id="sinSvg" viewBox="0 0 760 200" role="img" aria-label="Each output y[i] depends only on x[i]; iterations are independent, but each iteration's inner loop is a dependency chain"></svg></div>
+    <figcaption><b>Two facts about this program decide everything.</b> Each <b>outer iteration is independent</b>: y[i] depends only on x[i]. And each iteration runs <b>exactly the same instructions</b>, just on different data. <i>Inside</i> one iteration, the inner loop is a chain where every term needs the previous numer and denom, so a superscalar core finds little ILP there.</figcaption></figure>
+  <p>Compiled for a simple core, the program is one instruction stream that processes one element at a time. A superscalar core would find almost no ILP in the inner loop, so it would mostly run one instruction per clock. Let's see what else we could build.</p>
+</section>
+
+<section class="lesson" id="s5" data-toc="Idea 1: multiple cores" data-n="5">
+  <div class="lesson-h"><div class="kicker">Section 5 · Idea #1</div><h2>Use the transistors for more cores</h2></div>
+  <div class="card4">
+    <div class="c1"><span class="l">Problem</span>Extra transistors spent on one core (bigger caches, smarter out-of-order logic, better branch prediction) made single streams only slightly faster.</div>
+    <div class="c2"><span class="l">Idea</span>Build several simpler cores instead, each with its own fetch/decode, ALU and execution context.</div>
+    <div class="c3"><span class="l">Program must provide</span><b>Multiple instruction streams</b> (threads), with enough independent work to give every core some.</div>
+    <div class="c4"><span class="l">Cost</span>Each simple core is slower on its own. Unparallelized code gets <i>slower</i>, not faster.</div>
+  </div>
+  <p>Before about 2005, most of a CPU's transistors went into making a <b>single instruction stream</b> run faster: out-of-order logic, a sophisticated branch predictor, a memory prefetcher, a large data cache. Only a small fraction was the ALU doing the actual arithmetic.</p>
+  <figure class="fig"><div class="sc"><svg id="fancySvg" viewBox="0 0 760 244" role="img" aria-label="One fancy core with large control logic versus two simpler cores"></svg></div>
+    <figcaption><b>Trade sophistication for count.</b> Suppose each simpler core runs a single stream 25% slower than the fancy one. Two of them still give a potential 2 × 0.75 = <b>1.5×</b> the throughput, <i>if</i> there are two streams to run.</figcaption></figure>
+  <p>But the sin(x) program as written expresses no parallelism. It compiles to <b>one</b> instruction stream, which runs on <b>one</b> core. On the dual-core chip it now runs 25% <i>slower</i> than on the fancy single core. The hardware can't split a sequential program for you: someone has to state that the iterations are independent.</p>
+  <h3>Expressing the parallelism</h3>
+  <p><b>Option 1: threads.</b> Create a second software thread and give it half the array. The main thread computes the other half, then waits for the helper to finish ("join"). With a C++ threading library that's a few lines. The programmer decides the split explicitly.</p>
+  <p><b>Option 2: declare independence.</b> The lecture uses an imaginary <code>forall</code> loop, "for all i from 0 to N, in any order", which tells the compiler that iterations don't depend on each other. The compiler or runtime is then free to split them across cores itself. Real equivalents include OpenMP's <code>parallel for</code>, and the data-parallel languages you'll meet later in CS149 (ISPC, CUDA).</p>
+  <figure class="fig"><div class="sc"><svg id="coresSvg" viewBox="0 0 760 236" role="img" aria-label="Scaling from 1 to 16 cores; each core runs a different element's instruction stream"></svg></div>
+    <figcaption><b>Sixteen cores, sixteen simultaneous instruction streams,</b> each computing a different element. This is <b>thread-level parallelism</b>. Real examples: a 10-core Intel Core i9 (Comet Lake, 2020); Apple's A15 phone chip with 2 big and 4 small CPU cores; and the NVIDIA chip in the RTX 4090, whose die has 144 GPU "cores", called SMs (128 enabled on that product).</figcaption></figure>
+</section>
+
+<section class="lesson" id="s6" data-toc="Idea 2: SIMD" data-n="6">
+  <div class="lesson-h"><div class="kicker">Section 6 · Idea #2</div><h2>Share one instruction stream across many ALUs</h2></div>
+  <div class="card4">
+    <div class="c1"><span class="l">Problem</span>Every core pays for fetch/decode and control logic, but only has one ALU doing math.</div>
+    <div class="c2"><span class="l">Idea</span><b>SIMD</b> (single instruction, multiple data): one fetch/decode drives many ALUs, all running the same instruction on different data.</div>
+    <div class="c3"><span class="l">Program must provide</span>Many data elements that need the <b>same instruction sequence</b>: coherent execution.</div>
+    <div class="c4"><span class="l">Cost</span>Wide registers and datapaths. When elements need different instructions, lanes sit idle (divergence).</div>
+  </div>
+  <p>Notice what sin(x) does. Every iteration runs the <i>same</i> instructions on a <i>different</i> x[i]. So why fetch and decode each instruction eight times for eight elements? Fetch it once, and send it to <b>eight ALUs</b> that each hold a different element. The cost of managing the instruction stream is <b>amortized</b> across all the ALUs.</p>
+  <figure class="fig"><div class="sc"><svg id="simdSvg" viewBox="0 0 760 220" role="img" aria-label="One fetch/decode unit broadcasting each instruction to eight ALUs"></svg></div>
+    <figcaption><b>One instruction, eight results.</b> The execution context now holds <b>vector registers</b>: each 256-bit register holds eight 32-bit floats, one per ALU lane. <code>vmulps</code> multiplies all eight pairs at once.</figcaption></figure>
+  <p>To use this from C, the programmer (or compiler) rewrites the loop to step through the array <b>8 elements at a time</b>. Each scalar operation becomes a vector operation, using "intrinsics": C functions that map directly to vector instructions. For Intel's AVX, <code>_mm256_mul_ps(a, b)</code> multiplies two vectors of eight floats. The Taylor series logic is unchanged. Every variable (value, numer, denom) simply becomes a vector of eight, and the loop's i advances by 8.</p>
+  <div class="tbl"><table>
+    <tr><th>Instruction set</th><th>Vector width</th><th>32-bit floats per instruction</th></tr>
+    <tr><td>Intel/AMD AVX2</td><td class="m">256 bits</td><td>8</td></tr>
+    <tr><td>Intel AVX-512</td><td class="m">512 bits</td><td>16</td></tr>
+    <tr><td>Arm NEON</td><td class="m">128 bits</td><td>4</td></tr>
+  </table></div>
+  <p>Where do the vector instructions come from? Three ways: the programmer writes <b>intrinsics</b>; the language's semantics allow them (like <code>forall</code>, which promises independence); or an <b>auto-vectorizing compiler</b> proves on its own that loop iterations are independent. In all three cases the SIMD instructions are chosen at <b>compile time</b>, and you can see them in the binary. That's called <b>explicit SIMD</b>.</p>
+  <figure class="fig"><div class="sc"><svg id="simd16Svg" viewBox="0 0 760 170" role="img" aria-label="16 cores times 8 SIMD lanes equals 128 elements in parallel"></svg></div>
+    <figcaption><b>Multiply the two ideas.</b> 16 cores × 8-wide SIMD = <b>128 ALUs</b> computing 128 elements at once, from just 16 instruction streams.</figcaption></figure>
+</section>
+
+<section class="lesson" id="s7" data-toc="Branches & divergence" data-n="7">
+  <div class="lesson-h"><div class="kicker">Section 7</div><h2>Conditional execution: what if lanes disagree?</h2></div>
+  <p>SIMD assumes all lanes run the same instruction. But loop bodies contain <code>if</code> statements, and different elements can take different sides. Say each lane holds one t = x[i]:</p>
+  <div class="asm">
+    <div class="r"><span class="a"></span><span class="i">if (t &gt; 0):</span><span class="c">"then" side: 3 instructions</span></div>
+    <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;t = t · t; t = t + 1; t = √t</span><span class="c"></span></div>
+    <div class="r"><span class="a"></span><span class="i">else:</span><span class="c">"else" side: 2 instructions</span></div>
+    <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;t = −t; t = t · 2</span><span class="c"></span></div>
+    <div class="r"><span class="a"></span><span class="i">y[i] = t</span><span class="c">everyone meets again here</span></div>
+  </div>
+  <p>One instruction stream can't go both ways at once. So the hardware runs <b>both sides</b>, one after the other, with a <b>mask</b>. During the "then" side, lanes whose condition is false are switched off: they compute nothing, or their results are discarded. During the "else" side, it's the other way round. After the <code>if</code>, all lanes are active again. Click lanes to flip their condition:</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 10px"><span class="readout">Presets:</span><button data-dp="all">all positive</button><button data-dp="half">half and half</button><button data-dp="one">one lane positive</button><button data-dp="alt">alternating</button></div>
+    <div class="lanes" id="dvLanes"></div>
+    <div class="sc" style="padding:10px 0 0"><svg id="dvSvg" viewBox="0 0 760 250" role="img" aria-label="Clock-by-clock lane activity for the if/else" style="min-width:560px"></svg></div>
+    <div class="stat" id="dvStat"></div>
+  </div><figcaption><b>Masked lanes do no useful work.</b> The copper cells are lanes doing useful work. The hatched cells are lanes switched off while the other side of the branch runs. A side that no lane needs can be skipped entirely ("all positive" costs 3 clocks, not 5).</figcaption></figure>
+  <p>How bad can it get? The worst case has only <b>one</b> of the 8 lanes doing work for most of the time. For example, <code>if (i % 8 == 0) { very long computation }</code> keeps a single lane busy while 7 idle, which is <b>1/8 of peak</b>. It needs only one <code>if</code>.</p>
+  <h3>Useful vocabulary</h3>
+  <ul>
+    <li><b>Coherent execution</b> (instruction-stream coherence): many data elements need the same instruction sequence. It's <b>necessary</b> for SIMD to be efficient, and <b>not</b> necessary for multi-core, since each core has its own fetch/decode and can follow its own path.</li>
+    <li><b>Divergent execution</b>: the lack of coherence, where lanes need different instructions.</li>
+  </ul>
+  <h3>Explicit versus implicit SIMD</h3>
+  <p>On CPUs, the compiler emits vector instructions (<b>explicit SIMD</b>). Most GPUs work differently. The compiler emits a <i>scalar</i> program, the hardware always runs many copies of it together, and the <b>hardware</b> puts the copies executing the same instruction onto the SIMD lanes. This is <b>implicit SIMD</b>, also called SIMT (single instruction, multiple threads). GPU SIMD widths are typically 8–32, so badly divergent GPU code can run at 1/32 of peak.</p>
+  <figure class="fig"><div class="sc"><svg id="simtSvg" viewBox="0 0 760 190" role="img" aria-label="Explicit SIMD: compiler emits vector instructions. Implicit SIMD: many scalar threads grouped by hardware"></svg></div>
+    <figcaption><b>Same ALUs, different contract.</b> With explicit SIMD, you can see the vector instructions in the binary. With implicit SIMD (GPUs), the binary is scalar, and the grouping of threads onto lanes happens in hardware at run time.</figcaption></figure>
+</section>
+
+<section class="lesson" id="s8" data-toc="Three forms, real chips" data-n="8">
+  <div class="lesson-h"><div class="kicker">Section 8</div><h2>Three forms of parallel execution, on real chips</h2></div>
+  <div class="tbl"><table>
+    <tr><th>Form</th><th>What runs in parallel</th><th>Who finds the parallelism</th><th>Needs from the program</th></tr>
+    <tr><td><b>Superscalar</b></td><td>Different instructions from <i>one</i> stream, within one core</td><td>Hardware, automatically, at run time</td><td>Independent instructions nearby (ILP)</td></tr>
+    <tr><td><b>SIMD</b></td><td>The same instruction on many data elements, within one core</td><td>Compiler (explicit) or hardware (implicit)</td><td>Data parallelism + coherent control flow</td></tr>
+    <tr><td><b>Multi-core</b></td><td>Completely different instruction streams on different cores</td><td>Software: threads, or a <code>forall</code>-style construct</td><td>Independent tasks (threads)</td></tr>
+  </table></div>
+  <figure class="fig"><div class="sc"><svg id="threeSvg" viewBox="0 0 760 250" role="img" aria-label="Three example processors: superscalar single core, dual core, and SIMD quad-core"></svg></div>
+    <figcaption><b>Count the boxes.</b> A superscalar core has two fetch/decode units and two ALUs, but one context. A dual-core chip has two of everything. A SIMD quad-core has four cores, each with one fetch/decode driving eight lanes.</figcaption></figure>
+  <h3>Worked example: peak throughput of a real CPU</h3>
+  <div class="worked">
+    <p>An <b>Intel Core i7-7700K</b> (Kaby Lake, 2017) has <b>4 cores</b>. Each core has <b>three 8-wide SIMD</b> floating-point units (AVX2), and the chip runs at about <b>4.2 GHz</b>:</p>
+    <p style="font-family:var(--mono)">4 cores × 3 units × 8 lanes × 4.2 × 10⁹ clocks/s ≈ <b>400 billion operations per second</b> (≈ 400 GFLOP/s)</p>
+    <p>A single scalar stream on one core, doing one operation per clock, reaches 4.2 GFLOP/s, about <b>1%</b> of that. The other 99% is available only to programs that are both multi-threaded <i>and</i> vectorized.</p>
+  </div>
+  <div class="worked">
+    <p>An <b>NVIDIA V100</b> GPU (2017) has <b>80 SMs</b> (its "cores"). Each SM has <b>64 FP32 SIMD lanes</b>, and each lane can do a fused multiply-add (2 floating-point operations) per clock at about <b>1.53 GHz</b>:</p>
+    <p style="font-family:var(--mono)">80 × 64 × 2 × 1.53 × 10⁹ ≈ <b>15.7 TFLOP/s</b> at about 250 W</p>
+    <p>That's roughly 40× the CPU. The GPU's cores are simpler, and far more of its chip is ALUs. Section 12 looks inside one SM.</p>
+  </div>
+</section>
+
+<!-- ================================ PART 2 ================================ -->
+<div class="partbar" id="p2"><div class="kicker">Part 2 · Accessing memory</div><h2>Keeping all those ALUs fed</h2><p>More ALUs make the memory problem worse, because they all stall together when data isn't there.</p></div>
+
+<section class="lesson" id="s9" data-toc="Stalls, caches, prefetching" data-n="9" style="margin-top:36px">
+  <div class="lesson-h"><div class="kicker">Section 9</div><h2>Stalls, and two ways to shorten or hide them</h2></div>
+  <p>A processor <b>stalls</b> when it can't run the next instruction because that instruction needs a result that isn't ready. The classic cause is a load that has to go all the way to DRAM: about 250 cycles on the Kaby Lake chip. A core that could have completed hundreds of vector operations does nothing.</p>
+  <figure class="fig"><div class="sc"><svg id="hierSvg" viewBox="0 0 760 220" role="img" aria-label="Multi-core cache hierarchy with private L1/L2 per core, shared L3, and DRAM at 38 GB/s"></svg></div>
+    <figcaption><b>Where a multi-core CPU's data lives.</b> Each core has private L1 (32 KB) and L2 (256 KB) caches, all cores share an 8 MB L3, and DRAM is reached at about 38 GB/s in this example. Caches both <b>reduce latency</b> (for recently used data) and <b>provide high bandwidth</b>.</figcaption></figure>
+  <h3>Technique 1: caches reduce the length of stalls</h3>
+  <p>When data was used recently, it's probably still in a cache, and a 4-cycle L1 hit replaces a 250-cycle DRAM trip. Caches work well when programs have locality (Section 3). They don't help the first time data is touched, or when the working set is larger than the cache.</p>
+  <h3>Technique 2: prefetching hides stalls</h3>
+  <p>Many CPUs watch the stream of addresses a program loads, spot patterns such as "each load is 64 bytes after the previous one", and <b>fetch data into the cache before it's requested</b>. When the program finally issues the load, it hits.</p>
+  <figure class="fig"><div class="sc"><svg id="pfSvg" viewBox="0 0 760 190" role="img" aria-label="Timeline: without prefetching the load stalls; with prefetching the data arrives before the load"></svg></div>
+    <figcaption><b>Prefetching moves the waiting earlier, overlapping it with useful work.</b> Wrong guesses have a cost: they use memory bandwidth and can evict data the program actually needs ("cache pollution").</figcaption></figure>
+  <p>What if the data wasn't used recently <i>and</i> the next address is unpredictable? For example, <code>x = some_function(); y = A[x];</code>, where nobody can know x until it's computed. Caches and prefetchers can't help. We need a third idea.</p>
+</section>
+
+<section class="lesson" id="s10" data-toc="Idea 3: multithreading" data-n="10">
+  <div class="lesson-h"><div class="kicker">Section 10 · Idea #3</div><h2>Hide stalls by switching to another thread</h2></div>
+  <div class="card4">
+    <div class="c1"><span class="l">Problem</span>Long, unpredictable memory stalls leave the ALUs idle, and caches and prefetchers can't always prevent them.</div>
+    <div class="c2"><span class="l">Idea</span>Keep several threads' execution contexts on the core. When one stalls, run another.</div>
+    <div class="c3"><span class="l">Program must provide</span><b>More independent work than there are ALUs</b>, so there's always a runnable thread.</div>
+    <div class="c4"><span class="l">Cost</span>Storage for more contexts, and each thread takes longer to finish. Throughput goes up, per-thread latency goes up too.</div>
+  </div>
+  <p>Think of doing laundry. You don't stand at the washing machine for 40 minutes. You start a load and go cook dinner, and come back when the machine is done. A <b>multithreaded core</b> does the same with instruction streams. It holds, say, 4 execution contexts (4 hardware threads), each working on different elements. When thread 1 issues a load that misses, the core immediately starts issuing instructions from thread 2. By the time threads 2, 3 and 4 have all stalled, thread 1's data may have arrived.</p>
+  <figure class="fig"><div class="sc"><svg id="mt4Svg" viewBox="0 0 760 250" role="img" aria-label="Four hardware threads on one core: while one is stalled, another runs; the ALUs stay busy"></svg></div>
+    <figcaption><b>One core, four hardware threads.</b> Each thread processes 8 elements with the 8-wide SIMD unit. Blue is running, red is stalled on memory, and grey is <b>runnable but waiting its turn</b>. The ALUs are almost always busy.</figcaption></figure>
+  <div class="insight"><b>The throughput trade-off.</b> Look at thread 1: once its data arrives it is <i>runnable</i>, but it has to wait while threads 2–4 use the core. Multithreading makes <b>each individual thread take longer</b> in order to make the <b>whole system finish more work per second</b>. This is the defining choice of throughput-oriented processors like GPUs.</div>
+  <h3>No free lunch: context storage</h3>
+  <p>Every hardware thread needs its registers stored on the chip. That storage is finite, so a design must choose how to divide it: <b>many small contexts</b> (lots of threads, each with few registers, so lots of latency hiding) or <b>a few large contexts</b> (fewer threads, each with a big working set).</p>
+  <figure class="fig"><div class="sc"><svg id="ctxSvg" viewBox="0 0 760 210" role="img" aria-label="Same context storage split into 16 small contexts or 4 large ones"></svg></div>
+    <figcaption><b>Same storage, two splits.</b> GPUs lean far to the left, with dozens of small contexts per core. CPUs lean right, with 1–2 large ones. A program that needs many registers per thread fits fewer threads, so it hides less latency. That's the GPU "occupancy" trade-off you'll meet later.</figcaption></figure>
+  <h3>Interleaved versus simultaneous</h3>
+  <p><b>Interleaved (temporal) multithreading</b>: each clock, the core picks <i>one</i> thread and runs its instruction. That's the model in these diagrams. <b>Simultaneous multithreading (SMT)</b>: each clock, the core can pick instructions from <i>several</i> threads and run them on different ALUs at once. Intel's Hyper-Threading, with 2 threads per core, is SMT. Either way, the core has the <b>same number of ALUs</b>. Multithreading doesn't add compute. It only helps keep the existing ALUs busy when some threads are waiting.</p>
+</section>
+
+<section class="lesson" id="s11" data-toc="How many threads?" data-n="11">
+  <div class="lesson-h"><div class="kicker">Section 11</div><h2>How many threads does it take?</h2></div>
+  <p>Consider a simple core that runs <b>one scalar instruction per clock</b> from one of its hardware threads. Each thread runs a loop: <b>some arithmetic instructions, then a memory load</b> whose data arrives after a fixed latency. The thread can't continue until it does. How busy is the core?</p>
+  <figure class="fig"><div class="widget">
+    <div class="calc">
+      <label class="rl" for="muK">arithmetic instructions per load = <b id="muKv">3</b><input id="muK" type="range" min="1" max="12" value="3"></label>
+      <label class="rl" for="muL">memory latency = <b id="muLv">12</b> cycles<input id="muL" type="range" min="2" max="40" value="12"></label>
+      <label class="rl" for="muT">hardware threads = <b id="muTv">1</b><input id="muT" type="range" min="1" max="8" value="1"></label>
+    </div>
+    <div class="sc" style="padding:10px 0 0"><svg id="muSvg" viewBox="0 0 760 300" role="img" aria-label="Timeline of each hardware thread running, stalled or waiting, and core utilization" style="min-width:560px"></svg></div>
+    <div class="stat" id="muStat"></div>
+    <p class="msg" id="muMsg"></p>
+  </div><figcaption><b>Blue is running, red is stalled on memory, and grey is ready but waiting for the core.</b> With 3 arithmetic instructions and a 12-cycle load, one thread keeps the core busy 3 of every 15 cycles (20%). Two threads give 40%. <b>Five</b> threads give 100%, and more threads add nothing. Raise the arithmetic to 6 per load and only three threads are needed.</figcaption></figure>
+  <p>The rule falls out of the timeline. A thread computes for <i>k</i> cycles and then waits <i>L</i> cycles, so one period is k + L cycles. To fill the whole period, the core needs enough threads that their compute bursts cover it:</p>
+  <p style="text-align:center;font:600 17px var(--mono)">threads needed = ⌈(k + L) / k⌉ = ⌈1 + L / k⌉ &nbsp;&nbsp;&nbsp; utilization = min(1, T·k / (k + L))</p>
+  <div class="insight"><b>Takeaway 1:</b> a multithreaded core avoids stalls by running other threads' instructions while one waits. The <b>memory latency itself doesn't change</b>. It just stops costing utilization.<br><br><b>Takeaway 2:</b> the more arithmetic a program does per memory access, the <b>fewer threads</b> it needs to hide the stalls. Latency is hidden by <i>other threads' arithmetic</i>.</div>
+  <div class="predict"><div class="ph"><b>Predict</b><span>Use the formula, then check with the sliders.</span></div><ol>
+    <li>With 4 arithmetic instructions per load and a 20-cycle memory latency, how many threads reach 100%? What is the utilization with 3 threads?
+      <details><summary>Show answer</summary><div class="ans"><p>(4 + 20) / 4 = <b>6 threads</b>. With 3: 3 × 4 / 24 = <b>50%</b>.</p></div></details></li>
+    <li>Adding an 8th thread to the 3-instruction / 12-cycle program: does anything get faster?
+      <details><summary>Show answer</summary><div class="ans"><p><b>Total throughput doesn't change</b>, because the core is already 100% busy with 5 threads. And <b>each thread gets slower</b>, because it waits longer for its turn after its data arrives.</p></div></details></li>
+  </ol></div>
+</section>
+
+<section class="lesson" id="s12" data-toc="Real cores: CPU & GPU" data-n="12">
+  <div class="lesson-h"><div class="kicker">Section 12</div><h2>All the ideas in one chip</h2></div>
+  <p>Combine everything: multiple cores, each with SIMD ALUs, each running multiple hardware threads. Here's the lecture's fictitious chip:</p>
+  <figure class="fig"><div class="sc"><svg id="fictSvg" viewBox="0 0 760 266" role="img" aria-label="Fictitious chip: 16 cores, each 8-wide SIMD with 4 hardware threads"></svg></div>
+    <figcaption><b>16 cores × 8 SIMD ALUs × 4 threads.</b> 128 ALUs. 16 instruction streams running at any instant (one per core). 64 instruction streams resident (4 per core). And <b>16 × 4 × 8 = 512 independent pieces of work</b> needed to fill every lane of every thread, for maximum latency hiding.</figcaption></figure>
+  <h3>A real CPU core: Intel Skylake / Kaby Lake</h3>
+  <figure class="fig"><div class="sc"><svg id="skySvg" viewBox="0 0 760 270" role="img" aria-label="Skylake core: two hardware threads, several fetch/decode paths, scalar ALUs and three 8-wide vector units"></svg></div>
+    <figcaption><b>Every idea at once.</b> 2 hardware threads (SMT). Up to 4 independent scalar instructions and up to 3 8-wide vector instructions per clock (at most 2 vector multiplies or 3 vector adds). Load/store units aren't shown. A superscalar, SIMD, multithreaded core, and the chip has 4 of them.</figcaption></figure>
+  <h3>A GPU core: one NVIDIA V100 SM</h3>
+  <p>GPUs are <b>extreme throughput machines</b>: many simple cores, very wide SIMD, and huge numbers of hardware threads. NVIDIA calls a core a <b>streaming multiprocessor (SM)</b>, and a group of 32 threads executing together a <b>warp</b>.</p>
+  <figure class="fig"><div class="sc"><svg id="smSvg" viewBox="0 0 760 360" role="img" aria-label="V100 SM: four sub-cores, each with warp selector, fetch/decode, SIMD units and a 64 KB register file holding up to 16 warps; 128 KB shared memory/L1"></svg></div>
+    <figcaption><b>Inside one SM.</b> Four sub-cores. Each has a warp selector, fetch/decode, 16-wide FP32 and INT32 SIMD units, 8-wide FP64 units, a tensor core, load/store units, and a 64 KB register file. A 32-wide warp instruction runs on the 16-wide units over 2 clocks. Up to <b>64 warps</b> (16 per sub-core) are resident, so <b>64 × 32 = 2,048</b> threads' data is in flight per SM, and <b>80 SMs × 2,048 = 163,840</b> on the whole GPU. Registers total 256 KB per SM (more than the SM's 128 KB of shared memory/L1), because keeping every warp's state resident is what makes switching free.</figcaption></figure>
+  <div class="worked">
+    <p><b>Why so many threads?</b> The V100's memory delivers about 900 GB/s through a 4096-bit HBM interface, with latencies of hundreds of cycles. Section 11's formula says programs with little arithmetic per load need many threads to hide that, so the V100 is built to hold 163,840 of them at once.</p>
+  </div>
+</section>
+
+<!-- ================================ WRAP-UP ================================ -->
+<div class="partbar" id="p3"><div class="kicker">Wrap-up</div><h2>What your program must provide</h2><p>Three requirements, one thought experiment, and a chip you can build yourself.</p></div>
+
+<section class="lesson" id="s13" data-toc="The story so far" data-n="13" style="margin-top:36px">
+  <div class="lesson-h"><div class="kicker">Section 13</div><h2>The story so far</h2></div>
+  <p>To use a modern parallel processor efficiently, an application must:</p>
+  <figure class="fig"><div class="sc"><svg id="reqSvg" viewBox="0 0 760 200" role="img" aria-label="Three requirements mapped to multi-core, SIMD and multithreading"></svg></div>
+    <figcaption><b>Each hardware idea puts one demand on the software.</b> Miss the first and cores sit idle. Miss the second and SIMD lanes are masked off. Miss the third and everything stalls on memory.</figcaption></figure>
+  <h3>A thought experiment: multiplying two big vectors</h3>
+  <p>Take C[i] = A[i] × B[i] for millions of elements. For each element: load A[i], load B[i], multiply, store C[i]. It's perfectly parallel, needs the same instructions for every element, and has plenty of work for any number of threads. It meets all three requirements. Is it a good fit for a throughput processor like a GPU?</p>
+  <figure class="fig"><div class="widget">
+    <div class="calc"><label class="rl" for="bwB">memory bandwidth = <b id="bwBv">900</b> GB/s<input id="bwB" type="range" min="25" max="3000" step="25" value="900"></label>
+      <label class="rl" for="bwP">peak compute = <b id="bwPv">15.7</b> TFLOP/s<input id="bwP" type="range" min="0.2" max="60" step="0.1" value="15.7"></label></div>
+    <div class="sc" style="padding:8px 0 0"><svg id="bwSvg" viewBox="0 0 760 170" role="img" aria-label="Compute capability versus multiplies per second that memory can feed" style="min-width:560px"></svg></div>
+    <p class="msg" id="bwMsg"></p>
+  </div><figcaption><b>A preview of Lecture 3: latency is not the only memory problem.</b> Each multiply needs 12 bytes of memory traffic (two 4-byte inputs, one 4-byte output). At 900 GB/s that's only 75 billion multiplies per second, well under 1% of the V100's 15.7 TFLOP/s. No amount of multithreading fixes this. Multithreading hides <b>latency</b>, but this program is limited by <b>bandwidth</b>: bytes per second. The next lecture starts exactly there.</figcaption></figure>
+</section>
+
+<section class="lesson" id="s14" data-toc="Build a processor" data-n="14">
+  <div class="lesson-h"><div class="kicker">Section 14</div><h2>How it all fits together: build your own chip</h2></div>
+  <p>The lecture closes by combining the ideas one step at a time. Use the controls to build a chip and watch what each choice adds: more fetch/decode, more ALUs, more contexts, more cores. The counters show what the chip can do, and how much independent work your program must supply to use it.</p>
+  <figure class="fig"><div class="widget">
+    <div class="cfg">
+      <div><span class="readout">Cores</span><div class="seg" role="group" aria-label="Cores"><button data-cf="cores" data-v="1" aria-pressed="true">1</button><button data-cf="cores" data-v="2">2</button><button data-cf="cores" data-v="4">4</button><button data-cf="cores" data-v="16">16</button></div></div>
+      <div><span class="readout">SIMD width per ALU</span><div class="seg" role="group" aria-label="SIMD width"><button data-cf="simd" data-v="1" aria-pressed="true">scalar</button><button data-cf="simd" data-v="8">8-wide</button></div></div>
+      <div><span class="readout">Issue per clock (superscalar)</span><div class="seg" role="group" aria-label="Issue width"><button data-cf="issue" data-v="1" aria-pressed="true">1</button><button data-cf="issue" data-v="2">2</button></div></div>
+      <div><span class="readout">Hardware threads per core</span><div class="seg" role="group" aria-label="Threads"><button data-cf="thr" data-v="1" aria-pressed="true">1</button><button data-cf="thr" data-v="2">2</button><button data-cf="thr" data-v="4">4</button></div></div>
+    </div>
+    <div class="ctrl"><span class="readout">Presets:</span><button data-cfp="simple">simple core</button><button data-cfp="ss">superscalar</button><button data-cfp="mt">SIMD + 2 threads</button><button data-cfp="fict">lecture's fictitious chip</button></div>
+    <div class="sc" style="padding:10px 0 0"><svg id="cfSvg" viewBox="0 0 760 300" role="img" aria-label="Diagram of the configured chip, drawn in the style of the lecture slides"></svg></div>
+    <div class="stat" id="cfStat"></div>
+    <p class="msg" id="cfMsg"></p>
+  </div><figcaption><b>Drawn in the lecture's style:</b> grey data cache, orange fetch/decode and instruction selection, yellow ALUs, and blue execution contexts with their PC and registers. <b>Model:</b> with issue width 2 and SIMD on, the second instruction per clock is a scalar one alongside the vector one (as in the lecture's heterogeneous superscalar core). Threads are interleaved or simultaneous depending on the issue width. "Work needed" counts independent data elements: cores × threads × SIMD lanes.</figcaption></figure>
+</section>
+
+
+<section class="lesson" id="s15" data-toc="Every combination: saturation" data-n="15">
+  <div class="lesson-h"><div class="kicker">Section 15 · Going further</div><h2>Every combination: what does it take to saturate the chip?</h2></div>
+  <p>The lecture's closing slides assemble a processor one feature at a time: a second fetch/decode unit, wider execution units, more execution contexts, more cores. Each feature multiplies the chip's <b>peak</b> throughput. None of them multiplies the <b>actual</b> throughput unless the software supplies the matching kind of work. This section enumerates the combinations and states, for each one, exactly what "enough work" means.</p>
+
+  <h3>The four dials, and what each one asks of the program</h3>
+  <div class="tbl"><table>
+    <tr><th>Dial</th><th>Hardware added</th><th>What the program must supply to use it</th><th>What happens if it doesn't</th></tr>
+    <tr><td><b>Fetch/decode units</b> (issue width)</td><td>More instructions started per clock</td><td>Either <b>ILP</b>: independent instructions next to each other in one stream. Or, with simultaneous multithreading, <b>another ready thread</b>.</td><td>Extra issue slots stay empty</td></tr>
+    <tr><td><b>Execution units</b> (kind and width)</td><td>Scalar ALUs, 8-wide SIMD ALUs, or both</td><td>Instructions of the <b>right kind</b> (a scalar/vector mix matching the units) and, for SIMD, <b>coherent</b> data: 8 elements running the same instructions</td><td>Units of one kind idle, or SIMD lanes masked off</td></tr>
+    <tr><td><b>Execution contexts</b> (hardware threads)</td><td>Storage for more resident threads per core</td><td><b>More threads than issue slots</b>, enough that some are always ready while others wait on memory</td><td>The core stalls whenever its threads all wait on memory</td></tr>
+    <tr><td><b>Cores</b></td><td>More complete copies of everything</td><td><b>At least one independent instruction stream per core</b> (really: per context)</td><td>Whole cores sit idle</td></tr>
+  </table></div>
+
+  <h3>The permutation matrix</h3>
+  <p>Rows are the four core designs from the lecture. Columns are how many execution contexts each core has. Choose the number of cores and, for two-issue cores, whether the two instructions per clock must come from <b>one thread</b> (interleaved) or may come from <b>any threads</b> (simultaneous). Every card shows the per-chip peak and the recipe to saturate it. <b>Click a card</b> to load that design into the simulator below with the least demanding workload that saturates it. If the design has enough contexts, that's just enough arithmetic per load to hide a 12-clock memory latency. With too few contexts to hide any latency, it's a workload whose loads always hit in cache.</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 12px"><span class="readout">Cores:</span><div class="seg" role="group" aria-label="Cores"><button data-pc="1" aria-pressed="true">1</button><button data-pc="2">2</button><button data-pc="4">4</button><button data-pc="16">16</button></div>
+      <span class="readout" style="margin-left:8px">2-issue cores pick instructions from:</span><div class="seg" role="group" aria-label="Selection policy"><button data-pp="int" aria-pressed="true">one thread per clock</button><button data-pp="smt">any threads (SMT)</button></div></div>
+    <div class="pmx" id="pmx"></div>
+  </div><figcaption><b>How to read a card.</b> Each design is drawn the way the lecture's closing slides draw it: memory on top (and a shared data cache when there are several cores), then a grey core with its data cache, orange <b>instruction selection</b> and <b>fetch/decode</b> units, yellow <b>ALUs</b> (a 2 × 4 grid is one 8-wide vector ALU), and blue <b>execution contexts</b>, each with a PC and registers. With 4 or 16 cores, core 0 is drawn and the rest are stacked behind it. "Peak" counts lane-operations per clock for the whole chip. "Streams" is the number of independent instruction streams (threads) needed to occupy every context. "Work items" counts independent data elements. The remaining lines are the <i>properties</i> those streams must have. The latency-hiding line assumes the running example below (3 arithmetic instructions per load, 12-cycle memory latency).</figcaption></figure>
+
+  <h3>Try it: the saturation simulator</h3>
+  <p>Pick a design from the matrix (or set one here), then describe the software: how many threads it has, how much ILP each stream contains, what kind of instructions it runs, how coherent its SIMD work is, and how often it waits on memory. The simulator runs 120 clocks on each core, one issue decision per clock, and reports where the peak went.</p>
+  <figure class="fig"><div class="widget">
+    <div class="calc">
+      <div><span class="readout">Design</span><div class="seg" role="group" aria-label="Core design"><button data-sd="A">simple</button><button data-sd="B">superscalar</button><button data-sd="C" aria-pressed="true">SIMD</button><button data-sd="D">scalar+SIMD</button></div></div>
+      <div><span class="readout">Contexts per core</span><div class="seg" role="group" aria-label="Contexts"><button data-st="1">1</button><button data-st="2">2</button><button data-st="4" aria-pressed="true">4</button></div></div>
+      <div><span class="readout">Cores</span><div class="seg" role="group" aria-label="Cores"><button data-sc="1" aria-pressed="true">1</button><button data-sc="2">2</button><button data-sc="4">4</button></div></div>
+      <div><span class="readout">2-issue selection</span><div class="seg" role="group" aria-label="Selection"><button data-sp="int" aria-pressed="true">one thread</button><button data-sp="smt">SMT</button></div></div>
+    </div>
+    <div class="calc" style="margin-top:10px">
+      <label class="rl" for="swN">software threads = <b id="swNv">4</b><input id="swN" type="range" min="1" max="16" value="4"></label>
+      <div><span class="readout">ILP per stream</span><div class="seg" role="group" aria-label="ILP"><button data-sw-ilp="1" aria-pressed="true">1 (chain)</button><button data-sw-ilp="2">2 independent</button></div></div>
+      <div><span class="readout">Instruction mix</span><div class="seg" role="group" aria-label="Mix"><button data-sw-mix="S">scalar only</button><button data-sw-mix="V" aria-pressed="true">vector only</button><button data-sw-mix="SV">scalar + vector</button></div></div>
+      <div><span class="readout">SIMD coherence</span><div class="seg" role="group" aria-label="Coherence"><button data-sw-coh="1" aria-pressed="true">8/8 lanes</button><button data-sw-coh="0.5">4/8</button><button data-sw-coh="0.125">1/8</button></div></div>
+      <label class="rl" for="swK">arithmetic instructions per load = <b id="swKv">3</b><input id="swK" type="range" min="1" max="24" value="3"></label>
+      <label class="rl" for="swL">memory latency = <b id="swLv">12</b> clocks (0 = always hits)<input id="swL" type="range" min="0" max="40" value="12"></label>
+    </div>
+    <div class="sc" style="padding:12px 0 0"><p class="panel-t" id="satArchT"></p><svg id="satArch" role="img" aria-label="Architecture of the selected chip, drawn in the style of the lecture slides" style="min-width:0;max-width:100%;margin:0 auto"></svg></div>
+    <div class="sc" style="padding:10px 0 0"><svg id="satSvg" viewBox="0 0 760 240" role="img" aria-label="Clock-by-clock issue timeline for core 0" style="min-width:560px"></svg></div>
+    <div class="stat" id="satStat"></div>
+    <div class="chk" id="satChk"></div>
+  </div><figcaption><b>Model.</b> Each clock, each core issues up to its issue width (1 or 2). With "one thread", all of a clock's instructions come from the same thread, and a second instruction is possible only if that stream has ILP 2. With "SMT", the second slot can be filled from a different thread. An instruction needs a free unit of its kind (a scalar instruction may borrow an idle vector unit, using one lane). After every <i>k</i> arithmetic instructions a thread issues a load and stalls for the memory latency. The core keeps running a thread until it stalls, then switches to the next ready one (as in Section 11). Software threads beyond the available contexts aren't resident, so they can't help hide latency. The timeline shows core 0: each cell is an issue slot, coloured by the thread that used it.</figcaption></figure>
+
+  <h3>The general recipe</h3>
+  <p>For a chip with <b>C</b> cores, <b>T</b> contexts per core, issue width <b>W</b>, SIMD width <b>S</b>, and a workload doing <b>k</b> arithmetic instructions per load with memory latency <b>L</b>, saturation needs all of the following at once:</p>
+  <div class="tbl"><table>
+    <tr><th>#</th><th>Requirement</th><th>Quantity</th><th>Hardware it feeds</th></tr>
+    <tr><td>1</td><td>Independent instruction streams</td><td class="m">≥ C × T</td><td>every context on every core</td></tr>
+    <tr><td>2</td><td>Instructions per clock per core</td><td class="m">W from ILP (one thread) or from W threads (SMT)</td><td>fetch/decode + issue slots</td></tr>
+    <tr><td>3</td><td>Instruction mix</td><td class="m">matches the unit mix every clock</td><td>scalar vs vector units</td></tr>
+    <tr><td>4</td><td>Coherent data per vector instruction</td><td class="m">S elements, same control path</td><td>SIMD lanes</td></tr>
+    <tr><td>5</td><td>Resident threads per core to cover stalls</td><td class="m">≥ m × (b + L) / b, where b = k / r</td><td>ALUs during memory waits</td></tr>
+    <tr><td>6</td><td>Total independent work items</td><td class="m">≥ C × T × S</td><td>the whole chip</td></tr>
+  </table></div>
+  <p>In row 5, <b>r</b> is how many instructions one running thread issues per clock (1, or 2 with ILP on a 2-issue core). <b>b = k / r</b> is how long a thread's burst of arithmetic lasts before it stalls. <b>m</b> is how many threads must be running at once to fill the issue width: 1 normally, 2 on a 2-issue core in SMT mode when each stream has no ILP. For the simple core, this reduces to Section 11's ⌈(k + L)/k⌉.</p>
+  <div class="worked">
+    <p><b>Worked example: the Kaby Lake i7-7700K.</b> 4 cores, 2 hardware threads each (Hyper-Threading, which is SMT). Each core can issue up to 4 scalar and 3 eight-wide vector instructions per clock.</p>
+    <p>To saturate its vector units you need: <b>8 threads</b> (4 × 2), since fewer leaves contexts empty. Each clock, a core needs <b>3 vector instructions ready</b>, drawn from its 2 threads, so the two streams together need about 3 independent vector instructions per clock: high ILP inside each stream. Every vector instruction needs <b>8 coherent elements</b>, so at least 4 × 2 × 8 = <b>64 independent elements</b> in flight, and many more in practice, because 2 threads per core hide very little memory latency. The data must mostly <b>hit in cache</b>. With only 2 contexts, this CPU relies on caches and prefetching, not threads, to cover DRAM latency.</p>
+    <p>That's why hand-tuned numeric libraries (BLAS, for example) unroll loops heavily, vectorize everything, carefully block data for cache, and run one thread per hardware context. Each is a separate requirement from the table above.</p>
+  </div>
+  <div class="predict"><div class="ph"><b>Predict</b><span>Then set it up in the simulator.</span></div><ol>
+    <li>A superscalar (2-issue, scalar) core with 1 context runs a single dependency chain with no memory stalls. What's its utilization? What single change fixes it?
+      <details><summary>Show answer</summary><div class="ans"><p><b>50%</b>. The chain supplies one instruction per clock, so one ALU idles. Fix it with <b>ILP 2</b> (independent instructions in the stream). Adding a second context alone doesn't help in "one thread per clock" mode. It does help in <b>SMT</b> mode, where a second thread fills the other slot.</p></div></details></li>
+    <li>A SIMD core with 4 contexts runs 4 vectorized threads with 3 arithmetic instructions per 12-cycle load. Is it saturated? What if the code is only 4/8 coherent?
+      <details><summary>Show answer</summary><div class="ans"><p>It needs ⌈15/3⌉ = 5 threads to hide the latency, so 4 threads give <b>80% issue utilization</b>. At 4/8 coherence, each vector instruction does only half its lane-work, so the total is <b>40% of peak</b>. The two losses multiply.</p></div></details></li>
+    <li>A scalar+SIMD core (2-issue) runs vector-only code. What fraction of peak can it reach, and why?
+      <details><summary>Show answer</summary><div class="ans"><p>Peak is 1 + 8 = 9 lane-ops per clock, and vector-only code can use at most 8 (the scalar unit idles): <b>89%</b> at best. To reach 100%, every clock needs one scalar <i>and</i> one vector instruction ready, such as address arithmetic and loop counters running alongside the math.</p></div></details></li>
+    <li>You have 16 cores with 4 contexts each, but your program creates 8 threads. What fraction of the chip can possibly be busy?
+      <details><summary>Show answer</summary><div class="ans"><p>At most 8 of 16 cores have any work, so ≤ <b>50%</b>. Even those 8 cores have only 1 of their 4 contexts filled, so they can't hide memory latency either. You'd want at least 64 threads (16 × 4), and in practice a lot more than that.</p></div></details></li>
+  </ol></div>
+</section>
+
+<section class="lesson" id="gloss" data-toc="Glossary & review" data-n="✓">
+  <div class="lesson-h"><div class="kicker">Review</div><h2>Terms to know, and questions to test yourself</h2></div>
+  <dl class="glossary">
+    <dt>Instruction stream</dt><dd>The sequence of instructions one thread executes. Each needs its own execution context (registers, PC).</dd>
+    <dt>Superscalar</dt><dd>One core issuing several independent instructions from the <i>same</i> stream per clock, found automatically by hardware.</dd>
+    <dt>Multi-core</dt><dd>Several complete cores on one chip, each running its own instruction stream: thread-level parallelism.</dd>
+    <dt>SIMD</dt><dd>One instruction applied to many data elements across many ALUs, amortizing fetch/decode. <i>Explicit</i> (compiler emits vector instructions) or <i>implicit</i> (hardware groups scalar threads, as on GPUs).</dd>
+    <dt>Coherent control flow</dt><dd>Many elements following the same instruction sequence, which SIMD needs. Its absence is <i>divergence</i>, handled by masking lanes.</dd>
+    <dt>Hardware multithreading</dt><dd>Several execution contexts resident on one core so it can switch threads to hide stalls. <i>Interleaved</i>: one thread per clock. <i>Simultaneous (SMT)</i>: several threads in the same clock.</dd>
+    <dt>Latency vs throughput</dt><dd>Time to finish one task versus tasks finished per unit time. Throughput processors accept higher per-thread latency to gain throughput.</dd>
+    <dt>Stall</dt><dd>A cycle where the core can't issue because the next instruction's inputs aren't ready, usually waiting on memory.</dd>
+  </dl>
+  <div class="predict"><div class="ph"><b>Test yourself</b><span>The questions the lecture poses, plus a few more.</span></div><ol>
+    <li>A dual-core chip whose cores are each 25% slower than one fancy core runs the original sin(x) program. Is it faster or slower? What would make it faster?
+      <details><summary>Show answer</summary><div class="ans"><p><b>Slower</b> (by 25%). The program is one instruction stream, so it uses one core. Split the array between two threads (or declare the loop independent with a <code>forall</code>-style construct) and the potential becomes 2 × 0.75 = 1.5×.</p></div></details></li>
+    <li>Write the shortest code that makes 8-wide SIMD run at 1/8 of peak.
+      <details><summary>Show answer</summary><div class="ans"><p>One branch where only one lane in eight takes a long path: <code>if (i % 8 == 0) { long computation }</code>. For the whole long computation, 7 of 8 lanes are masked off.</p></div></details></li>
+    <li>Why does coherent control flow matter for SIMD but not for multi-core?
+      <details><summary>Show answer</summary><div class="ans"><p>SIMD lanes share one fetch/decode, so they can only execute one instruction at a time. Each core has its own fetch/decode, so different cores can follow completely different paths at full speed.</p></div></details></li>
+    <li>Compute the peak rate of a chip with 8 cores, two 16-wide FMA units per core, at 3 GHz (count an FMA as 2 FLOPs).
+      <details><summary>Show answer</summary><div class="ans"><p>8 × 2 × 16 × 2 × 3 × 10⁹ = <b>1.536 TFLOP/s</b>.</p></div></details></li>
+    <li>Does hardware multithreading make an individual memory access faster?
+      <details><summary>Show answer</summary><div class="ans"><p><b>No.</b> The latency is unchanged. The core just runs other threads' work during it, so the latency stops lowering utilization. Each individual thread actually finishes <i>later</i>.</p></div></details></li>
+    <li>How many independent data elements does a V100 need in flight for maximum latency hiding? Where does the number come from?
+      <details><summary>Show answer</summary><div class="ans"><p>80 SMs × 64 warps × 32 threads = <b>163,840</b>.</p></div></details></li>
+  </ol></div>
+  <p class="credit">Based on Stanford CS149 (Fall 2023), Lecture 2, "A Modern Multi-Core Processor", by Kayvon Fatahalian and Kunle Olukotun. Explanations, diagrams and interactive models on this page are original study material. Processor figures (Kaby Lake latencies, i7-7700K, V100) are as presented in the lecture and in vendor documentation. For the course's own slides and videos, see the <a href="https://gfxcourses.stanford.edu/cs149/fall23">CS149 course site</a>.</p>
+  <div class="nextunit"><a href="index.html"><small>← Back to</small>All CS149 lectures</a><a href="../unit-04-parallelism.html"><small>Related notes</small>Unit 4 · Add parallelism →</a></div>
+</section>
+
+</main>
+</div>
+<script>
+(function(){
+const {$,$$,RM}=NOTES;
+document.querySelector('svg defs').insertAdjacentHTML('beforeend','<pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--panel2)"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--mute);stroke-width:1.2;opacity:.45"/></pattern>');
+const B=(x,y,w,h,c,t1,t2,o={})=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="${c}" ${o.rx?`rx="${o.rx}"`:''}/>`+(t1?`<text x="${x+w/2}" y="${y+h/2+(t2?-3:4)}" class="mid ${o.big?'hd':'bd'}" style="${o.fs?`font-size:${o.fs}px`:''}">${t1}</text>`:'')+(t2?`<text x="${x+w/2}" y="${y+h/2+12}" class="mid xs">${t2}</text>`:'');
+const A=(d,c='w',m='ah')=>`<path d="${d}" class="${c}" marker-end="url(#${m})"/>`;
+const set=(id,h)=>{const e=document.getElementById(id);if(e)e.innerHTML=h;};
+
+/* ---- slide-style primitives ---- */
+const tS=(x,y,t,fs=11,w=600,anch='mid',cls='sd')=>`<text x="${x}" y="${y}" class="${anch} ${cls}" style="font-size:${fs}px;font-weight:${w}">${t}</text>`;
+const tT=(x,y,t,fs=11,w=600,anch='mid')=>`<text x="${x}" y="${y}" class="${anch}" style="font-size:${fs}px;font-weight:${w}">${t}</text>`;
+const slFD=(x,y,w=64,h=40,fs=11)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-fd"/>`+(h>=26?tS(x+w/2,y+h/2-2,'Fetch/',fs)+tS(x+w/2,y+h/2+fs,'Decode',fs):tS(x+w/2,y+h/2+3.5,'Fetch/Decode',Math.min(fs,9)));
+const slALU=(x,y,w,h,l1='ALU',l2,fs=11)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-alu"/>`+(l1?tS(x+w/2,y+h/2+(l2?-2:fs/3),l1,fs):'')+(l2?tS(x+w/2,y+h/2+11,l2,Math.min(9,fs)):'');
+const slVec=(x,y,cw=30,ch=20,num=false,fs)=>{let v='';for(let k=0;k<8;k++){const ax=x+(k%4)*cw,ay=y+Math.floor(k/4)*ch;v+=`<rect x="${ax}" y="${ay}" width="${cw}" height="${ch}" class="sl-alu"/>`;if(ch>=12)v+=tS(ax+cw/2,ay+ch/2+3.5,num?`ALU ${k}`:'ALU',fs||(num?10:8.5));}return v;};
+const slCtx=(x,y,w,h,title,regs,fs=10.5)=>{let s=`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-ctx"/>`+(title?tS(x+w/2,y+Math.min(14,h/2+4),title,fs):'');
+  if(regs&&regs.length){const rw=(w-12)/2,n=Math.ceil(regs.length/2),top=y+(title?33:8),rh=Math.min(10,(y+h-4-top)/n);s+=`<rect x="${x+w/2-18}" y="${top-12}" width="36" height="9" class="sl-reg"/>`+tS(x+w/2,top-4.5,'PC',7);
+    regs.forEach((r,i)=>{const c=i<n?0:1,row=i%n,rx=x+6+c*rw,ry=top+row*rh;s+=`<rect x="${rx}" y="${ry}" width="${rw}" height="${rh}" class="sl-reg"/>`+(rh>=7?tS(rx+rw/2,ry+rh-2,r,Math.min(7.5,rh-1.5)):'');});}
+  return s;};
+const slCache=(x,y,w,h,t1,t2,fs=11)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-cache"/>`+tS(x+w/2,y+h/2+(t2?-2:4),t1,fs)+(t2?tS(x+w/2,y+h/2+11,t2,Math.min(10,fs),500):'');
+const slMem=(x,y,w,h,t='Memory',t2)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-mem"/>`+tT(x+w/2,y+h/2+(t2?-3:5),t,13)+(t2?`<text x="${x+w/2}" y="${y+h/2+12}" class="mid sm">${t2}</text>`:'');
+const slCore=(x,y,w,h,label,fs=12)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-core"/>`+(label?tT(x+8,y+15,label,fs,700,'start'):'');
+const slBar=(x,y,w,h,t='instruction selection',fs=9.5)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-fd"/>`+tS(x+w/2,y+h/2+3.5,t,fs);
+const slPale=(x,y,w,h,t,fs=10.5)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-pale"/>`+tS(x+w/2,y+h/2+4,t,fs);
+const slStream=(x,y,w,lines,cur,title)=>{let s=title?tT(x+w/2,y-8,title,13,700):'';lines.forEach((l,i)=>{s+=`<rect x="${x}" y="${y+i*22}" width="${w}" height="20" class="${i===cur?'sl-row-on':'sl-row'}"/><text x="${x+8}" y="${y+i*22+14}" class="${i===cur?'sw':'sd'}" style="font-size:11px">${l}</text>`;});
+  if(cur>=0)s+=`<polygon points="${x-24},${y+cur*22} ${x-4},${y+cur*22+10} ${x-24},${y+cur*22+20}" style="fill:#d9763a"/>`;return s;};
+const setVB=(id,w,h,html)=>{const e=document.getElementById(id);if(!e)return;e.setAttribute('viewBox',`0 0 ${w} ${h}`);e.innerHTML=html;};
+/* a small generic core: F/D, execution (scalar ALU or 8-wide grid), contexts */
+const fitL=(lab,wd,maxfs,alt)=>{let fs=Math.min(maxfs,wd/(lab.length*0.64));if(fs<7&&alt){lab=alt;fs=Math.min(maxfs,wd/(lab.length*0.64));}return fs<5.5?null:[lab,fs];};
+function miniCore(x,y,w,h,o={}){const p=Math.max(3,w*0.05);let s=slCore(x,y,w,h,o.label,o.lfs||10);const top=y+(o.label?20:p);
+  const fdH=h*0.2,exH=h*0.3,cxH=h-(top-y)-fdH-exH-p*3;
+  s+=`<rect x="${x+p}" y="${top}" width="${w-2*p}" height="${fdH}" class="sl-fd"/>`+((f=>f&&fdH>=11?tS(x+w/2,top+fdH/2+f[1]*0.35,f[0],f[1]):'')(fitL('Fetch/Decode',w-2*p-4,Math.min(10,fdH*0.6),'F/D')));
+  const ey=top+fdH+p;
+  if(o.simd){const cw=(w-2*p)/4,ch=exH/2;s+=slVec(x+p,ey,cw,ch,false,Math.min(8.5,ch*0.55));}
+  else s+=`<rect x="${x+p}" y="${ey}" width="${w-2*p}" height="${exH}" class="sl-alu"/>`+((f=>f&&exH>=11?tS(x+w/2,ey+exH/2+f[1]*0.35,f[0],f[1]):'')(fitL(o.alu||'ALU',w-2*p-4,Math.min(11,exH*0.5))));
+  const cy=ey+exH+p,nc=o.ctx||1,cw2=(w-2*p-(nc-1)*2)/nc;
+  for(let i=0;i<nc;i++)s+=`<rect x="${x+p+i*(cw2+2)}" y="${cy}" width="${cw2}" height="${cxH}" class="sl-ctx"/>`+((f=>nc===1&&f&&cxH>=11?tS(x+w/2,cy+cxH/2+f[1]*0.35,f[0],f[1]):'')(fitL(o.ctxLabel||'Execution Context',w-2*p-4,Math.min(10,cxH*0.45),'Exec. ctx')));
+  return s;}
+/* ---- slide-style chip drawing (CS149 lecture 2 conventions) ---- */
+const SD={A:{W:1,alu:'S',reg:'R'},B:{W:2,alu:'SS',reg:'R'},C:{W:1,alu:'V',reg:'V'},D:{W:2,alu:'SV',reg:'RV'}};
+function slideCore(x,y,d,T,label,ctx0){const D=SD[d],cw=96,g=8,ctot=T*cw+(T-1)*g,w=Math.max(ctot+24,280),cx=x+w/2;let s='',cy=y+10;
+  const tx=(X,Y,t,cls,fs)=>`<text x="${X}" y="${Y}" class="mid ${cls||'sd'}" style="font-size:${fs||11}px;font-weight:600">${t}</text>`;
+  if(label)s+=`<text x="${x+10}" y="${y+22}" class="bd" style="font-size:14px">${label}</text>`;
+  s+=`<rect x="${cx-70}" y="${cy}" width="140" height="38" class="sl-cache"/>`+tx(cx,cy+16,'Data')+tx(cx,cy+30,'Cache');cy+=46;
+  if(D.W>1){s+=`<rect x="${cx-70}" y="${cy}" width="140" height="16" class="sl-fd"/>`+tx(cx,cy+12,'instruction selection','sd',9.5);cy+=22;}
+  const fw=64,ft=D.W*fw+(D.W-1)*8;for(let i=0;i<D.W;i++){const fx=cx-ft/2+i*(fw+8);s+=`<rect x="${fx}" y="${cy}" width="${fw}" height="40" class="sl-fd"/>`+tx(fx+fw/2,cy+17,'Fetch/')+tx(fx+fw/2,cy+31,'Decode');}cy+=50;
+  const vec=(vx,vy)=>{let v='';for(let k=0;k<8;k++){const ax=vx+(k%4)*30,ay=vy+Math.floor(k/4)*20;v+=`<rect x="${ax}" y="${ay}" width="30" height="20" class="sl-alu"/>`+tx(ax+15,ay+14,'ALU','sd',8.5);}return v;};
+  if(D.alu==='S'){s+=`<rect x="${cx-50}" y="${cy}" width="100" height="42" class="sl-alu"/>`+tx(cx,cy+18,'ALU')+tx(cx,cy+32,'(Execution unit)','sd',9);cy+=50;}
+  else if(D.alu==='SS'){[-1,1].forEach(k=>{const ax=cx+(k<0?-68:4);s+=`<rect x="${ax}" y="${cy}" width="64" height="42" class="sl-alu"/>`+tx(ax+32,cy+26,'ALU');});cy+=50;}
+  else if(D.alu==='V'){s+=vec(cx-60,cy)+tx(cx,cy+52,'(8-wide vector ALU)','',9);cy+=60;}
+  else{s+=`<rect x="${cx-100}" y="${cy}" width="50" height="40" class="sl-alu"/>`+tx(cx-75,cy+25,'ALU')+tx(cx-75,cy+52,'(scalar ALU)','',9)+vec(cx-36,cy)+tx(cx+24,cy+52,'(8-wide vector ALU)','',9);cy+=60;}
+  for(let t=0;t<T;t++){const bx=cx-ctot/2+t*(cw+g);s+=`<rect x="${bx}" y="${cy}" width="${cw}" height="84" class="sl-ctx"/>`+tx(bx+cw/2,cy+13,'Execution','sd',10)+tx(bx+cw/2,cy+25,`Context ${(ctx0||0)+t}`,'sd',10)+
+      `<rect x="${bx+cw/2-18}" y="${cy+30}" width="36" height="9" class="sl-reg"/>`+tx(bx+cw/2,cy+37.5,'PC','sd',7);
+    for(let r=0;r<8;r++){const col=r<4?0:1,row=r%4,rx=bx+6+col*((cw-12)/2),ry=cy+43+row*9.5,nm=D.reg==='RV'?(col?'V':'R')+(row+ (col?0:0)):D.reg+r;
+      s+=`<rect x="${rx}" y="${ry}" width="${(cw-12)/2}" height="9.5" class="sl-reg"/>`+tx(rx+(cw-12)/4,ry+7.5,D.reg==='RV'?(col?'V'+row:'R'+row):D.reg+r,'sd',6.5);}}
+  cy+=92;return {svg:`<rect x="${x}" y="${y}" width="${w}" height="${cy-y}" class="sl-core"/>`+s,w,h:cy-y};}
+function slideChip(d,T,C){const probe=slideCore(0,0,d,T,'',0),cw=probe.w,ch=probe.h;let s='',W,H;const mw=200,mh=36;
+  const tx=(X,Y,t,fs,cls)=>`<text x="${X}" y="${Y}" class="mid ${cls||''}" style="font-size:${fs||13}px;font-weight:600">${t}</text>`;
+  if(C===1){W=cw+20;const mx=W/2;s+=`<rect x="${mx-mw/2}" y="6" width="${mw}" height="${mh}" class="sl-mem"/>`+tx(mx,29,'Memory')+`<path d="M${mx} ${6+mh+2} V${6+mh+18}" class="w" marker-start="url(#ah)" marker-end="url(#ah)"/>`;
+    s+=slideCore(10,6+mh+22,d,T,'',0).svg;H=6+mh+22+ch+8;}
+  else if(C===2){W=2*cw+34;const mx=W/2;s+=`<rect x="${mx-mw/2}" y="6" width="${mw}" height="${mh}" class="sl-mem"/>`+tx(mx,29,'Memory')+`<path d="M${mx} ${44} V${60}" class="w" marker-start="url(#ah)" marker-end="url(#ah)"/>`;
+    s+=`<rect x="${mx-cw*0.8}" y="64" width="${cw*1.6}" height="24" class="sl-cache"/>`+tx(mx,81,'Shared Data Cache',12,'sd');
+    s+=slideCore(10,96,d,T,'Core 0',0).svg+slideCore(24+cw,96,d,T,'Core 1',T).svg;H=96+ch+8;}
+  else{W=cw+44;const mx=(cw+20)/2;s+=`<rect x="${mx-mw/2}" y="6" width="${mw}" height="${mh}" class="sl-mem"/>`+tx(mx,29,'Memory')+`<path d="M${mx} 44 V60" class="w" marker-start="url(#ah)" marker-end="url(#ah)"/>`;
+    s+=`<rect x="10" y="64" width="${cw+24}" height="24" class="sl-cache"/>`+tx(10+(cw+24)/2,81,'Shared Data Cache',12,'sd');
+    for(let k=2;k>=1;k--)s+=`<rect x="${10+k*12}" y="${96+k*8}" width="${cw}" height="${ch}" class="sl-core" style="opacity:.8"/>`;
+    s+=slideCore(10,96,d,T,`Core 0 of ${C}`,0).svg;H=96+ch+30;s+=`<text x="${10+cw/2}" y="${H-6}" class="mid sm">+ ${C-1} more identical cores (${C*T} contexts in total)</text>`;}
+  return {svg:s,W,H};}
+
+
+/* 1 simple core */
+
+(function(){let s=slStream(40,40,290,['ld   r0, addr[r1]','mul  r1, r0, r0','mul  r1, r1, r0','...','...','...','...','st   addr[r2], r0'],1,'Instruction stream');
+  s+=slCore(400,14,180,226)+slFD(420,26,140,46,13)+slALU(420,86,140,52,'ALU','(Execute)',13)+slCtx(420,152,140,78,'Execution Context',['R0','R1','R2','R3']);
+  s+=`<text x="600" y="48" class="sm">decides which</text><text x="600" y="62" class="sm">instruction runs next</text><text x="600" y="108" class="sm">performs the</text><text x="600" y="122" class="sm">operation</text><text x="600" y="180" class="sm">registers hold</text><text x="600" y="194" class="sm">program state</text>`;
+  s+='<path d="M334 66 C 370 66, 380 49, 418 49" class="wc" marker-end="url(#ahc)"/>';
+  setVB('simpleCore',760,250,s);})();
+/* 2 ILP */
+(function(){
+  const P=[['00','a = 3',[],'3'],['01','b = 5',[],'5'],['02','c = a × b',[0,1],'15'],['03','d = a + 1',[0],'4'],['04','e = b − 2',[1],'3'],['05','f = c + d',[2,3],'19'],['06','g = d × e',[3,4],'12'],['07','h = f − g',[5,6],'7'],['08','if (h > 5)',[7],'true'],['09','&nbsp;&nbsp;print f',[8,5],'19'],['10','else print g',[8,6],'not run']];
+  $('#ilpAsm').innerHTML=P.map(p=>`<div class="r"><span class="a">${p[0]}</span><span class="i">${p[1]}</span><span class="c">// ${p[3]}</span></div>`).join('');
+  const lvl=[];P.forEach((p,i)=>lvl[i]=p[2].length?Math.max(...p[2].map(d=>lvl[d]+1)):0);
+  const byL={},pos=[];P.forEach((p,i)=>{(byL[lvl[i]]=byL[lvl[i]]||[]).push(i);});
+  Object.entries(byL).forEach(([L,arr])=>arr.forEach((i,k)=>pos[i]=[360*(k+1)/(arr.length+1),26+L*56]));
+  let g='';P.forEach((p,i)=>p[2].forEach(d=>g+=`<path d="M${pos[d][0]} ${pos[d][1]+14} L${pos[i][0]} ${pos[i][1]-15}" class="${i===10?'w dash':'w'}" marker-end="url(#ah)"/>`));
+  P.forEach((p,i)=>g+=`<rect x="${pos[i][0]-22}" y="${pos[i][1]-14}" width="44" height="28" class="${i===10?'bg2':'te'}" style="${i===10?'stroke-dasharray:4 3':''}"/><text x="${pos[i][0]}" y="${pos[i][1]+5}" class="mid bd">${p[0]}</text>`);
+  $('#ilpGraph').innerHTML=g;
+  let W=2;
+  function r(){const run=P.slice(0,10),done=[];let c=0;const sched=[];
+    while(done.filter(Boolean).length<run.length&&c<30){c++;const cyc=[];for(let i=0;i<run.length&&cyc.length<W;i++){if(done[i])continue;if(run[i][2].every(d=>done[d]&&done[d]<c)){cyc.push(i);}}cyc.forEach(i=>done[i]=c);sched.push(cyc);}
+    const rows=Math.max(...sched.map(s=>s.length)),cw=Math.min(66,620/sched.length);let h='';
+    sched.forEach((s,k)=>{h+=`<text x="${110+k*cw+cw/2}" y="14" class="mid xs">clock ${k+1}</text>`;for(let r=0;r<rows;r++){const i=s[r];h+=`<rect x="${110+k*cw+2}" y="${22+r*30}" width="${cw-4}" height="26" class="${i!==undefined?'cu':'bg2'}" style="${i!==undefined?'':'opacity:.4'}"/>`+(i!==undefined?`<text x="${110+k*cw+cw/2}" y="${40+r*30}" class="mid bd">${P[i][0]}</text>`:'');}});
+    for(let r=0;r<rows;r++)h+=`<text x="100" y="${40+r*30}" class="end sm">slot ${r}</text>`;
+    const svg=$('#ilpSched');svg.setAttribute('viewBox',`0 0 760 ${30+rows*30}`);svg.innerHTML=h;
+    $('#ilpMsg').innerHTML=`${W===8?'Unlimited width':`Width ${W}`}: <b>${sched.length} clocks</b> for 10 executed instructions (IPC ${(10/sched.length).toFixed(2)}). ${W===1?'One per clock: the simple processor.':sched.length===6?'This is the critical path, the fewest clocks any processor could manage.':'Some clocks still have an empty slot: nothing else was ready.'}`;
+    $$('[data-iw]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.iw===W));}
+  $$('[data-iw]').forEach(b=>b.onclick=()=>{W=+b.dataset.iw;r();});r();
+})();
+
+/* 3 cache */
+(function(){
+  const V=[16,255,14,0,0,0,6,0,32,48,255,255,255,0,0,7];
+  const SEQ={loc:[0x0,0x1,0x2,0x3,0x2,0x1,0x4,0x5,0x1,0x0],scan:[...Array(16).keys(),...Array(16).keys()]};
+  let cap=2,seq='loc',st,hist;
+  function reset(){st={k:0,lines:[],seen:[],res:[],last:null};hist=[];r();}
+  function step(){if(st.k>=SEQ[seq].length)return false;hist.push(JSON.stringify(st));const a=SEQ[seq][st.k],L=a&~3;let kind;
+    const i=st.lines.indexOf(L);let ev=null;
+    if(i>=0){kind='hit';st.lines.splice(i,1);st.lines.push(L);}
+    else{kind=st.seen.includes(L)?'capacity':'cold';if(st.lines.length>=cap)ev=st.lines.shift();st.lines.push(L);if(!st.seen.includes(L))st.seen.push(L);}
+    st.res.push(kind);st.last={a,L,kind,ev};st.k++;return true;}
+  const hx=v=>'0x'+v.toString(16).toUpperCase();
+  function r(){const L=st.last;
+    $('#cBytes').innerHTML=V.map((v,a)=>`<div class="l${(a>>2)%4} ${st.lines.includes(a&~3)?'inc':''} ${L&&L.a===a?'cur':''}">${v}<small>${hx(a)}</small></div>`).join('');
+    $('#cSlots').innerHTML=Array.from({length:cap},(_,s)=>{const l=st.lines[s];return `<div class="${L&&l===L.L?(L.kind==='hit'?'hit':'fill'):''}"><small>slot ${s}${l!==undefined?(s===0&&st.lines.length>1?' · least recently used':s===st.lines.length-1?' · most recent':''):''}</small>${l!==undefined?`line ${hx(l)} [${V.slice(l,l+4).join(', ')}]`:'empty'}</div>`;}).join('');
+    $('#cMsg').innerHTML=L?`Load address <b>${hx(L.a)}</b> (value ${V[L.a]}), in line ${hx(L.L)}: <b>${L.kind==='hit'?'HIT':L.kind==='cold'?'COLD MISS':'CAPACITY MISS'}</b>. ${L.kind==='hit'?'The line is already cached.':`Fetch the 4-byte line from DRAM${L.ev!==null?`, evicting line ${hx(L.ev)} (least recently used)`:''}.`} ${L.kind==='capacity'?'This line was cached before, but the cache is too small to have kept it.':''}`:'<b>Empty cache.</b> Every first touch of a line will be a cold miss.';
+    $('#cStrip').innerHTML=SEQ[seq].map((a,i)=>{const k=st.res[i];return `<span class="${k?(k==='hit'?'h':k==='cold'?'c':'p'):'n'} ${i===st.k-1?'cur':''}">${hx(a)}<small>${k?(k==='hit'?'hit':k):'·'}</small></span>`;}).join('');
+    const h=st.res.filter(k=>k==='hit').length;$('#cOut').innerHTML=`hits <b>${h}</b> · cold <b>${st.res.filter(k=>k==='cold').length}</b> · capacity <b>${st.res.filter(k=>k==='capacity').length}</b>`;
+    $('#cBack').disabled=!hist.length;$('#cStep').disabled=st.k>=SEQ[seq].length;
+    $$('[data-cap]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.cap===cap));$$('[data-cs]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.cs===seq));}
+  $$('[data-cap]').forEach(b=>b.onclick=()=>{cap=+b.dataset.cap;reset();});$$('[data-cs]').forEach(b=>b.onclick=()=>{seq=b.dataset.cs;reset();});
+  $('#cStep').onclick=()=>{step();r();};$('#cAll').onclick=()=>{while(step());r();};$('#cBack').onclick=()=>{const h=hist.pop();if(h){st=JSON.parse(h);r();}};$('#cReset').onclick=reset;reset();
+})();
+
+/* 4 latency */
+(function(){const D=[['L1 cache (32 KB)',4,'1 ns'],['L2 cache (256 KB)',12,'3 ns'],['L3 cache (8 MB)',38,'9.5 ns'],['DRAM (best case)',248,'62 ns']];let h='';
+  D.forEach(([n,c,ns],i)=>{const y=18+i*42,w=Math.max(3,c/248*470);h+=`<text x="170" y="${y+20}" class="end">${n}</text><rect x="180" y="${y}" width="${w}" height="30" class="${i<3?'cu':'te'}"/><text x="${186+w}" y="${y+20}" class="bd">${c===248?'~248':c} cycles</text><text x="${186+w}" y="${y+34}" class="xs">≈ ${ns}</text>`;});
+  h+='<text x="180" y="196" class="xs">linear scale · cycles at 4 GHz · Intel Kaby Lake</text>';set('latSvg',h);})();
+
+/* 5 sin example */
+(function(){let h='';for(let i=0;i<8;i++){const x=24+i*92;h+=B(x,14,80,30,'te',i<7?`x[${i}]`:'…')+A(`M${x+40} 44 V62`)+`<rect x="${x}" y="64" width="80" height="62" class="bg2"/>`;
+    for(let k=0;k<4;k++)h+=`<circle cx="${x+14+k*18}" cy="95" r="5" class="mkc"/>`+(k<3?`<path d="M${x+19+k*18} 95 H${x+27+k*18}" class="wc"/>`:'');
+    h+=A(`M${x+40} 126 V144`)+B(x,146,80,30,'cu',i<7?`y[${i}]`:'…');}
+  h+='<text x="380" y="196" class="mid xs">each column is independent · inside a column, each term (dot) needs the previous one: a dependency chain</text>';set('sinSvg',h);})();
+
+/* 6 fancy vs simple */
+
+(function(){let s=tT(190,16,'Pre-multi-core: one "fancy" core',13,700);
+  s+=slCore(20,26,340,200)+slFD(32,40,72,44)+slALU(32,94,72,44,'ALU','(Execute)')+slCtx(32,148,72,66,'Exec. ctx',[],9.5);
+  s+=slPale(114,40,234,34,'Out-of-order control logic')+slPale(114,80,234,34,'Fancy branch predictor')+slPale(114,120,234,26,'Memory pre-fetcher')+slCache(114,152,234,62,'Data cache','(a big one)');
+  s+=`<text x="190" y="242" class="mid xs">most transistors make ONE instruction stream faster</text>`;
+  s+=tT(570,16,'Multi-core: two simpler cores',13,700);
+  [400,590].forEach(x=>{s+=slCore(x,26,160,150)+slFD(x+12,38,136,36)+slALU(x+12,82,136,36,'ALU','(Execute)')+slCtx(x+12,126,136,40,'Execution Context',[],10);});
+  s+='<text x="570" y="200" class="mid sm">each ~25% slower on one stream</text><text x="570" y="220" class="mid bd tcu">2 × 0.75 = 1.5× (if there are 2 streams)</text>';
+  setVB('fancySvg',760,250,s);})();
+/* 7 cores scaling */
+
+(function(){let s='';[[1,20,80],[2,130,72],[4,300,62],[16,480,62]].forEach(([n,x0,sz])=>{const cols=n<=2?n:n===4?2:4,g=6,ww=n===16?60:sz,hh=n===16?46:sz*1.2;
+    s+=tT(x0+cols*(ww+g)/2,16,`${n} core${n>1?'s':''}`,13,700);
+    for(let i=0;i<n;i++){const x=x0+(i%cols)*(ww+g),y=26+Math.floor(i/cols)*(hh+g);s+=miniCore(x,y,ww,hh,{});s+=`<text x="${x+ww/2}" y="${y+hh+(n===16?-2:11)}" class="mid xs" style="${n===16?'fill:#fff;font-size:8px':''}">${n===16?'':`x[${i}]`}</text>`;}});
+  s+='<text x="380" y="252" class="mid xs">each core: its own fetch/decode (orange), ALU (yellow) and execution context (blue), running its own instruction stream</text>';
+  setVB('coresSvg',760,262,s);})();
+/* 8 SIMD core */
+
+(function(){let s=slCore(180,6,400,208)+slFD(320,16,120,44,13);
+  s+='<path d="M380 60 V76" class="w" marker-end="url(#ah)"/>'+slVec(196,80,92,30,true,11);
+  s+='<text x="380" y="154" class="mid sm">same instruction broadcast to all 8 ALUs</text>';
+  s+=slCtx(196,162,368,46,'Execution Context: 256-bit vector registers',[],10);for(let i=0;i<8;i++)s+=`<rect x="${202+i*45}" y="${182}" width="41" height="20" class="sl-reg"/>`+tS(222.5+i*45,196,`x[i+${i}]`,8.5);
+  s+=`<text x="596" y="40" class="sm">one fetch/decode…</text><text x="596" y="110" class="sm">…drives 8 ALUs</text><text x="596" y="186" class="sm">each lane holds</text><text x="596" y="200" class="sm">one element</text>`;
+  setVB('simdSvg',760,220,s);})();
+(function(){let s='';for(let c=0;c<16;c++){const x=20+(c%8)*92,y=8+Math.floor(c/8)*78;s+=miniCore(x,y,84,70,{simd:true});}
+  s+='<text x="380" y="176" class="mid bd">16 cores × 8 SIMD ALUs = 128 elements per clock · 16 instruction streams</text>';setVB('simd16Svg',760,186,s);})();
+/* 10 divergence */
+(function(){let lanes=[2.1,-1.0,3.0,-0.5,-2.0,1.2,-3.0,0.7];
+  const PRE={all:[1.5,2,0.3,4,1,2.2,0.9,3],half:[2,1,3,4,-1,-2,-3,-4],one:[2,-1,-2,-3,-1,-2,-3,-4],alt:[1,-1,1,-1,1,-1,1,-1]};
+  function r(){const T=lanes.map(v=>v>0),nT=T.filter(Boolean).length,nF=8-nT;
+    $('#dvLanes').innerHTML=lanes.map((v,i)=>`<button class="${T[i]?'T':'F'}" data-ln="${i}" aria-label="lane ${i}, t = ${v}"><small>lane ${i}</small>${v>0?'+':''}${v}<small>${T[i]?'then':'else'}</small></button>`).join('');
+    $$('[data-ln]').forEach(b=>b.onclick=()=>{const i=+b.dataset.ln;lanes[i]=-lanes[i];r();});
+    const rows=[['t = x[i]','all'],['t > 0 ?','all']];if(nT)for(let k=0;k<3;k++)rows.push([['t = t · t','t = t + 1','t = √t'][k],'T']);if(nF)for(let k=0;k<2;k++)rows.push([['t = −t','t = t · 2'][k],'F']);rows.push(['y[i] = t','all']);
+    let h='';for(let i=0;i<8;i++)h+=`<text x="${210+i*66+30}" y="14" class="mid xs">lane ${i}</text>`;
+    rows.forEach(([lab,who],k)=>{const y=22+k*28;h+=`<text x="20" y="${y+17}" class="xs">clock ${k+1}</text><text x="196" y="${y+17}" class="end" style="font-size:11.5px">${lab}</text>`;
+      for(let i=0;i<8;i++){const on=who==='all'||(who==='T')===T[i];h+=on?`<rect x="${210+i*66}" y="${y}" width="60" height="24" class="cu"/>`:`<rect x="${210+i*66}" y="${y}" width="60" height="24" fill="url(#hatch)" style="stroke:var(--line)"/><text x="${210+i*66+30}" y="${y+16}" class="mid xs">masked</text>`;}});
+    const svg=$('#dvSvg');svg.setAttribute('viewBox',`0 0 760 ${30+rows.length*28}`);svg.innerHTML=h;
+    const clocks=rows.length,useful=3*8+nT*3+nF*2,total=clocks*8,ideal=3+Math.max(nT?3:0,nF?2:0);
+    $('#dvStat').innerHTML=[['clocks for the if/else',`${(nT?3:0)+(nF?2:0)}`],['total clocks',clocks],['useful lane-clocks',`${useful} / ${total}`],['SIMD utilization',`${Math.round(100*useful/total)}%`]].map(([a,b])=>`<div>${a}<b>${b}</b></div>`).join('');}
+  $$('[data-dp]').forEach(b=>b.onclick=()=>{lanes=PRE[b.dataset.dp].slice();r();});r();
+})();
+
+/* 11 explicit vs implicit */
+
+(function(){let s=tT(190,16,'Explicit SIMD (CPUs)',14,700)+tT(570,16,'Implicit SIMD / SIMT (GPUs)',14,700);
+  s+=slCore(40,28,300,170)+slStream(90,40,200,['vector_mul v1, v0, v0'],0)+'<path d="M190 62 V76" class="w" marker-end="url(#ah)"/>'+slFD(158,78,64,34,10);
+  for(let i=0;i<8;i++)s+=`<rect x="${52+i*35}" y="${122}" width="32" height="24" class="sl-alu"/>`+tS(68+i*35,138,'ALU',8.5);
+  s+=slCtx(52,154,276,34,'1 execution context · vector registers',[],9.5);
+  s+='<text x="190" y="214" class="mid xs">compiler emits vector instructions</text>';
+  s+=slCore(420,28,300,170)+slStream(470,40,200,['mul  r1, r0, r0'],0)+'<path d="M570 62 V76" class="w" marker-end="url(#ah)"/>'+slBar(470,78,200,14,'instruction selection',8.5)+slFD(538,96,64,22,9);
+  for(let i=0;i<8;i++)s+=`<rect x="${432+i*35}" y="${124}" width="32" height="22" class="sl-alu"/>`+tS(448+i*35,139,'ALU',8.5);
+  for(let i=0;i<8;i++)s+=`<rect x="${432+i*35}" y="${154}" width="32" height="34" class="sl-ctx"/>`+tS(448+i*35,168,'ctx',8.5)+tS(448+i*35,180,`${i}`,8.5);
+  s+='<text x="570" y="214" class="mid xs">hardware groups 8 scalar threads onto the lanes</text>';
+  setVB('simtSvg',760,222,s);})();
+/* 12 three processors */
+
+(function(){let s=tT(120,16,'Superscalar, 1 core',13,700)+tT(355,16,'Dual-core',13,700)+tT(622,16,'SIMD quad-core',13,700);
+  s+=slCore(20,26,200,204)+slFD(34,38,82,40)+slFD(124,38,82,40)+slALU(34,86,82,38,'Exec 1')+slALU(124,86,82,38,'Exec 2')+slCtx(34,134,172,86,'Execution Context',['R0','R1','R2','R3','R4','R5','R6','R7']);
+  s+='<text x="120" y="248" class="mid xs">2 instr/clock from 1 stream</text>';
+  [250,360].forEach(x=>{s+=slCore(x,26,100,204)+slFD(x+10,38,80,40)+slALU(x+10,86,80,38,'ALU')+slCtx(x+10,134,80,86,'Exec. Context',['R0','R1','R2','R3'],9.5);});
+  s+='<text x="355" y="248" class="mid xs">1 instr/clock per core, 2 streams</text>';
+  for(let c=0;c<4;c++){const x=490+(c%2)*134,y=26+Math.floor(c/2)*104;s+=miniCore(x,y,126,98,{simd:true});}
+  s+='<text x="622" y="248" class="mid xs">one 8-wide instr/clock per core, 4 streams</text>';setVB('threeSvg',760,256,s);})();
+/* 13 hierarchy */
+
+(function(){let s='';['Core 1','Core 2','…','Core N'].forEach((n,i)=>{const x=20+i*180;if(n==='…'){s+=`<text x="${x+85}" y="70" class="mid hd">…</text>`;return;}
+    s+=slCore(x,8,170,118,n)+slCache(x+10,26,150,26,'L1 cache','',10.5).replace('L1 cache','L1 cache (32 KB)')+slCache(x+10,58,150,26,'L2 cache (256 KB)','',10.5)+`<rect x="${x+10}" y="92" width="150" height="26" class="sl-alu"/>`+tS(x+85,109,'Fetch/Decode · ALUs · ctx',9);
+    s+=`<path d="M${x+85} 126 V140" class="w"/>`;});
+  s+=slCache(20,140,710,30,'L3 cache (8 MB), shared by all cores')+'<path d="M375 170 V186" class="w" marker-start="url(#ah)" marker-end="url(#ah)"/>'+slMem(210,188,330,36,'Memory','DDR4 DRAM (gigabytes)')+'<text x="560" y="182" class="sm tcu">≈ 38 GB/s</text>';
+  setVB('hierSvg',760,232,s);})();
+/* 14 prefetch */
+(function(){const u=12;let h='<text x="20" y="30" class="bd">No prefetch</text><text x="20" y="110" class="bd">Prefetch</text>';
+  h+=`<rect x="140" y="16" width="${6*u}" height="24" class="cu"/><rect x="${140+6*u}" y="16" width="${30*u}" height="24" class="bad"/><text x="${140+21*u}" y="33" class="mid xs">stall: load misses, waits for DRAM</text><rect x="${140+36*u}" y="16" width="${6*u}" height="24" class="cu"/><text x="${140+42*u+6}" y="33" class="xs">done</text>`;
+  h+=`<rect x="140" y="96" width="${6*u}" height="24" class="cu"/><rect x="140" y="126" width="${30*u}" height="14" class="te"/><text x="${140+15*u}" y="137" class="mid xs">prefetcher fetches the line in the background</text><rect x="${140+6*u}" y="96" width="${24*u}" height="24" class="cu" style="opacity:.6"/><text x="${140+18*u}" y="113" class="mid xs">other useful instructions</text><rect x="${140+30*u}" y="96" width="${3*u}" height="24" class="okf"/><text x="${140+31.5*u}" y="90" class="mid xs tok">load hits</text><rect x="${140+33*u}" y="96" width="${6*u}" height="24" class="cu"/>`;
+  h+=A(`M${140+30*u} 140 V124`,'wt','aht')+`<text x="140" y="176" class="xs">time →  (the prefetched load hits because the data arrived early)</text>`;set('pfSvg',h);})();
+
+/* multithreading simulator (shared) */
+function simMT(k,L,T,N){const th=Array.from({length:T},()=>({ready:0,left:k})),rows=Array.from({length:T},()=>[]),core=[];let cur=0;
+  for(let c=0;c<N;c++){let pick=-1;if(th[cur].ready<=c)pick=cur;else{for(let j=1;j<=T;j++){const t=(cur+j)%T;if(th[t].ready<=c){pick=t;break;}}}
+    for(let t=0;t<T;t++)rows[t][c]=t===pick?'run':th[t].ready>c?'stall':'wait';
+    core[c]=pick;if(pick>=0){cur=pick;th[pick].left--;if(th[pick].left===0){th[pick].left=k;th[pick].ready=c+1+L;const n=(pick+1)%T;cur=n;}}}
+  return {rows,core};}
+function drawMT(k,L,T,N,labels){const {rows,core}=simMT(k,L,T,N),x0=labels?170:110,cw=(740-x0)/N;let h='';
+  for(let c=0;c<=N;c+=5)h+=`<text x="${x0+c*cw}" y="12" class="mid xs">${c}</text><line x1="${x0+c*cw}" y1="16" x2="${x0+c*cw}" y2="${22+(T+1)*26}" class="w" style="stroke:var(--line);stroke-width:.6"/>`;
+  rows.forEach((r,t)=>{const y=20+t*26;h+=`<text x="${x0-8}" y="${y+15}" class="end sm">${labels?labels[t]:'thread '+t}</text>`;let c=0;while(c<N){const s=r[c];let e=c;while(e<N&&r[e]===s)e++;h+=`<rect x="${x0+c*cw}" y="${y}" width="${(e-c)*cw}" height="20" class="${s==='run'?'te':s==='stall'?'bad':'bg2'}" style="${s==='run'?'fill:#4a7fc8;stroke:#4a7fc8':''}"/>`+(s==='stall'&&(e-c)*cw>40?`<text x="${x0+(c+e)/2*cw}" y="${y+14}" class="mid xs tbad">stall</text>`:'');c=e;}});
+  const y=24+T*26;h+=`<text x="${x0-8}" y="${y+15}" class="end sm bd">core</text>`;for(let c=0;c<N;c++)h+=`<rect x="${x0+c*cw}" y="${y}" width="${cw+.3}" height="20" class="${core[c]>=0?'okf':'bg2'}" style="stroke:none"/>`;
+  return {h,busy:core.filter(v=>v>=0).length,core,height:y+30};}
+
+/* 15 four threads figure */
+(function(){const d=drawMT(4,12,4,64,['thread 1 · elems 0–7','thread 2 · 8–15','thread 3 · 16–23','thread 4 · 24–31']);
+  let h=d.h.replace(/x="110"/g,'x="110"');const svg=$('#mt4Svg');svg.setAttribute('viewBox',`0 0 760 ${d.height+30}`);
+  svg.innerHTML=d.h+`<text x="170" y="${d.height+18}" class="xs">blue: running · red: stalled on memory · grey: runnable, waiting for the core · green: core busy</text>`;})();
+
+/* 16 context storage */
+
+(function(){let s='';[[20,'16 small contexts',16,'more threads → more latency hiding','but few registers each'],[400,'4 large contexts',4,'bigger working set per thread','but less latency hiding']].forEach(([x,t,n,a,b])=>{
+    s+=tT(x+170,16,t,13,700)+slCore(x,24,340,196)+slFD(x+130,32,80,32,10)+slVec(x+110,70,30,16,false,8);
+    s+=`<rect x="${x+14}" y="112" width="312" height="100" class="sl-core" style="fill:none;stroke-dasharray:4 3"/>`+tS(x+170,108,'',9);
+    const cols=n===16?8:4,rows=n/cols,cw=(312-(cols-1)*4)/cols,ch=(100-(rows-1)*4)/rows;
+    for(let i=0;i<n;i++){const cx=x+14+(i%cols)*(cw+4),cy=112+Math.floor(i/cols)*(ch+4);s+=`<rect x="${cx}" y="${cy}" width="${cw}" height="${ch}" class="sl-ctx"/>`+tS(cx+cw/2,cy+ch/2+4,`${i+1}`,n===16?10:14);}
+    s+=`<text x="${x+170}" y="236" class="mid sm">${a}</text><text x="${x+170}" y="252" class="mid xs">${b}</text>`;});
+  s+='<text x="380" y="266" class="mid xs">the dashed region is the same on-chip context storage in both cores, split two different ways</text>';setVB('ctxSvg',760,272,s);})();
+/* 17 utilization explorer */
+(function(){function r(){const k=+$('#muK').value,L=+$('#muL').value,T=+$('#muT').value,N=Math.max(45,Math.min(90,3*(k+L)));
+  $('#muKv').textContent=k;$('#muLv').textContent=L;$('#muTv').textContent=T;
+  const d=drawMT(k,L,T,N);const svg=$('#muSvg');svg.setAttribute('viewBox',`0 0 760 ${d.height+6}`);svg.innerHTML=d.h;
+  const need=Math.ceil((k+L)/k),u=Math.min(1,T*k/(k+L));
+  $('#muStat').innerHTML=[['period per thread',`${k} + ${L} = ${k+L} cycles`],['steady-state utilization',`${Math.round(u*100)}%`],['threads for 100%',`⌈${k+L}/${k}⌉ = ${need}`],['busy cycles shown',`${d.busy} / ${N}`]].map(([a,b])=>`<div>${a}<b>${b}</b></div>`).join('');
+  $('#muMsg').innerHTML=T<need?`Each thread's ${k} instructions fill ${k} of every ${k+L} cycles, so ${T} thread${T>1?'s':''} fill ${T*k}: <b>${Math.round(u*100)}% busy</b>. Add threads until their bursts cover the ${L}-cycle wait.`:T===need?`<b>Exactly enough threads:</b> by the time the last thread stalls, the first one's data has arrived. 100% busy.`:`<b>Already 100% busy</b> with ${need} threads. The extra ${T-need} only make each thread wait longer for its turn (more grey).`;}
+  ['#muK','#muL','#muT'].forEach(s=>$(s).oninput=r);r();})();
+
+/* 18 fictitious chip */
+
+(function(){let s='';for(let c=0;c<16;c++){const x=20+(c%4)*112,y=10+Math.floor(c/4)*64;s+=miniCore(x,y,104,58,{simd:true,ctx:4});}
+  const L=[['16','cores'],['128','SIMD ALUs (16 × 8)'],['16','streams running at once'],['64','resident streams (16 × 4)'],['512','work items needed (16×4×8)']];
+  L.forEach(([n,t],i)=>s+=`<text x="480" y="${40+i*44}" class="hd tcu" style="font-size:22px">${n}</text><text x="532" y="${40+i*44}" class="sm">${t}</text>`);
+  s+='<text x="20" y="276" class="xs">each core: fetch/decode (orange) · 8 SIMD ALUs (yellow) · 4 execution contexts (blue)</text>';setVB('fictSvg',760,284,s);})();
+/* 19 Skylake core */
+
+(function(){let s=slCore(10,10,740,262,'Intel Skylake / Kaby Lake core (one of four)',13);
+  s+=slCtx(24,36,120,108,'Execution Context 0',['R0','R1','R2','R3','R4','R5','R6','R7'],9.5)+slCtx(24,152,120,108,'Execution Context 1',['R0','R1','R2','R3','R4','R5','R6','R7'],9.5);
+  for(let i=0;i<4;i++)s+=slFD(160,36+i*44,70,38,10);
+  s+=`<rect x="240" y="36" width="18" height="170" class="sl-fd"/><text x="249" y="121" class="mid sd" transform="rotate(-90 249 121)" style="font-size:9.5px;font-weight:600">instruction selection</text>`;
+  s+='<path d="M230 121 H238" class="w"/><path d="M258 121 H268" class="w" marker-end="url(#ah)"/>';
+  [['ALU','scalar ALU'],['ALU','scalar ALU'],['ALU','scalar FP ADD or MUL'],['ALU','scalar FP ADD or MUL']].forEach(([a,b],i)=>s+=slALU(272,36+i*44,120,38,a,b,11));
+  [['8-wide vector ALU','MUL or ADD'],['8-wide vector ALU','MUL or ADD'],['8-wide vector ALU','ADD']].forEach(([a,b],i)=>{const y=36+i*58;s+=slVec(410,y,40,20,false,8.5)+`<text x="580" y="${y+18}" class="sm">${a}</text><text x="580" y="${y+32}" class="xs">${b}</text>`;});
+  s+=slCache(160,214,232,46,'L1 data cache','32 KB')+slCache(410,214,160,46,'L2 cache','256 KB')+'<text x="580" y="240" class="xs">load/store units not shown</text>';
+  setVB('skySvg',760,282,s);})();
+/* 20 V100 SM */
+
+(function(){let s='';for(let q=0;q<4;q++){const x=14+q*186;
+    s+=`<rect x="${x}" y="8" width="178" height="46" class="sm-ws"/>`+tS(x+89,21,'Warp Selector',10)+slFD(x+49,26,80,24,9);
+    for(let r=0;r<8;r++){const y=60+r*17;s+=`<rect x="${x}" y="${y}" width="17" height="14" class="sm-fp32"/><rect x="${x+20}" y="${y}" width="17" height="14" class="sm-fp32"/><rect x="${x+42}" y="${y}" width="17" height="14" class="sm-int"/><rect x="${x+62}" y="${y}" width="17" height="14" class="sm-int"/><rect x="${x+84}" y="${y}" width="17" height="14" class="sm-fp64"/><rect x="${x+106}" y="${y}" width="46" height="14" class="sm-ten"/><rect x="${x+157}" y="${y}" width="17" height="14" class="sm-ls"/>`;}
+    s+=`<rect x="${x}" y="200" width="178" height="96" class="sm-reg"/>`;
+    for(let c=1;c<8;c++)s+=`<line x1="${x+c*22}" y1="200" x2="${x+c*22}" y2="296" style="stroke:#6c7fae;stroke-width:.6"/>`;
+    [[q,212],[q+4,236],['…',260],[q+60,284]].forEach(([w,y])=>s+=`<line x1="${x}" y1="${y+8}" x2="${x+178}" y2="${y+8}" style="stroke:#6c7fae;stroke-width:1.2"/><rect x="${x+54}" y="${y-8}" width="70" height="13" style="fill:#e8eefb"/>`+tS(x+89,y+2,w==='…'?'…':`Warp ${w}`,9.5));}
+  s+=`<rect x="14" y="304" width="736" height="28" class="sm-reg"/>`+tS(382,322,'"Shared" memory + L1 cache storage (128 KB)',12);
+  const K=[['sm-fp32','FP32 (16 per sub-core)'],['sm-int','INT32 (16)'],['sm-fp64','FP64 (8)'],['sm-ten','Tensor core'],['sm-ls','Load/store']];
+  K.forEach(([c,t],i)=>{const x=14+i*148;s+=`<rect x="${x}" y="344" width="14" height="12" class="${c}"/><text x="${x+20}" y="354" class="xs">${t}</text>`;});
+  s+='<text x="14" y="378" class="sm">64 KB registers per sub-core (256 KB per SM), shared by up to 64 warps</text><text x="14" y="396" class="sm">64 warps × 32 threads = 2,048 resident per SM · 80 SMs → 163,840</text><text x="14" y="414" class="sm">6 MB L2 · 16 GB HBM at ~900 GB/s · a 32-wide warp runs on 16 lanes over 2 clocks</text>';
+  setVB('smSvg',760,422,s);})();
+/* 21 requirements */
+(function(){const R=[['1. Enough parallel work','for every core and unit','multi-core','idle cores'],['2. Coherent groups of work','same instructions across lanes','SIMD','masked, idle lanes'],['3. More work than ALUs','threads to switch to on stalls','hardware multithreading','memory stalls']];let h='';
+  R.forEach(([t,d,hw,f],i)=>{const x=20+i*248;h+=B(x,10,232,62,'cu',t,d,{fs:13})+A(`M${x+116} 72 V94`)+B(x,96,232,40,'te',`serves: ${hw}`,'',{fs:12})+`<text x="${x+116}" y="160" class="mid xs tbad">if missing: ${f}</text>`;});
+  set('reqSvg',h+'<text x="380" y="192" class="mid sm">and underneath all three: data must actually arrive fast enough (bandwidth, next lecture)</text>');})();
+
+/* 22 bandwidth preview */
+(function(){function r(){const bw=+$('#bwB').value,pk=+$('#bwP').value;$('#bwBv').textContent=bw;$('#bwPv').textContent=pk.toFixed(1);
+  const fed=bw/12*1e9,peak=pk*1e12,X=v=>150+(Math.log10(v)-9)/5*580;let h='';
+  [1e9,1e10,1e11,1e12,1e13,1e14].forEach(v=>h+=`<line x1="${X(v)}" y1="14" x2="${X(v)}" y2="120" class="w" style="stroke:var(--line);stroke-width:1"/><text x="${X(v)}" y="136" class="mid xs">10^${Math.log10(v)}</text>`);
+  h+=`<text x="140" y="42" class="end sm">compute can do</text><rect x="150" y="26" width="${X(peak)-150}" height="26" class="cu"/><text x="${X(peak)>600?X(peak)-8:X(peak)+6}" y="44" class="bd ${X(peak)>600?'end':''}">${pk.toFixed(1)} T multiplies/s</text>`;
+  h+=`<text x="140" y="92" class="end sm">memory can feed</text><rect x="150" y="76" width="${Math.max(2,X(fed)-150)}" height="26" class="te"/><text x="${X(fed)+6}" y="94" class="bd">${(fed/1e9).toFixed(0)} G multiplies/s</text>`;
+  h+='<text x="440" y="158" class="mid xs">operations per second · log scale · each multiply needs 12 bytes (A[i], B[i] in, C[i] out)</text>';$('#bwSvg').innerHTML=h;
+  $('#bwMsg').innerHTML=`Memory delivers ${bw} GB/s ÷ 12 bytes = <b>${(fed/1e9).toFixed(0)} billion</b> multiplies per second. The ALUs could do ${pk.toFixed(1)} trillion, so they're busy at most <b>${(100*fed/peak).toPrecision(2)}%</b> of the time. The program is <b>bandwidth-bound</b>.`;}
+  $('#bwB').oninput=r;$('#bwP').oninput=r;r();})();
+
+/* 23 configurator */
+(function(){let S={cores:1,simd:1,issue:1,thr:1};const PRE={simple:{cores:1,simd:1,issue:1,thr:1},ss:{cores:1,simd:1,issue:2,thr:1},mt:{cores:1,simd:8,issue:2,thr:2},fict:{cores:16,simd:8,issue:1,thr:4}};
+  function r(){const {cores,simd,issue,thr}=S;let h=`<rect x="10" y="10" width="420" height="270" class="bx" style="stroke-width:1.6"/><text x="22" y="30" class="bd">one core</text>`;
+    for(let i=0;i<issue;i++)h+=B(22+i*130,40,120,32,'pl','Fetch/Decode','',{fs:11});
+    if(issue>1||thr>1)h+=B(22,80,250,20,'bg2','instruction selection','',{fs:10});
+    let y=110;if(simd===8){h+=`<rect x="22" y="${y}" width="250" height="46" class="cu"/>`;for(let k=0;k<8;k++)h+=`<rect x="${28+k*30.5}" y="${y+6}" width="26" height="20" class="bx"/>`;h+=`<text x="147" y="${y+41}" class="mid xs">8-wide vector ALU</text>`;if(issue>1)h+=B(282,y,136,46,'cu','scalar ALU','',{fs:11});}
+    else for(let i=0;i<issue;i++)h+=B(22+i*130,y,120,46,'cu','ALU','scalar',{fs:12});
+    for(let t=0;t<thr;t++)h+=B(22+t*100,176,92,54,'te',`context ${t}`,'registers + PC',{fs:11});
+    h+=B(22,244,396,26,'bg2','data cache','',{fs:11});
+    h+=`<text x="590" y="30" class="mid bd">the chip: ${cores} core${cores>1?'s':''}</text>`;const cols=cores>=16?4:cores>=4?2:cores,sz=cores>=16?60:cores>=4?100:cores===2?130:180;
+    for(let c=0;c<cores;c++){const x=460+(c%cols)*(sz+8)+(cores===1?40:cores===2?0:0),yy=44+Math.floor(c/cols)*(sz*0.62+8);h+=`<rect x="${x}" y="${yy}" width="${sz}" height="${sz*0.62}" class="bx"/><rect x="${x+4}" y="${yy+4}" width="${sz-8}" height="${sz*0.1}" class="pl"/><rect x="${x+4}" y="${yy+sz*0.18}" width="${sz-8}" height="${sz*0.18}" class="cu"/><rect x="${x+4}" y="${yy+sz*0.42}" width="${sz-8}" height="${sz*0.14}" class="te"/>`;}
+    {const dd=simd===8?(issue>1?'D':'C'):(issue>1?'B':'A'),c=slideChip(dd,thr,cores),g=$('#cfSvg');g.setAttribute('viewBox',`0 0 ${c.W} ${c.H}`);g.style.width=Math.min(c.W*1.1,740)+'px';g.style.minWidth='0';g.style.maxWidth='100%';g.style.margin='0 auto';g.innerHTML=c.svg;}
+    const peak=cores*(simd===8?8+(issue>1?1:0):issue),running=cores*Math.min(issue,thr)||cores,resident=cores*thr,work=cores*thr*simd;
+    $('#cfStat').innerHTML=[['instruction streams resident',resident],['streams issuing per clock (max)',cores*Math.min(issue,thr)],['peak ALU operations per clock',peak],['independent work items needed',work]].map(([a,b])=>`<div>${a}<b>${b}</b></div>`).join('');
+    const parts=[];if(issue>1)parts.push(simd===8?'<b>superscalar</b>: one vector + one scalar instruction per clock':'<b>superscalar</b>: 2 independent instructions per clock from one stream (needs ILP)');if(simd===8)parts.push('<b>SIMD</b>: each vector instruction does 8 elements (needs coherent data parallelism)');if(thr>1)parts.push(`<b>${thr} hardware threads</b>: switch on stalls (needs ${thr}× more work)`);if(cores>1)parts.push(`<b>${cores} cores</b>: ${cores} independent streams (needs threads)`);
+    $('#cfMsg').innerHTML=parts.length?parts.join('<br>'):'The <b>simple processor</b>: one instruction per clock from one stream. Everything else in this lecture is a way to multiply this.';
+    $$('[data-cf]').forEach(b=>b.setAttribute('aria-pressed',S[b.dataset.cf]===+b.dataset.v));}
+  $$('[data-cf]').forEach(b=>b.onclick=()=>{S[b.dataset.cf]=+b.dataset.v;r();});$$('[data-cfp]').forEach(b=>b.onclick=()=>{S={...PRE[b.dataset.cfp]};r();});r();})();
+
+/* 24 permutation matrix + saturation simulator */
+(function(){
+  const DES={A:{n:'Simple',d:'1 fetch/decode · 1 scalar ALU',W:1,U:['S']},B:{n:'Superscalar',d:'2 fetch/decode · 2 scalar ALUs',W:2,U:['S','S']},C:{n:'SIMD',d:'1 fetch/decode · 8-wide SIMD',W:1,U:['V']},D:{n:'Scalar + SIMD',d:'2 fetch/decode · scalar + SIMD',W:2,U:['S','V']}};
+  const lanes=u=>u==='V'?8:1,peakCore=d=>DES[d].U.reduce((a,u)=>a+lanes(u),0);
+  const K0=3,L0=12;
+  function need(d,T,pol,k=K0,L=L0){const D=DES[d];let r,m;
+    if(D.W===1){r=1;m=1;}else if(pol==='smt'&&T>=2){r=1;m=2;}else{r=2;m=1;}
+    const b=k/r,thr=Math.ceil(m*(b+L)/b-1e-9);return {r,m,thr,ilp:(D.W===2&&!(pol==='smt'&&T>=2))?2:1};}
+  function mini(d,T){const c=slideChip(d,T,PC);return `<svg viewBox="0 0 ${c.W} ${c.H}" aria-hidden="true">${c.svg}</svg>`;}
+  let PC=1,PP='int',sel={d:'C',T:4};
+  function matrix(){let h='<div></div>'+[1,2,4].map(t=>`<div class="ch">${t} context${t>1?'s':''} / core</div>`).join('');
+    Object.entries(DES).forEach(([d,D])=>{h+=`<div class="rh"><b>${D.n}</b><small>${D.d}</small></div>`;
+      [1,2,4].forEach(T=>{const n=need(d,T,PP),pk=peakCore(d)*PC,streams=PC*T,items=PC*T*(D.U.includes('V')?8:1);
+        const L=[];L.push(`<b>${streams}</b> stream${streams>1?'s':''} <i>(C × T)</i>`);
+        if(D.W===2)L.push(n.ilp===2?(T>1&&PP==='int'?'each stream: <b>ILP ≥ 2</b> <i>(one thread per clock)</i>':'each stream: <b>ILP ≥ 2</b>'):'ILP not needed: <b>SMT</b> fills slot 2');
+        if(d==='D')L.push('mix: <b>1 scalar + 1 vector</b> per clock');
+        if(D.U.includes('V'))L.push(`<b>8 coherent</b> elements per vector instr.`);
+        L.push(T>=n.thr?`latency: <b>hidden</b> (needs ${n.thr} ctx)`:`latency: <b>only ${Math.round(100*Math.min(1,T/n.thr))}% hidden</b>; needs ${n.thr} ctx`);
+        L.push(`work items: <b>${items}</b>`);
+        h+=`<button class="pcard" data-cell="${d}${T}" aria-pressed="${sel.d===d&&sel.T===T}">${mini(d,T)}<span class="pk">peak ${pk} lane-ops/clock</span><span class="need">${L.join('<br>')}</span></button>`;});});
+    $('#pmx').innerHTML=h;
+    $$('[data-cell]').forEach(b=>b.onclick=()=>{const d=b.dataset.cell[0],T=+b.dataset.cell.slice(1);sel={d,T};loadCell(d,T);matrix();document.getElementById('satSvg').scrollIntoView({behavior:RM?'auto':'smooth',block:'center'});});
+    $$('[data-pc]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.pc===PC));$$('[data-pp]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.pp===PP));}
+  $$('[data-pc]').forEach(b=>b.onclick=()=>{PC=+b.dataset.pc;matrix();});$$('[data-pp]').forEach(b=>b.onclick=()=>{PP=b.dataset.pp;matrix();});
+
+  // simulator state
+  let S={d:'C',T:4,C:1,pol:'int',n:4,ilp:1,mix:'V',coh:1,k:3,L:12};
+  function loadCell(d,T){const D=DES[d],n=need(d,T,PP);
+    S={...S,d,T,C:Math.min(4,PC),pol:PP,ilp:n.ilp,mix:d==='A'||d==='B'?'S':d==='C'?'V':'SV',coh:1,k:K0,L:L0};
+    if(T>n.m){S.L=L0;S.k=Math.max(1,Math.ceil(n.r*L0*n.m/(T-n.m)));}else{S.L=0;S.k=K0;}
+    S.n=Math.max(1,S.C*T);$('#swN').value=S.n;$('#swK').value=S.k;$('#swL').value=S.L;
+    run();}
+  function sim(){const D=DES[S.d],C=S.C,W=D.W,units=D.U,hasV=units.includes('V'),hasS=units.includes('S');
+    const mix=hasV?S.mix:'S';const N=120;
+    const typeAt=p=>mix==='S'?'S':mix==='V'?'V':(p%2?'V':'S');
+    const res={busy:units.map(()=>0),ops:0,peak:peakCore(S.d)*C*N,trace:[],thrState:[],resident:0};
+    for(let c=0;c<C;c++){
+      const mine=[];for(let j=0;j<S.n;j++)if(j%C===c)mine.push(j);const R=mine.slice(0,S.T);if(c===0)res.resident=R.length;
+      const th=R.map(id=>({id,pos:0,done:0,ready:0}));let rr=0;
+      for(let t=0;t<N;t++){const free=units.map(()=>true),row=units.map(()=>null);let issued=0;const st=th.map(x=>x.ready>t?'stall':'wait');
+        const order=th.map((_,i)=>(rr+i)%th.length);let last=-1,first=-1;
+        for(const i of order){if(issued>=W)break;const x=th[i];if(x.ready>t)continue;
+          let fromThis=0;const maxThis=Math.min(S.ilp,W-issued);
+          while(fromThis<maxThis&&issued<W&&x.ready<=t){const ty=typeAt(x.pos);let u=units.findIndex((uu,ui)=>free[ui]&&uu===ty);
+            if(u<0&&ty==='S')u=units.findIndex((uu,ui)=>free[ui]&&uu==='V');
+            if(u<0)break;free[u]=false;row[u]=x.id;res.busy[u]++;issued++;fromThis++;
+            res.ops+=ty==='V'?8*S.coh:1;x.pos++;x.done++;
+            if(S.L>0&&x.done>=S.k){x.done=0;x.ready=t+1+S.L;}}
+          if(fromThis>0){st[i]='run';last=i;if(first<0)first=i;}
+          if(fromThis>0&&(S.pol==='int'||W===1))break;}
+        if(last>=0)rr=first>=0?first:last; /* keep running the same thread until it stalls (switch on stall) */
+        if(c===0&&t<48){res.trace.push(row);res.thrState.push(th.map((x,i)=>st[i]));}}}
+    res.N=N;res.units=units;res.C=C;return res;}
+  function run(){const D=DES[S.d];
+    {const c=slideChip(S.d,S.T,S.C),g=$('#satArch');g.setAttribute('viewBox',`0 0 ${c.W} ${c.H}`);g.style.width=Math.min(c.W*1.1,740)+'px';g.innerHTML=c.svg;$('#satArchT').textContent=`${S.C} core${S.C>1?'s':''} · ${DES[S.d].n.toLowerCase()} · ${S.T} context${S.T>1?'s':''} per core`+(DES[S.d].W>1&&S.T>1?(S.pol==='smt'?' · instruction selection may mix threads (SMT)':' · instruction selection takes one thread per clock'):'');}
+    $('#swNv').textContent=S.n;$('#swKv').textContent=S.k;$('#swLv').textContent=S.L;
+    const r=sim(),N=r.N,x0=150,cw=(740-x0)/48;let h='';
+    const col=id=>['#4a7fc8','#c8763a','#7a5fb0','#3a9a8a','#b84a6a','#8a9a3a','#5a8ac8','#c8a03a'][id%8];
+    for(let t=0;t<=48;t+=8)h+=`<text x="${x0+t*cw}" y="12" class="mid xs">${t}</text>`;
+    r.units.forEach((u,ui)=>{const y=20+ui*26;h+=`<text x="${x0-8}" y="${y+15}" class="end sm">${u==='V'?'8-wide SIMD unit':'scalar ALU'}${r.units.length>1?' '+ui:''}</text>`;
+      r.trace.forEach((row,t)=>{const id=row[ui];h+=`<rect x="${x0+t*cw+.5}" y="${y}" width="${cw-1}" height="20" style="fill:${id===null?'var(--panel2)':col(id)};${id===null?'opacity:.6':''}"/>`;});});
+    const y0=26+r.units.length*26;h+=`<text x="${x0-8}" y="${y0+10}" class="end xs">core 0 threads:</text>`;
+    const nres=r.thrState[0]?r.thrState[0].length:0;
+    for(let i=0;i<nres;i++){const y=y0+14+i*14;h+=`<text x="${x0-8}" y="${y+10}" class="end xs" style="fill:${col(i*r.C)}">thread ${i*r.C}</text>`;
+      r.thrState.forEach((s,t)=>{h+=`<rect x="${x0+t*cw+.5}" y="${y}" width="${cw-1}" height="11" class="${s[i]==='run'?'':s[i]==='stall'?'bad':'bg2'}" style="${s[i]==='run'?`fill:${col(i*r.C)}`:'stroke:none'}"/>`;});}
+    const hgt=y0+20+nres*14;h+=`<text x="${x0}" y="${hgt+10}" class="xs">first 48 clocks of core 0 · colour = thread · red = stalled · grey = empty / waiting</text>`;
+    const svg=$('#satSvg');svg.setAttribute('viewBox',`0 0 760 ${hgt+18}`);svg.innerHTML=h;
+    const util=r.units.map((u,i)=>`${u==='V'?'SIMD':'scalar'} ${Math.round(100*r.busy[i]/(N*r.C))}%`).join(' · ');
+    const peakPer=peakCore(S.d)*r.C;
+    $('#satStat').innerHTML=[['chip peak',`${peakPer} lane-ops/clock`],['achieved',`${(r.ops/N).toFixed(2)} lane-ops/clock`],['fraction of peak',`${Math.round(100*r.ops/r.peak)}%`],['unit busy time',util]].map(([a,b])=>`<div>${a}<b style="font-size:${a==='unit busy time'?'13px':'17px'}">${b}</b></div>`).join('');
+    // checklist
+    const n=need(S.d,S.T,S.pol,S.k,Math.max(S.L,0)),C=S.C,T=S.T,hasV=D.U.includes('V'),ck=[];
+    const add=(ok,t,na)=>ck.push(`<div class="${na?'na':ok?'ok':'no'}"><span>${na?'–':ok?'✓':'✗'}</span><span>${t}</span></div>`);
+    add(S.n>=C,`<b>Every core has a stream.</b> ${S.n} software thread${S.n>1?'s':''} for ${C} core${C>1?'s':''}${S.n<C?`, so ${C-S.n} core${C-S.n>1?'s':''} sit completely idle`:''}.`);
+    add(S.n>=C*T,`<b>Every context is occupied.</b> Needs ${C*T} threads (${C} × ${T}); have ${S.n}${S.n>C*T?` (the extra ${S.n-C*T} aren't resident and can't help)`:''}.`);
+    if(D.W===2){const smtOK=S.pol==='smt'&&Math.min(T,Math.ceil(S.n/C))>=2;add(S.ilp>=2||smtOK,`<b>Both issue slots can be filled.</b> ${S.ilp>=2?'Streams have ILP 2.':smtOK?'SMT fills the second slot from another thread.':S.pol==='smt'?'SMT needs a second resident thread on the core.':'With one thread per clock, the stream itself needs ILP 2.'}`);}
+    else add(true,'<b>Issue slots.</b> Single-issue core: one ready instruction per clock is enough.',true);
+    const mixOK=S.d==='D'?S.mix==='SV':S.d==='C'?S.mix==='V':S.mix==='S';
+    add(mixOK,`<b>Instruction mix matches the units.</b> ${S.d==='D'?(S.mix==='SV'?'Scalar and vector instructions pair up.':S.mix==='V'?'Vector-only code leaves the scalar ALU idle.':'Scalar-only code leaves 7 of 8 SIMD lanes idle.'):S.d==='C'?(S.mix==='V'?'Vector code uses all 8 lanes.':'Scalar code runs on one SIMD lane: 1/8 of the unit.'):(S.mix==='S'?'Scalar code on scalar ALUs.':'No vector unit: this code runs as scalar instructions.')}`);
+    if(hasV&&S.mix!=='S')add(S.coh===1,`<b>SIMD lanes are coherent.</b> ${S.coh===1?'All 8 lanes do useful work.':`Only ${S.coh*8} of 8 lanes useful: divergence costs ${Math.round((1-S.coh)*100)}% of the vector work.`}`);
+    else add(true,'<b>SIMD coherence.</b> No vector work.',true);
+    const R=Math.min(T,Math.ceil(S.n/C));
+    if(S.L>0)add(R>=n.thr,`<b>Memory latency is hidden.</b> ${S.k} instructions per ${S.L}-clock load needs ${n.thr} resident thread${n.thr>1?'s':''} per core; have ${R}${R<n.thr?`, so ≈${Math.round(100*R/n.thr)}% busy at best`:''}.`);
+    else add(true,'<b>Memory latency.</b> Every load hits: nothing to hide.',true);
+    add(S.n*(hasV&&S.mix!=='S'?8:1)>=C*T*(hasV&&S.mix!=='S'?8:1),`<b>Enough independent work items.</b> ${S.n} threads × ${hasV&&S.mix!=='S'?8:1} elements = ${S.n*(hasV&&S.mix!=='S'?8:1)}; the chip needs ${C*T*(hasV&&S.mix!=='S'?8:1)}.`);
+    $('#satChk').innerHTML=ck.join('');
+    $$('[data-sd]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.sd===S.d));$$('[data-st]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.st===S.T));$$('[data-sc]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.sc===S.C));$$('[data-sp]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.sp===S.pol));
+    $$('[data-sw-ilp]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.swIlp===S.ilp));$$('[data-sw-mix]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.swMix===S.mix));$$('[data-sw-coh]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.swCoh===S.coh));}
+  $$('[data-sd]').forEach(b=>b.onclick=()=>{S.d=b.dataset.sd;run();});$$('[data-st]').forEach(b=>b.onclick=()=>{S.T=+b.dataset.st;run();});$$('[data-sc]').forEach(b=>b.onclick=()=>{S.C=+b.dataset.sc;run();});$$('[data-sp]').forEach(b=>b.onclick=()=>{S.pol=b.dataset.sp;run();});
+  $$('[data-sw-ilp]').forEach(b=>b.onclick=()=>{S.ilp=+b.dataset.swIlp;run();});$$('[data-sw-mix]').forEach(b=>b.onclick=()=>{S.mix=b.dataset.swMix;run();});$$('[data-sw-coh]').forEach(b=>b.onclick=()=>{S.coh=+b.dataset.swCoh;run();});
+  $('#swN').oninput=e=>{S.n=+e.target.value;run();};$('#swK').oninput=e=>{S.k=+e.target.value;run();};$('#swL').oninput=e=>{S.L=+e.target.value;run();};
+  matrix();run();
+})();
+})();
+</script>
+</body>
+</html>

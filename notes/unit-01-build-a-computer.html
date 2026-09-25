@@ -1,0 +1,839 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Unit 1 · Build a Computer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="assets/notes.css">
+<script src="assets/notes.js"></script>
+<style>
+/* unit-specific */
+.bitrow{display:flex;gap:6px;flex-wrap:wrap}
+.bitrow .bw{display:flex;flex-direction:column;align-items:center;gap:3px}
+.bitrow button{width:46px;height:46px;font-size:18px;padding:0}
+.bitrow small{font:500 10.5px var(--mono);color:var(--mute)}
+.interp{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:14px}
+.interp div{background:var(--panel2);border-radius:4px;padding:8px 12px}
+.interp small{display:block;font:600 10px var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--mute)}
+.interp b{font:600 18px var(--mono)}
+.ttab{border-collapse:collapse;font-family:var(--mono);font-size:13px}
+.ttab th,.ttab td{padding:4px 10px;text-align:center;border-bottom:1px solid var(--line)}
+.ttab th{font-size:10.5px;color:var(--mute);font-weight:600}
+.ttab tr.cur td{background:var(--cu-soft);font-weight:600}
+.rip{display:grid;grid-template-columns:auto repeat(5,48px);gap:5px;align-items:center;font-family:var(--mono);font-size:14px;overflow-x:auto}
+.rip .lab{font-size:11.5px;color:var(--mute);text-align:right;padding-right:8px}
+.rip .hd{font-size:10.5px;color:var(--mute);text-align:center}
+.rip .c{height:36px;display:grid;place-items:center;border-radius:3px;background:var(--panel2)}
+.rip .cy{background:transparent;color:var(--cu);font-size:12.5px;height:22px}
+.rip .s{background:var(--te-soft);border:1px solid var(--te);font-weight:600}
+.rip .pend{background:repeating-linear-gradient(135deg,var(--warn-soft) 0 5px,transparent 5px 9px);color:var(--warn);border:1px dashed var(--warn)}
+.rip button{height:36px;width:48px;padding:0;font-size:15px}
+.clk{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.regbig{border:2px solid var(--ink);border-radius:5px;padding:10px 14px;background:var(--panel);font-family:var(--mono)}
+.regbig small{display:block;font-size:11px;color:var(--mute);letter-spacing:.06em}
+.regbig b{font-size:30px;font-weight:600}
+.regbig .nx{font-size:13px;color:var(--te);margin-top:4px}
+.regbig.chg{background:var(--cu-soft);border-color:var(--cu)}
+.hist{display:flex;gap:4px;flex-wrap:wrap;margin-top:10px;font:500 12px var(--mono)}
+.hist span{padding:3px 8px;border-radius:3px;background:var(--panel2)}
+/* NIB-8 simulator */
+.sim{display:grid;grid-template-columns:minmax(0,300px) minmax(0,1fr);gap:18px}
+@media (max-width:760px){.sim{grid-template-columns:1fr}}
+.memg{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
+.cell{border:1px solid var(--line);border-radius:3px;padding:3px 5px 4px;background:var(--panel);position:relative}
+.cell .ad{font:500 10px var(--mono);color:var(--mute)}
+.cell input{width:100%;border:0;background:transparent;padding:0;font:600 15px var(--mono);color:var(--ink)}
+.cell .dc{font:500 10px var(--mono);color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cell.pc{outline:2px solid var(--ink)}
+.cell.rd{background:var(--te-soft);border-color:var(--te)}
+.cell.wr{background:var(--cu-soft);border-color:var(--cu)}
+.cell.code .dc{color:var(--cu)}
+.phring{display:flex;gap:6px;margin-bottom:10px}
+.phring span{font:500 12px var(--mono);padding:4px 12px;border-radius:20px;border:1px solid var(--line);color:var(--mute)}
+.phring span.on{background:var(--ink);border-color:var(--ink);color:var(--panel)}
+.counters{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:6px;margin-top:10px}
+.counters div{background:var(--panel2);border-radius:3px;padding:4px 8px;font:500 11px var(--mono);color:var(--mute)}
+.counters b{display:block;font-size:16px;color:var(--ink)}
+#dp .p{stroke:var(--line);stroke-width:1.6;fill:none;transition:stroke .15s}
+#dp .p.act{stroke:var(--cu);stroke-width:3}
+#dp .blk{transition:fill .15s}
+#dp .blk.act{fill:var(--cu-soft);stroke:var(--cu);stroke-width:2}
+.chain{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:14px;margin:14px 0}
+.chain span{padding:5px 11px;border:1px solid var(--line);border-radius:3px;background:var(--panel)}
+.chain i{font-style:normal;color:var(--mute)}
+.ctxcols{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:620px){.ctxcols{grid-template-columns:1fr}}
+.ctxcols > div{border-radius:5px;padding:12px 16px}
+.ctxcols ul{margin:6px 0 0;padding-left:18px;font-size:14.5px}
+.ctx-a{background:var(--te-soft)} .ctx-b{background:var(--panel2)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar"><div class="in">
+  <a class="brand" href="index.html">Gates <span>→</span> GPUs · Notes</a>
+  <nav class="unitnav" aria-label="Units"><a href="index.html">Course map</a><a href="unit-01-build-a-computer.html" aria-current="page">1 · Build a computer</a><a href="unit-02-registers-programs-contexts.html">2 · Programs &amp; contexts</a><a href="unit-03-faster-core.html">3 · A faster core</a><a href="unit-04-parallelism.html">4 · Parallelism</a><a href="cs149/index.html">CS149 lectures</a></nav>
+  <button class="themebtn" type="button">☾ Dark</button>
+</div></header>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk"/></marker>
+  <marker id="ahc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkc"/></marker>
+  <marker id="aht" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkt"/></marker>
+</defs></svg>
+
+<div class="wrap">
+<nav class="toc" aria-label="On this page"></nav>
+<main id="main">
+
+<header class="hero">
+  <div class="kicker">Unit 1 · Lessons 1–4</div>
+  <h1>Build the smallest <em>useful computer</em></h1>
+  <p class="lede">We start with nothing but physical states and end with a machine that runs programs stored in its own memory. Each lesson adds exactly one ingredient, because the previous machine hit a wall.</p>
+  <dl class="outcome">
+    <dt>You'll be able to</dt><dd>Explain how bits, circuits that compute, circuits that remember, and stored instructions combine into a programmable machine. Trace any small program tick by tick, without ever saying "and then the CPU just does it".</dd>
+    <dt>You need</dt><dd>Basic arithmetic and patience for keeping track of a few numbers. No electronics background.</dd>
+    <dt>A note on models</dt><dd>The machine in Lesson 4, <b>NIB-8</b>, is invented for teaching. It's deliberately tiny so that every bit of its state fits on screen. It is not a real commercial CPU.</dd>
+  </dl>
+  <div class="lessonmap">
+    <a href="#l1"><b>LESSON 1</b>A bit is a state; its meaning is an agreement</a>
+    <a href="#l2"><b>LESSON 2</b>Circuits that calculate but can't remember</a>
+    <a href="#l3"><b>LESSON 3</b>State and the clock turn calculation into a sequence</a>
+    <a href="#l4"><b>LESSON 4</b>Stored instructions choose what happens next</a>
+  </div>
+</header>
+
+<!-- =============================== LESSON 1 =============================== -->
+<section class="lesson" id="l1" data-toc="Bits and meaning" data-n="1">
+  <div class="lesson-h"><div class="kicker">Lesson 1</div><h2>A bit is a state; its meaning is an agreement</h2></div>
+  <div class="card4">
+    <div class="c1"><span class="l">Limitation</span>A machine can only hold physical conditions, such as voltages. We need them to stand for information.</div>
+    <div class="c2"><span class="l">New mechanism</span>Binary encoding: agreed ways of reading patterns of two-valued states.</div>
+    <div class="c3"><span class="l">New state</span>None yet. Just bit patterns plus conventions for interpreting them.</div>
+    <div class="c4"><span class="l">Cost</span>Every representation has a fixed width, so it has a limited range and can overflow.</div>
+  </div>
+
+  <h3 class="part">Why two states?</h3>
+  <p>A wire in a chip carries a voltage, and voltages are noisy. Neighbouring wires couple into each other, the supply ripples, and temperature drifts. If we tried to store ten different levels on one wire, a small disturbance could turn a 6 into a 7.</p>
+  <p>Digital logic avoids this by asking only one question of each wire: is it <i>low</i> or <i>high</i>? Any voltage in a wide "low" band counts as <b>0</b>. Any voltage in a wide "high" band counts as <b>1</b>. A gap in between is never supposed to be read. Every gate also <b>restores</b> its output to a clean level, so a signal can pass through any number of gates in a row without the noise piling up.</p>
+  <figure class="fig"><div class="sc">
+    <svg viewBox="0 0 760 226" role="img" aria-label="A noisy input voltage passes through a gate and comes out as a clean digital signal">
+      <rect x="80" y="20" width="660" height="56" class="te" style="opacity:.35;stroke:none"/>
+      <rect x="80" y="76" width="660" height="68" class="bad" style="opacity:.25;stroke:none"/>
+      <rect x="80" y="144" width="660" height="56" class="te" style="opacity:.35;stroke:none"/>
+      <line x1="80" y1="20" x2="80" y2="200" class="w"/>
+      <text x="72" y="26" class="end sm">high</text><text x="72" y="204" class="end sm">low</text>
+      <text x="72" y="52" class="end bd tte">valid 1</text><text x="72" y="114" class="end bd tbad">forbidden</text><text x="72" y="176" class="end bd tte">valid 0</text>
+      <path d="M110 180 L125 170 L138 186 L152 173 L166 184 L180 172 L192 181 L205 62 L216 48 L228 60 L242 44 L256 57 L270 46 L284 58 L296 50 L306 177 L320 186 L334 171 L348 183 L362 173 L378 182 L392 176" class="wc"/>
+      <text x="250" y="16" class="mid sm">noisy input</text>
+      <path d="M396 122 H424" class="w" marker-end="url(#ah)"/>
+      <polygon points="428,96 428,148 474,122" class="bx"/><text x="446" y="168" class="mid sm">a gate</text>
+      <path d="M476 122 H500" class="w" marker-end="url(#ah)"/>
+      <path d="M504 180 H570 V40 H656 V180 H736" class="wt" style="stroke-width:2.5"/>
+      <text x="620" y="16" class="mid sm">restored output</text>
+    </svg></div>
+    <figcaption><b>Wide bands give noise margins.</b> The input wobbles but never leaves its valid band, so the gate reads it correctly and drives a clean 0 or 1. The "1" is a <i>range</i> of voltages, not one magic value.</figcaption></figure>
+
+  <h3 class="part">Place value in base 2</h3>
+  <p>With one bit we can tell apart two possibilities. With two bits, four (00, 01, 10, 11). With <i>n</i> bits, 2<sup>n</sup>. To read a bit pattern as an ordinary number, give each position a weight, just like decimal's ones, tens and hundreds, except the weights double: 1, 2, 4, 8, 16…</p>
+  <figure class="fig"><div class="sc"><svg id="placeSvg" viewBox="0 0 760 150" role="img" aria-label="Binary 00101101 with weights 128 to 1 adds up to 45"></svg></div>
+    <figcaption><b>Reading a byte.</b> Only the positions holding a 1 contribute their weight. Eight bits make a <b>byte</b>, which as an unsigned number ranges from 0 to 255. <b>Hexadecimal</b> is just shorthand: each hex digit stands for exactly four bits, so 0010 1101 is written 0x2D.</figcaption></figure>
+
+  <h3 class="part">Same bits, many meanings</h3>
+  <p>A bit pattern has no meaning by itself. <code>11111111</code> is 255 if we agree it's an unsigned number, −1 if we agree it's a signed number, and an instruction if it happens to be fetched as one. It could just as well be eight on/off flags or part of a character. <b>The operation that uses the bits decides how they are read.</b> Click the bits below and watch one pattern get four different readings at the same time, plus its hexadecimal spelling.</p>
+  <figure class="fig"><div class="widget">
+    <div class="bitrow" id="bits8"></div>
+    <div class="interp" id="interp"></div>
+    <div class="ctrl"><span class="readout">Try:</span><button data-v="45">45</button><button data-v="255">0xFF</button><button data-v="128">0x80</button><button data-v="65">0x41</button><button data-v="58">0x3A</button><button data-v="0">clear</button></div>
+  </div><figcaption><b>One pattern, four readings.</b> The last box uses NIB-8's instruction format from Lesson 4: the top four bits choose the operation and the bottom four bits give an address. The hardware never "knows" which reading is right. It just does what the current operation says with the bits.</figcaption></figure>
+
+  <h3 class="part">Negative numbers: two's complement</h3>
+  <p>How should a fixed number of bits represent negatives? The scheme nearly every computer uses is <b>two's complement</b>: the top bit gets a <i>negative</i> weight. In 8 bits it's worth −128 instead of +128, so <code>11111111</code> = −128 + 64 + 32 + 16 + 8 + 4 + 2 + 1 = −1.</p>
+  <p>The payoff is easiest to see on a wheel. Picture all 16 patterns of a 4-bit number around a circle. Adding 1 always moves one step clockwise, whichever reading you use. That's why <b>the same adder circuit works for signed and unsigned numbers</b>. The two readings only disagree about where the "cliff" is: the place where the numbers jump.</p>
+  <figure class="fig"><div class="sc"><svg id="wheelSvg" viewBox="0 0 760 330" role="img" aria-label="Four-bit number wheel showing unsigned and signed readings of each pattern"></svg></div>
+    <figcaption><b>The 4-bit wheel.</b> Outer labels are unsigned readings (0 to 15), inner labels are signed readings (−8 to 7), and the bit pattern sits on the ring between them. Unsigned values overflow at the top, going from 15 to 0. Signed values overflow at the bottom, going from 7 to −8.</figcaption></figure>
+  <p>Two handy facts follow. To negate a two's-complement number, <b>flip every bit and add 1</b>: 5 = <code>0101</code>, flipped is <code>1010</code>, plus 1 is <code>1011</code> = −5 (look it up on the wheel). And <b>subtraction needs no new hardware</b>: A − B is just A + (flipped B) + 1. We'll use this in the ALU in Lesson 2.</p>
+
+  <h3 class="part">Fixed width means arithmetic wraps around</h3>
+  <p>An 8-bit register can't hold 300. When a result needs more bits than the register has, the extra high bits are simply dropped. The result is the true answer <b>modulo 2<sup>8</sup> = 256</b>.</p>
+  <div class="worked">
+    <p>200 + 100 = 300. In binary that's <code>1 0010 1100</code>, nine bits. Keep the low eight, <code>0010 1100</code>, and you get <b>44</b>, which is 300 − 256.</p>
+    <p>Now read the <i>same</i> bits as signed: 200 is really −56 in 8-bit two's complement, and −56 + 100 = 44. The same bits give the correct signed answer. Nothing overflowed in the signed reading, even though the unsigned reading wrapped.</p>
+  </div>
+  <div class="pitfall">Our teaching machine wraps silently. Real instruction sets must <i>define</i> what happens on overflow, and programming languages add their own rules on top: some wrap, some trap, and in C, signed overflow is undefined. Don't assume every language behaves like this toy.</div>
+
+  <h3 class="part">An address is not the value stored there</h3>
+  <p>Memory is a numbered row of storage locations. The <b>address</b> picks a location, and the <b>contents</b> are whatever bits are stored there. We write <code>M[6] = 42</code> to mean "the location at address 6 holds 42". Mixing up the two is the most common beginner mistake in this whole subject.</p>
+  <figure class="fig"><div class="sc">
+    <svg viewBox="0 0 760 260" role="img" aria-label="Reading address 3 returns 6; using 6 as an address returns 42">
+      <g id="memcol"></g>
+      <rect x="20" y="92" width="150" height="40" class="cu"/><text x="95" y="110" class="mid bd">read address 3</text><text x="95" y="125" class="mid sm">"what's at 3?"</text>
+      <path d="M170 112 H290" class="wc" marker-end="url(#ahc)"/>
+      <path d="M452 112 H520 V196 H452" class="wt" marker-end="url(#aht)"/>
+      <text x="530" y="140" class="sm tte">use the value 6</text><text x="530" y="155" class="sm tte">as an address</text>
+      <text x="530" y="172" class="sm tte">(a pointer)</text>
+      
+    </svg></div>
+    <figcaption><b>Address versus contents.</b> Reading address 3 gives 6. That 6 is only another address if some instruction <i>chooses</i> to use it as one. Following it leads to 42. This one indirect step is exactly what a pointer is.</figcaption></figure>
+  <p>A machine's widths are separate design choices: how many bits a register holds, how many bits an address has, how long an instruction is, and how many bytes one address names. They're often confused because they happen to match on some machines:</p>
+  <div class="tbl"><table>
+    <tr><th>Machine</th><th>Register width</th><th>Address names…</th><th>Instruction length</th></tr>
+    <tr><td>NIB-8 (this unit)</td><td class="m">8 bits</td><td>one 8-bit word; 16 addresses</td><td class="m">8 bits</td></tr>
+    <tr><td>RISC-V RV32I (Unit 2)</td><td class="m">32 bits</td><td>one byte; 2<sup>32</sup> addresses</td><td class="m">32 bits</td></tr>
+    <tr><td>x86-64 (a typical PC)</td><td class="m">64 bits</td><td>one byte; 48- or 57-bit virtual addresses in practice</td><td class="m">1–15 bytes</td></tr>
+  </table></div>
+
+  <div class="predict"><div class="ph"><b>Predict</b><span>Answer before opening. The reasoning matters more than the number.</span></div><ol>
+    <li>What is <code>01100100</code> as an unsigned number? How many distinct patterns can a 6-bit register hold?
+      <details><summary>Show answer</summary><div class="ans"><p>64 + 32 + 4 = <b>100</b>. A 6-bit register has 2<sup>6</sup> = <b>64</b> patterns (0–63 unsigned).</p></div></details></li>
+    <li>Read <code>11110000</code> as unsigned and as 8-bit two's complement.
+      <details><summary>Show answer</summary><div class="ans"><p>Unsigned: 128 + 64 + 32 + 16 = <b>240</b>. Signed: −128 + 64 + 32 + 16 = <b>−16</b>. Check: 240 − 256 = −16. For any pattern with the top bit set, signed = unsigned − 256.</p></div></details></li>
+    <li>On an 8-bit machine, compute 180 + 90. Then read the inputs and the result as signed numbers. Is the signed answer correct?
+      <details><summary>Show answer</summary><div class="ans"><p>270 mod 256 = <b>14</b>. Signed, 180 is −76, and −76 + 90 = 14. <b>Yes</b>, the same bits are the correct signed answer. The adder doesn't care about interpretation: the unsigned sum wrapped around, but the signed one didn't overflow.</p></div></details></li>
+    <li>M[2] = 9, M[9] = 4, M[4] = 2. What does a plain read of address 2 return? What if you follow the value as an address twice?
+      <details><summary>Show answer</summary><div class="ans"><p>A plain read returns <b>9</b>. Following once gives M[9] = 4, and following again gives M[4] = <b>2</b>. The values happen to form a cycle, 2 → 9 → 4 → 2. Memory doesn't care. Only the operations give numbers the role of "address".</p></div></details></li>
+  </ol></div>
+  <p class="checkpoint">Explain the difference between a bit pattern, an interpretation of it, an address, and the contents at that address, using an example of your own.</p>
+</section>
+
+<!-- =============================== LESSON 2 =============================== -->
+<section class="lesson" id="l2" data-toc="Gates and a datapath" data-n="2">
+  <div class="lesson-h"><div class="kicker">Lesson 2</div><h2>Circuits that calculate but can't remember</h2></div>
+  <div class="card4">
+    <div class="c1"><span class="l">Limitation</span>Bit patterns just sit there. Nothing transforms them.</div>
+    <div class="c2"><span class="l">New mechanism</span>Combinational logic: gates, multiplexers, adders, and an ALU built from them.</div>
+    <div class="c3"><span class="l">New state</span>Still none. Outputs depend only on the current inputs.</div>
+    <div class="c4"><span class="l">Cost</span>Propagation delay. More functions need more gates, which means more area and energy.</div>
+  </div>
+  <p>A <b>combinational circuit</b> computes its outputs purely from its <i>current</i> inputs. There's no history and no memory. When an input changes, the outputs change too, after a short physical delay while the signals settle. Everything in this lesson is combinational.</p>
+
+  <h3 class="part">Five gates on a bench</h3>
+  <p>A <b>gate</b> is a tiny circuit (a handful of transistors) that computes one logical function. Toggle the inputs and watch each gate's output lamp. The truth table highlights the row you're on.</p>
+  <figure class="fig"><div class="widget">
+    <div class="grid2">
+      <div class="sc" style="padding:0"><svg id="bench" viewBox="0 0 470 300" role="img" aria-label="Logic gates NOT, AND, OR, XOR and NAND with live outputs" style="min-width:380px"></svg></div>
+      <div><p class="panel-t">Truth table</p><table class="ttab" id="ttab"></table>
+        <div class="ctrl"><button id="gA" class="pri">A = 0</button><button id="gB" class="pri">B = 0</button></div></div>
+    </div>
+  </div><figcaption><b>AND</b> is 1 only if both inputs are 1. <b>OR</b> is 1 if at least one is. <b>XOR</b> (exclusive or) is 1 if exactly one is, which makes it a "not-equal" detector. <b>NOT</b> flips its input. <b>NAND</b> is "not AND", and it's special: every other logic function can be built from NAND gates alone.</figcaption></figure>
+
+  <h3 class="part">The multiplexer: choosing a source</h3>
+  <p>A <b>multiplexer</b> (mux) has several data inputs and a <b>select</b> input that picks which one passes through. It's the most important "boring" part in a processor. Every time the same wire needs to carry a value from different places at different times, a mux sits there, and the control logic flips its select signal.</p>
+  <figure class="fig narrow"><div class="widget">
+    <div class="sc" style="padding:0"><svg id="muxSvg" viewBox="0 0 520 170" role="img" aria-label="A two-input multiplexer choosing between 7 and 12" style="min-width:420px"></svg></div>
+    <div class="ctrl"><button id="muxS" class="pri">S = 0</button><span class="readout">Flip the select line. The data inputs never change, only which one reaches the output.</span></div>
+  </div><figcaption><b>A 2-to-1 mux on 8-bit values.</b> S = 0 passes A, and S = 1 passes B. Wider muxes (4-to-1, 8-to-1) just use more select bits.</figcaption></figure>
+
+  <h3 class="part">Building addition: the full adder</h3>
+  <p>Adding binary numbers column by column is exactly like decimal: each column adds two digits plus a carry from the column to its right, and produces a sum digit and a carry to the left. A <b>full adder</b> is the circuit for one column. Its two outputs are:</p>
+  <p style="text-align:center;font-family:var(--mono);font-size:15px">sum = A ⊕ B ⊕ C<sub>in</sub> &nbsp;&nbsp;&nbsp; C<sub>out</sub> = A·B + C<sub>in</sub>·(A ⊕ B)</p>
+  <p>Read the carry formula in words: <i>a carry comes out if both inputs are 1 (the column <b>generates</b> a carry), or if exactly one is 1 and a carry came in (the column <b>propagates</b> it)</i>. Toggle the inputs and follow the highlighted wires:</p>
+  <figure class="fig"><div class="widget">
+    <div class="sc" style="padding:0"><svg id="faSvg" viewBox="0 0 760 290" role="img" aria-label="Gate-level full adder with live wire values"></svg></div>
+    <div class="ctrl"><button id="faA" class="pri">A = 1</button><button id="faB" class="pri">B = 1</button><button id="faC" class="pri">Cin = 0</button><span class="readout" id="faOut"></span></div>
+  </div><figcaption><b>A full adder from five gates.</b> Copper wires carry 1 and grey wires carry 0. The first XOR computes P = A ⊕ B ("exactly one input is 1"), and the first AND computes G = A·B ("both are 1"). The sum is P ⊕ C<sub>in</sub>. The carry-out is G OR (P AND C<sub>in</sub>).</figcaption></figure>
+
+  <h3 class="part">Chaining columns: the ripple-carry adder, and why it takes time</h3>
+  <p>Connect four full adders so each carry-out feeds the next column's carry-in, and you can add 4-bit numbers. But gates aren't instantaneous. Each takes a small <b>propagation delay</b> to respond, and here each column must wait for the carry from the column before it. The carry <i>ripples</i> from right to left. Set some bits, then press <b>Watch it ripple</b>:</p>
+  <figure class="fig"><div class="widget">
+    <div class="rip" id="rip"></div>
+    <div class="ctrl"><button id="ripGo" class="pri">Watch it ripple</button><label class="rl" for="ripT">time elapsed: <span id="ripTv">9</span> gate delays<input type="range" id="ripT" min="0" max="9" value="9"></label></div>
+    <p class="readout" id="ripOut" style="margin:10px 0 0"></p>
+  </div><figcaption><b>Hatched cells haven't settled yet.</b> In the worst case, the carry <i>out of</i> column <i>i</i> settles only after about 2<i>i</i> + 3 gate delays, so the final carry settles after 9. A 64-bit ripple adder would need over 100 gate delays. Real CPUs use <i>carry-lookahead</i> adders that compute all the carries in parallel using more gates. It's the first of many times we'll trade extra hardware for less waiting.</figcaption></figure>
+
+  <h3 class="part">The ALU: many operations, one chosen result</h3>
+  <p>An <b>arithmetic logic unit</b> bundles several operations (add, subtract, AND, OR, XOR…) with a mux on the output. <b>All the units compute at once, on every input, all the time.</b> The operation-select signal just decides which answer comes out. Subtraction reuses the adder: A − B = A + (NOT B) + 1, with the "+1" entering as the adder's first carry-in.</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 10px"><label class="rl" for="aluA">A (0–255)<input id="aluA" type="number" min="0" max="255" value="23"></label><label class="rl" for="aluB">B (0–255)<input id="aluB" type="number" min="0" max="255" value="19"></label>
+      <div class="seg" role="group" aria-label="ALU operation"><button data-op="ADD" aria-pressed="true">ADD</button><button data-op="SUB">SUB</button><button data-op="AND">AND</button><button data-op="OR">OR</button><button data-op="XOR">XOR</button></div></div>
+    <div class="sc" style="padding:0"><svg id="aluSvg" viewBox="0 0 760 270" role="img" aria-label="ALU with four units feeding an output multiplexer"></svg></div>
+  </div><figcaption><b>Every unit computes, one result is chosen.</b> The grey values are computed and thrown away every time. That costs a little energy but saves time, because the answer is ready the moment the select signal changes. The <b>zero flag</b> (is the result 0?) is the kind of extra output a later branch instruction can test.</figcaption></figure>
+
+  <h3 class="part">What we still can't do</h3>
+  <p>Change an input, and after the delay the output changes. The adder doesn't keep its old answer anywhere. It's a <b>calculator circuit</b>, not yet a machine that can carry out a <i>sequence</i> of steps, because nothing holds a result so the next step can use it. That missing ingredient is the next lesson.</p>
+  <div class="insight">This split between <b>parts that transform values</b> (ALUs, adders) and <b>parts that hold values</b> (registers, memories) survives all the way to GPUs. When we later ask why a chip is slow, the answer is usually that the transforming parts are waiting on the holding parts.</div>
+
+  <div class="predict"><div class="ph"><b>Predict</b><span>Trace it on paper first.</span></div><ol>
+    <li>A mux has A = 7 and B = 12. What's the output for S = 0? For S = 1?
+      <details><summary>Show answer</summary><div class="ans"><p><b>7</b> for S = 0 and <b>12</b> for S = 1. The mux doesn't compute anything with the values. It only routes one of them through.</p></div></details></li>
+    <li>What are the sum and carry-out of a full adder with A = 1, B = 1, C<sub>in</sub> = 1?
+      <details><summary>Show answer</summary><div class="ans"><p>1 + 1 + 1 = 3 = binary <code>11</code>: <b>sum 1, carry 1</b>. Via the gates: P = 0, G = 1, sum = P ⊕ C<sub>in</sub> = 1, and carry = G + P·C<sub>in</sub> = 1. Set it in the full-adder demo to check.</p></div></details></li>
+    <li>Compute 9 − 5 in 4 bits the way the ALU does, as A + NOT B + 1.
+      <details><summary>Show answer</summary><div class="ans"><p>9 = <code>1001</code>, 5 = <code>0101</code>, NOT 5 = <code>1010</code>. Then <code>1001</code> + <code>1010</code> + 1 = <code>1 0100</code>. Drop the fifth bit and you get <code>0100</code> = <b>4</b> ✓. The carry-out of 1 means "no borrow was needed".</p></div></details></li>
+    <li>Why doesn't building a much faster adder, on its own, give us a programmable computer?
+      <details><summary>Show answer</summary><div class="ans"><p>Speed isn't the missing piece. A combinational circuit has <b>no memory</b>, so it can't keep a result for a next step. It also has <b>no way to choose a different operation over time</b> except by someone changing its inputs by hand. Programmability needs <i>state</i> (Lesson 3) and <i>instructions that drive the select signals</i> (Lesson 4).</p></div></details></li>
+  </ol></div>
+  <p class="checkpoint">Point at each part of the ALU figure and say whether it <i>computes</i>, <i>selects</i>, or (so far, nothing) <i>remembers</i>.</p>
+</section>
+
+<!-- =============================== LESSON 3 =============================== -->
+<section class="lesson" id="l3" data-toc="State and the clock" data-n="3">
+  <div class="lesson-h"><div class="kicker">Lesson 3</div><h2>State and the clock turn calculation into a sequence</h2></div>
+  <div class="card4">
+    <div class="c1"><span class="l">Limitation</span>A combinational circuit forgets its result as soon as its inputs change, so there's no way to do step 2 after step 1.</div>
+    <div class="c2"><span class="l">New mechanism</span>Registers that capture a value at a clock edge (if enabled) and hold it until the next one.</div>
+    <div class="c3"><span class="l">New state</span>The contents of every register. From now on, the machine has a <i>current state</i>.</div>
+    <div class="c4"><span class="l">Cost</span>The clock must be slow enough for the slowest logic path. Storage and clock wiring cost area and power.</div>
+  </div>
+
+  <h3 class="part">Feedback makes memory</h3>
+  <p>Take two gates and feed each one's output into the other's input. The loop can settle in two stable ways, and it stays in whichever one it's pushed into. That's a <b>latch</b>: one bit of memory built from logic. A <b>flip-flop</b> refines this so it only changes at one precise moment, the <b>rising edge of a clock</b> signal. Line up 8 flip-flops sharing one clock and you have an 8-bit <b>register</b>.</p>
+  <p>A register usually also has a <b>write enable</b>. When it's off, the register keeps its old value even though the clock keeps ticking. Look at how that's built: it's just the mux from Lesson 2, feeding the register's own output back in.</p>
+  <figure class="fig"><div class="sc">
+    <svg viewBox="0 0 760 190" role="img" aria-label="Register with write enable: a mux selects new data or the register's own old value">
+      <text x="30" y="64" class="bd">new value</text><path d="M30 76 H236" class="w" marker-end="url(#ah)"/>
+      <polygon points="240,52 272,64 272,126 240,138" class="bx"/><text x="252" y="81" class="sm">1</text><text x="252" y="120" class="sm">0</text>
+      <path d="M256 30 V56" class="wp dash" marker-end="url(#ah)"/><text x="256" y="22" class="mid sm tpl">write enable</text>
+      <path d="M272 95 H346" class="w" marker-end="url(#ah)"/><text x="310" y="88" class="mid sm">D</text>
+      <rect x="350" y="50" width="120" height="90" class="te"/><text x="410" y="90" class="mid hd">Register</text><text x="410" y="110" class="mid sm">8 flip-flops</text>
+      <polyline points="350,124 362,132 350,140" class="w"/><text x="336" y="160" class="sm end">clock ↑</text><path d="M340 160 V136 H348" class="w"/>
+      <path d="M470 95 H700" class="wc" marker-end="url(#ahc)"/><text x="540" y="88" class="sm">Q (stored value)</text>
+      <path d="M600 95 V170 H210 V114 H238" class="wt" marker-end="url(#aht)"/><text x="400" y="184" class="mid sm tte">old value fed back: "keep what I have"</text>
+    </svg></div>
+    <figcaption><b>Write enable is a mux.</b> On each rising clock edge the register captures whatever D is. With enable = 0, D <i>is</i> the register's own old value, so nothing changes.</figcaption></figure>
+
+  <h3 class="part">The synchronous model: everything changes at the edge</h3>
+  <p>Almost every processor follows one rhythm:</p>
+  <ol>
+    <li><b>Between edges</b>, combinational logic reads the current register values and computes the <i>next</i> values. The outputs wobble while signals settle, and that's fine.</li>
+    <li><b>At the edge</b>, every enabled register captures its next value <i>at the same instant</i>.</li>
+  </ol>
+  <figure class="fig"><div class="sc"><svg id="timingSvg" viewBox="0 0 760 236" role="img" aria-label="Timing diagram: register output Q changes only at rising clock edges, capturing input D"></svg></div>
+    <figcaption><b>Q changes only at rising edges.</b> D can change at any time, even mid-cycle, but Q ignores it until the next edge. The shaded <b>setup window</b> before each edge is the time D must be stable before the flip-flop can capture it reliably.</figcaption></figure>
+
+  <h3 class="part">Try it: registers read old values</h3>
+  <p>Because all registers capture at the same instant, each next-value computation sees the <b>old</b> values of every register, never a half-updated mix. This is very different from lines of code running one after another. Pick a rule, predict the next values, then tick the clock:</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 12px"><div class="seg" role="group" aria-label="Next-state rule"><button data-rule="swap" aria-pressed="true">Swap</button><button data-rule="acc">A←A+B, B←A</button><button data-rule="fib">Fibonacci</button><button data-rule="count">Counter</button></div></div>
+    <div class="clk" id="clkRegs"></div>
+    <p class="msg" id="clkMsg"></p>
+    <div class="ctrl"><button id="clkTick" class="pri">Tick ↑</button><button id="clkEn" hidden>Enable = 1</button><button id="clkReset">Reset</button></div>
+    <div class="hist" id="clkHist"></div>
+  </div><figcaption><b>Swap</b> works in one edge with no temporary variable. Step-by-step code needs a temporary (or a trick), because each line sees the previous line's result. <b>Counter</b> adds a write enable, so turn it off and the value holds while the clock keeps ticking. All arithmetic is 8-bit and wraps at 256.</figcaption></figure>
+
+  <h3 class="part">Why the clock can't just go faster</h3>
+  <p>The clock period must be long enough for the <b>slowest</b> path between two registers to settle. That path is called the <b>critical path</b>. The period covers three delays: the first register's output appearing, the signal crossing the logic, and the setup time of the capturing register.</p>
+  <figure class="fig"><div class="sc">
+    <svg viewBox="0 0 760 212" role="img" aria-label="Critical path: clock-to-output delay plus logic delay plus setup time sets the minimum clock period">
+      <rect x="40" y="36" width="70" height="60" class="te"/><text x="75" y="70" class="mid bd">Reg</text>
+      <path d="M110 66 H158" class="w" marker-end="url(#ah)"/>
+      <rect x="160" y="30" width="360" height="72" rx="30" class="bg2"/><text x="340" y="62" class="mid">combinational logic</text><text x="340" y="80" class="mid sm">its longest path = the critical path</text>
+      <path d="M520 66 H578" class="w" marker-end="url(#ah)"/>
+      <rect x="580" y="36" width="70" height="60" class="te"/><text x="615" y="70" class="mid bd">Reg</text>
+      <rect x="40" y="136" width="36" height="26" class="pl"/><rect x="76" y="136" width="420" height="26" class="cu"/><rect x="496" y="136" width="24" height="26" class="pl"/>
+      <text x="58" y="180" class="mid sm">clk→Q</text><text x="58" y="194" class="mid sm">60 ps</text>
+      <text x="286" y="154" class="mid bd">logic 700 ps</text>
+      <text x="508" y="180" class="mid sm">setup</text><text x="508" y="194" class="mid sm">40 ps</text>
+      <path d="M40 124 H520" class="w" marker-start="url(#ah)" marker-end="url(#ah)"/><text x="280" y="118" class="mid sm">minimum clock period = 800 ps → at most 1.25 GHz</text>
+      <text x="540" y="154" class="sm">At 1.6 GHz (625 ps), the second</text><text x="540" y="170" class="sm">register would capture a value</text><text x="540" y="186" class="sm">that hasn't finished computing.</text>
+    </svg></div>
+    <figcaption><b>Timing is physics, not a setting.</b> Making the clock faster requires shortening the critical path: faster transistors, fewer gates in a row, or cutting the path into pieces with registers in between. That last option is <i>pipelining</i>, and it's the first lesson of Unit 3.</figcaption></figure>
+
+  <h3 class="part">Registers, memory, datapath, control</h3>
+  <p>Both registers and memory hold state, but at different scales:</p>
+  <div class="tbl"><table>
+    <tr><th></th><th>Register</th><th>Memory array</th></tr>
+    <tr><td>Size</td><td>One value (say 8–64 bits); a register file has a few dozen</td><td>Thousands to billions of locations</td></tr>
+    <tr><td>How you pick one</td><td>By its wiring or a small register number</td><td>By an address</td></tr>
+    <tr><td>Access</td><td>Immediate, several reads at once</td><td>Slower, usually one or two accesses at a time</td></tr>
+  </table></div>
+  <p>From here on we split a processor into two halves. The <b>datapath</b> holds and transforms values: registers, ALU, muxes, memory. The <b>control logic</b> decides, every cycle, which operation the ALU does, which input each mux selects, and which registers are enabled to write. We now have every ingredient for both.</p>
+
+  <div class="predict"><div class="ph"><b>Predict</b><span>Remember: all registers read old values.</span></div><ol>
+    <li>A = 3, B = 9. At one edge, A ← A + B and B ← A. What are A and B afterwards?
+      <details><summary>Show answer</summary><div class="ans"><p><b>A = 12, B = 3.</b> B receives the <i>old</i> A (3), not the new 12. Both next values were computed from the state before the edge. Check with the "A←A+B, B←A" rule above.</p></div></details></li>
+    <li>A register holds 12, and its input logic is producing 13, but write enable is 0. What happens at the next edge?
+      <details><summary>Show answer</summary><div class="ans"><p>It <b>stays 12</b>. The 13 is computed and discarded. The enable mux feeds the old value back in.</p></div></details></li>
+    <li>Starting from A = 0, B = 1 with the Fibonacci rule (A ← B, B ← A + B), what is B after 5 ticks?
+      <details><summary>Show answer</summary><div class="ans"><p>(A, B) goes (0,1) → (1,1) → (1,2) → (2,3) → (3,5) → (5,8). So <b>B = 8</b>. Each tick advances the whole pair at once.</p></div></details></li>
+    <li>A design's longest logic path is 700 ps and its registers add 100 ps of overhead. Why can't we just double the clock frequency?
+      <details><summary>Show answer</summary><div class="ans"><p>The period must be at least <b>800 ps</b> (1.25 GHz). At double that frequency (400 ps), the capturing register would sample the logic's output long before it settled, and it would store garbage. To go faster you must change the circuit, for example split the path with extra registers (pipelining).</p></div></details></li>
+  </ol></div>
+  <p class="checkpoint">Describe any clocked machine as three things: its <b>current state</b>, the <b>combinational logic</b> that computes the next state, and the <b>rule for when state changes</b> (the clock edge and write enables).</p>
+</section>
+
+<!-- =============================== LESSON 4 =============================== -->
+<section class="lesson" id="l4" data-toc="A stored-program machine" data-n="4">
+  <div class="lesson-h"><div class="kicker">Lesson 4</div><h2>Stored instructions choose what happens next</h2></div>
+  <div class="card4">
+    <div class="c1"><span class="l">Limitation</span>Our counter always does the same thing. Changing its behaviour means rebuilding the circuit.</div>
+    <div class="c2"><span class="l">New mechanism</span>Instructions stored as numbers in memory, a program counter, and control logic that decodes each instruction into select and enable signals.</div>
+    <div class="c3"><span class="l">New state</span>PC, instruction register, accumulator, a halted flag, and the control phase.</div>
+    <div class="c4"><span class="l">Cost</span>Every instruction pays for fetch and decode, and everything funnels through one accumulator and one memory.</div>
+  </div>
+  <p>Here's the big idea of this unit. Instead of wiring the sequence of operations into the circuit, <b>store the sequence as numbers in memory</b>, and build one fixed circuit that reads a number, works out what it means, and does it. Change the numbers, and the same hardware does something completely different.</p>
+
+  <h3 class="part">Meet NIB-8</h3>
+  <p>Our machine is small enough that its entire specification fits in one table:</p>
+  <div class="tbl"><table>
+    <tr><th>Part</th><th>What it is</th></tr>
+    <tr><td class="m">M[0] … M[15]</td><td>16 memory words of 8 bits each. <b>Instructions and data share this memory.</b></td></tr>
+    <tr><td class="m">ACC</td><td>The 8-bit <b>accumulator</b>: the one working register that arithmetic reads and writes.</td></tr>
+    <tr><td class="m">PC</td><td>The 4-bit <b>program counter</b>: the address of the next instruction to fetch.</td></tr>
+    <tr><td class="m">IR</td><td>The 8-bit <b>instruction register</b>: holds the fetched instruction while it's decoded and executed.</td></tr>
+    <tr><td class="m">phase</td><td>Where the control is: fetch, decode, or execute.</td></tr>
+    <tr><td class="m">halted</td><td>A flag that stops the machine.</td></tr>
+  </table></div>
+  <p>Every instruction is one byte. The top 4 bits (the <b>opcode</b>) say what to do, and the bottom 4 bits say which memory address to do it with. That's why it's called NIB-8: an instruction is two <i>nibbles</i> (half-bytes).</p>
+  <figure class="fig narrow"><div class="sc">
+    <svg viewBox="0 0 560 150" role="img" aria-label="Instruction byte 0x3A split into opcode 0011 meaning ADD and address 1010 meaning 10">
+      <g id="fmtBits"></g>
+      <text x="160" y="118" class="mid bd tcu">opcode 0011 = 3 → ADD</text><text x="400" y="118" class="mid bd tte">address 1010 = 10</text>
+      <text x="280" y="142" class="mid">0x3A means "ADD 10": ACC ← ACC + M[10]</text>
+    </svg></div></figure>
+  <div class="tbl"><table>
+    <tr><th>Instruction</th><th>Byte</th><th>What happens during execute</th></tr>
+    <tr><td class="m">LOAD a</td><td class="m">0x1a</td><td>ACC ← M[a]</td></tr>
+    <tr><td class="m">STORE a</td><td class="m">0x2a</td><td>M[a] ← ACC (ACC unchanged)</td></tr>
+    <tr><td class="m">ADD a</td><td class="m">0x3a</td><td>ACC ← (ACC + M[a]) mod 256</td></tr>
+    <tr><td class="m">SUB a</td><td class="m">0x4a</td><td>ACC ← (ACC − M[a]) mod 256</td></tr>
+    <tr><td class="m">JMP a</td><td class="m">0x5a</td><td>PC ← a</td></tr>
+    <tr><td class="m">JZ a</td><td class="m">0x6a</td><td>PC ← a <i>if</i> ACC = 0; otherwise nothing</td></tr>
+    <tr><td class="m">HALT</td><td class="m">0xF0</td><td>halted ← true. Any 0xF_ byte counts as HALT, since the low nibble is ignored.</td></tr>
+  </table></div>
+  <p>Here "a" stands for whatever the low hex digit is, so <code>LOAD 8</code> is <code>0x18</code> and <code>STORE 10</code> is <code>0x2A</code>. Bytes with other opcodes aren't NIB-8 instructions. If one is ever fetched, our teaching rule is that the machine halts.</p>
+
+  <h3 class="part">The datapath</h3>
+  <p>Everything from the earlier lessons shows up here. There are registers (PC, IR, ACC), muxes (which address goes to memory, and which value becomes the next PC), an adder (PC + 1), an ALU, and a control unit that sets all the selects and enables.</p>
+  <figure class="fig"><div class="sc">
+    <svg id="dp" viewBox="0 0 760 360" role="img" aria-label="NIB-8 datapath: memory, address mux, PC with incrementer and next-PC mux, instruction register, control, accumulator and ALU">
+      <rect id="b-mem" class="blk bx" x="20" y="40" width="172" height="282"/><text x="106" y="232" class="mid hd">Memory</text><text x="106" y="250" class="mid sm">16 words × 8 bits</text>
+      <g class="xs"><text x="186" y="84" class="end">addr</text><text x="186" y="170" class="end">read data</text><text x="106" y="314" class="mid">write data</text></g>
+      <polygon id="b-am" class="blk bx" points="274,56 244,70 244,110 274,124"/><text x="259" y="140" class="mid xs">addr mux</text>
+      <rect id="b-pc" class="blk bx" x="330" y="40" width="80" height="40"/><text x="370" y="65" class="mid bd">PC</text>
+      <rect id="b-inc" class="blk bx" x="450" y="40" width="60" height="40"/><text x="480" y="65" class="mid bd">+1</text>
+      <polygon id="b-pm" class="blk bx" points="560,28 590,40 590,80 560,92"/><text x="600" y="96" class="xs">next PC</text>
+      <rect id="b-ir" class="blk bx" x="330" y="150" width="80" height="40"/><text x="370" y="175" class="mid bd">IR</text>
+      <rect id="b-ctl" class="blk pl" x="450" y="145" width="110" height="50"/><text x="505" y="167" class="mid bd">Control</text><text x="505" y="183" class="mid sm">decode</text>
+      <text x="505" y="136" class="mid xs">sets mux selects, ALU op, enables</text>
+      <rect id="b-halt" class="blk bx" x="592" y="150" width="70" height="40"/><text x="627" y="175" class="mid sm">halted</text>
+      <rect id="b-acc" class="blk te" x="330" y="250" width="80" height="40"/><text x="370" y="275" class="mid bd">ACC</text>
+      <polygon id="b-alu" class="blk cu" points="470,232 540,256 540,306 470,330 470,292 484,281 470,270"/><text x="512" y="285" class="mid bd">ALU</text>
+      <path id="pc2am" class="p" d="M330 60 H300 V72 H276" marker-end="url(#ah)"/>
+      <path id="am2mem" class="p" d="M244 90 H194" marker-end="url(#ah)"/>
+      <path id="pc2inc" class="p" d="M410 60 H448" marker-end="url(#ah)"/>
+      <path id="inc2pm" class="p" d="M510 60 H530 V48 H558" marker-end="url(#ah)"/>
+      <path id="pm2pc" class="p" d="M590 60 H625 V18 H370 V38" marker-end="url(#ah)"/>
+      <path id="mem2ir" class="p" d="M192 176 H328" marker-end="url(#ah)"/>
+      <path id="ir2ctl" class="p" d="M410 170 H448" marker-end="url(#ah)"/>
+      <path id="ir2am" class="p" d="M360 150 V108 H276" marker-end="url(#ah)"/>
+      <path id="ir2pm" class="p" d="M390 150 V114 H540 V80 H558" marker-end="url(#ah)"/>
+      <path id="ctl2halt" class="p" d="M560 170 H590" marker-end="url(#ah)"/>
+      <path id="acc2alu" class="p" d="M410 262 H468" marker-end="url(#ah)"/>
+      <path id="mem2alu" class="p" d="M192 176 H290 V312 H468" marker-end="url(#ah)"/>
+      <path id="alu2acc" class="p" d="M540 281 H604 V222 H380 V248" marker-end="url(#ah)"/>
+      <path id="acc2mem" class="p" d="M370 290 V346 H106 V324" marker-end="url(#ah)"/>
+      <path id="acc2ctl" class="p dash" d="M410 276 H462 V198" marker-end="url(#ah)"/>
+      <g class="xs"><text x="296" y="60">PC</text><text x="300" y="104">IR.addr</text><text x="410" y="108">IR.addr (jump target)</text><text x="429" y="186" class="mid">opcode</text><text x="420" y="302">ACC = 0?</text><text x="296" y="244">M[addr]</text><text x="612" y="248">result</text></g>
+    </svg></div>
+    <figcaption><b>The NIB-8 datapath.</b> In the simulator below, the wires and blocks used in the current tick light up. LOAD sends memory data through the ALU unchanged ("pass B"), so one wire back into ACC serves LOAD, ADD and SUB. The dashed wire lets control test whether ACC is zero for JZ.</figcaption></figure>
+
+  <h3 class="part">Fetch, decode, execute</h3>
+  <p>NIB-8 spends three clock ticks on every instruction. This is our teaching timing model, not a claim about real memory speeds:</p>
+  <ol>
+    <li><b>Fetch.</b> The address mux sends PC to memory, and the byte that comes back is captured in IR. At the same edge, PC ← PC + 1. Both updates use the <i>old</i> PC, just like in Lesson 3.</li>
+    <li><b>Decode.</b> Control looks at IR's opcode and prepares the right selects. Nothing visible changes.</li>
+    <li><b>Execute.</b> The instruction's effect happens: ACC, memory or PC changes, or the machine halts.</li>
+  </ol>
+  <div class="pitfall">One <b>instruction cycle</b> (fetch, decode, execute) here takes three <b>clock cycles</b>. The two terms are easy to blur. Also notice that PC already points to the <i>next</i> instruction while the current one executes. That's why a jump simply overwrites PC.</div>
+
+  <h3 class="part">Run it: the NIB-8 simulator</h3>
+  <p>Pick a program, then press <b>Tick</b> one clock edge at a time. Before each tick, predict what will change. Memory cells are editable: type a hex byte into any cell to change the program or its data, and the machine resets.</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 12px"><span class="readout">Program:</span><div class="seg" role="group" aria-label="Program"><button data-prog="add" aria-pressed="true">Add two numbers</button><button data-prog="count">Countdown</button><button data-prog="mul">Multiply</button></div></div>
+    <div class="sim">
+      <div><p class="panel-t">Memory (hex, editable)</p><div class="memg" id="memg"></div>
+        <p class="readout" style="margin-top:8px"><span style="outline:2px solid var(--ink);padding:0 4px">outlined</span> = PC · <span style="background:var(--te-soft);padding:0 4px">teal</span> = read · <span style="background:var(--cu-soft);padding:0 4px">copper</span> = written</p></div>
+      <div>
+        <div class="phring" id="phring"><span>Fetch</span><span>Decode</span><span>Execute</span></div>
+        <div class="regs" id="simRegs"></div>
+        <p class="msg" id="simMsg"></p>
+        <div class="counters" id="simCnt"></div>
+      </div>
+    </div>
+    <div class="ctrl"><button id="simBack">◀ Back</button><button id="simTick" class="pri">Tick ▶</button><button id="simInstr">Next instruction ▶▶</button><button id="simRun">Run</button><button id="simReset">Reset</button></div>
+    <div class="tbl" style="margin-top:14px"><table id="simLog"></table></div>
+  </div><figcaption><b>Things to watch.</b> During fetch, PC advances while ACC doesn't move. ADD changes ACC but not memory. Only STORE changes memory. In the loops, JMP and JZ don't move any instructions around. They only change which address the next fetch uses.</figcaption></figure>
+
+  <h3 class="part">Branches turn a sequence into a loop</h3>
+  <p>Without <code>JMP</code> and <code>JZ</code>, a program runs straight through memory once. With them, it can repeat and decide. The Countdown program is a loop that ends by testing ACC:</p>
+  <figure class="fig"><div class="sc">
+    <svg viewBox="0 0 760 196" role="img" aria-label="Countdown program as a flowchart: load, subtract, store, test for zero, jump back or halt">
+      <rect x="20" y="60" width="110" height="46" class="bx"/><text x="75" y="80" class="mid bd">0: LOAD 8</text><text x="75" y="97" class="mid sm">ACC ← n</text>
+      <path d="M130 83 H158" class="w" marker-end="url(#ah)"/>
+      <rect x="160" y="60" width="110" height="46" class="cu"/><text x="215" y="80" class="mid bd">1: SUB 9</text><text x="215" y="97" class="mid sm">ACC ← ACC − 1</text>
+      <path d="M270 83 H298" class="w" marker-end="url(#ah)"/>
+      <rect x="300" y="60" width="110" height="46" class="cu"/><text x="355" y="80" class="mid bd">2: STORE 8</text><text x="355" y="97" class="mid sm">n ← ACC</text>
+      <path d="M410 83 H448" class="w" marker-end="url(#ah)"/>
+      <polygon points="510,40 572,83 510,126 448,83" class="pl"/><text x="510" y="80" class="mid bd">3: JZ 5</text><text x="510" y="96" class="mid sm">ACC = 0?</text>
+      <path d="M572 83 H628" class="wt" marker-end="url(#aht)"/><text x="600" y="75" class="mid sm tte">yes</text>
+      <rect x="630" y="60" width="110" height="46" class="te"/><text x="685" y="88" class="mid bd">5: HALT</text>
+      <path d="M510 126 V138 H470 V150" class="w" marker-end="url(#ah)"/><text x="518" y="140" class="sm">no</text>
+      <rect x="410" y="152" width="100" height="36" class="bx"/><text x="460" y="175" class="mid bd">4: JMP 1</text>
+      <path d="M410 170 H215 V108" class="wc" marker-end="url(#ahc)"/><text x="310" y="164" class="mid sm tcu">PC ← 1: fetch SUB again</text>
+    </svg></div>
+    <figcaption><b>The loop is in the PC, not in the memory.</b> Starting with n = 3, ACC goes 3 → 2 → 1 → 0. The circuit never changed. Only the numbers in memory did, and that's what programmability means.</figcaption></figure>
+
+  <h3 class="part">What is an "execution context"?</h3>
+  <p>Suppose we want to pause a NIB-8 program and resume it later, or on a second NIB-8. What must we save? It depends on <i>where</i> we pause. At a clean <b>instruction boundary</b> (between an execute and the next fetch), the essential state is small:</p>
+  <div class="ctxcols">
+    <div class="ctx-a"><p class="panel-t" style="color:var(--te)">Must be saved (architectural)</p><ul><li><b>PC</b>: where to continue</li><li><b>ACC</b>: the working value</li><li><b>halted</b></li><li>The <b>memory</b> contents, or access to them</li></ul></div>
+    <div class="ctx-b"><p class="panel-t">Can be dropped at a boundary</p><ul><li><b>IR</b>: the next fetch refills it</li><li><b>phase</b>: always "fetch next" at a boundary</li><li>ALU outputs and mux settings</li></ul></div>
+  </div>
+  <p>Pause <i>mid-instruction</i>, after fetch but before execute, and PC + ACC is no longer enough: you'd also need IR and the phase. That's why real processors are careful to switch tasks only at well-defined boundaries. This <b>saved context</b> is exactly what an operating system stores when it switches between programs, as Unit 2 shows in detail. Note that an OS doesn't copy a program's whole memory on each switch. It just keeps track of which memory belongs to which program.</p>
+
+  <h3 class="part">A first performance calculation</h3>
+  <p>Every program's run time breaks into three factors, which we'll use for the rest of the course:</p>
+  <p style="text-align:center;font-family:var(--mono);font-size:15px">time = instructions executed × cycles per instruction (CPI) × seconds per cycle</p>
+  <div class="worked">
+    <p>The Multiply program (6 × 3) executes <b>24 instructions</b>. NIB-8 always takes <b>3 cycles</b> per instruction, so that's 72 ticks. At a hypothetical 100 MHz clock (10 ns per tick), it runs in <b>720 ns</b>.</p>
+    <p>A faster clock would help only if the circuit could still meet its timing (Lesson 3). A smarter design could lower CPI by overlapping instructions (Unit 3). A better algorithm could lower the instruction count. <b>Clock frequency alone never tells you which machine finishes first.</b></p>
+  </div>
+
+  <div class="predict"><div class="ph"><b>Predict</b><span>Use the simulator only to check.</span></div><ol>
+    <li>In "Add two numbers", right after the <b>6th tick</b>, what are PC, ACC and M[10]? Why hasn't M[10] changed yet?
+      <details><summary>Show answer</summary><div class="ans"><p>Tick 6 completes the execute of <code>ADD 9</code>: <b>PC = 2, ACC = 42</b> (23 + 19), <b>M[10] = 0</b>. Only STORE writes memory, and STORE hasn't been fetched yet (ticks 7–9).</p></div></details></li>
+    <li>Change the inputs to M[8] = 250 and M[9] = 10 (0xFA and 0x0A). What gets stored?
+      <details><summary>Show answer</summary><div class="ans"><p>260 mod 256 = <b>4</b>. NIB-8 keeps only 8 bits and has no overflow flag, so the program can't even tell that it wrapped.</p></div></details></li>
+    <li>How many instructions does Countdown (starting n = 3) execute, including HALT, and how many ticks?
+      <details><summary>Show answer</summary><div class="ans"><p>LOAD, then three rounds of SUB-STORE-JZ, with JMP after the first two rounds only, then HALT: 1 + 3×3 + 2 + 1 = <b>13 instructions</b>, so <b>39 ticks</b>.</p></div></details></li>
+    <li>In Multiply, what happens if the counter M[14] starts at 0?
+      <details><summary>Show answer</summary><div class="ans"><p>The loop adds once, then computes 0 − 1 = <b>255</b>, which isn't zero, so it keeps going. It runs <b>256 times</b> before the counter wraps back to 0, and the product becomes 6 × 256 mod 256 = 0. The loop tests the counter <i>after</i> adding, so a zero count was never handled. Try it in the simulator (set cell 14 to 00) and use Run.</p></div></details></li>
+    <li>For "Add two numbers", count instruction-fetch reads, data reads and data writes.
+      <details><summary>Show answer</summary><div class="ans"><p>4 instruction fetches (one per instruction, including HALT), <b>2 data reads</b> (LOAD 8, ADD 9) and <b>1 data write</b> (STORE 10): 7 memory accesses in total. The simulator's counters confirm this. Everything goes through one memory, and that is the bottleneck Unit 2 starts attacking.</p></div></details></li>
+    <li>You pause right after tick 4 of "Add two numbers" and save only PC and ACC. Why can't a second NIB-8 continue from exactly that point?
+      <details><summary>Show answer</summary><div class="ans"><p>Tick 4 was a <i>fetch</i>: IR now holds <code>ADD 9</code> and PC is already 2. With only PC = 2 and ACC = 23, the second machine would fetch address 2 (STORE) and <b>skip the ADD entirely</b>. It needs IR and the phase too, or else you should pause only at instruction boundaries.</p></div></details></li>
+  </ol></div>
+  <p class="checkpoint">Without the simulator: explain why the machine needs both PC and ACC, why ADD and STORE are separate instructions, and how JMP changes control flow without moving any instructions.</p>
+</section>
+
+<section class="lesson" id="wrap" data-toc="Putting it together" data-n="✓">
+  <div class="lesson-h"><div class="kicker">Unit 1 · Summary</div><h2>Putting it together</h2></div>
+  <p>Explain the whole machine aloud using this chain as prompts. When every arrow feels obvious, you're ready for Unit 2.</p>
+  <div class="chain"><span>bits</span><i>given meaning by</i><span>interpretation</span><i>stored at an</i><span>address</span><i>routed by</i><span>muxes</span><i>transformed by the</i><span>ALU</span><i>held in</i><span>registers</span><i>updated on the</i><span>clock</span><i>programs live in</i><span>memory</span><i>as</i><span>instructions</span><i>located by the</i><span>PC</span><i>decoded by</i><span>control</span><i>resumable via a saved</i><span>context</span></div>
+  <div class="tbl"><table>
+    <tr><th>Lesson</th><th>Mechanism added</th><th>State it adds</th><th>What still limits us</th></tr>
+    <tr><td>1</td><td>Binary encoding</td><td>—</td><td>Bits don't do anything</td></tr>
+    <tr><td>2</td><td>Gates, mux, adder, ALU</td><td>—</td><td>No memory, so no sequence</td></tr>
+    <tr><td>3</td><td>Registers + clock</td><td>Register contents</td><td>Fixed behaviour</td></tr>
+    <tr><td>4</td><td>Stored program</td><td>PC, IR, ACC, phase, halted</td><td>One accumulator: every intermediate result detours through memory</td></tr>
+  </table></div>
+  <p>That last limitation is where Unit 2 begins. Look at the Multiply loop. Four of its seven loop instructions exist only to shuttle the product and the counter between memory and ACC, because there's only one place to keep a working value.</p>
+  <div class="nextunit"><a href="index.html"><small>← Back to</small>Course map</a><a href="unit-02-registers-programs-contexts.html"><small>Next · Unit 2</small>Registers, programs &amp; execution contexts →</a></div>
+</section>
+
+</main>
+</div>
+<script>
+(function(){
+const {$,$$,RM,hex,bin}=NOTES;
+const svgEl=(id,html)=>{const e=document.getElementById(id);if(e)e.innerHTML=html;return e;};
+
+/* ---------- Lesson 1: place value ---------- */
+(function(){
+  const v=45;let h='<text x="20" y="36" class="sm">weight</text><text x="20" y="74" class="sm">bit</text><text x="20" y="122" class="sm">adds</text>';
+  for(let i=0;i<8;i++){const w=1<<(7-i),b=(v>>(7-i))&1,x=110+i*72;
+    h+=`<text x="${x+30}" y="36" class="mid sm">${w}</text><rect x="${x}" y="46" width="60" height="44" class="${b?'cu':'bg2'}"/><text x="${x+30}" y="75" class="mid bd" style="font-size:18px">${b}</text><text x="${x+30}" y="122" class="mid ${b?'bd tcu':'sm'}">${b?w:0}</text>`;}
+  h+='<text x="392" y="146" class="mid bd">32 + 8 + 4 + 1 = 45 = 0x2D</text>';
+  svgEl('placeSvg',h);
+})();
+
+/* ---------- Lesson 1: bits & interpretations ---------- */
+(function(){
+  let v=45;
+  const row=$('#bits8');
+  row.innerHTML=Array.from({length:8},(_,i)=>{const k=7-i;return `<div class="bw"><button data-k="${k}" aria-label="bit ${k}">0</button><small>${k===7?'−128 / 128':1<<k}</small></div>`}).join('');
+  const mnem=x=>{const o=x>>4,a=x&15;return ({1:'LOAD',2:'STORE',3:'ADD',4:'SUB',5:'JMP',6:'JZ'}[o]?({1:'LOAD',2:'STORE',3:'ADD',4:'SUB',5:'JMP',6:'JZ'}[o]+' '+a):o===15?'HALT':'not an instruction');};
+  function render(){
+    row.querySelectorAll('button').forEach(b=>{const on=(v>>+b.dataset.k)&1;b.textContent=on;b.setAttribute('aria-pressed',!!on);});
+    const s=v>127?v-256:v, ch=(v>=32&&v<127)?`'${String.fromCharCode(v)}'`:'—';
+    $('#interp').innerHTML=`<div><small>Unsigned</small><b>${v}</b></div><div><small>Signed (two's complement)</small><b>${s}</b></div><div><small>Hexadecimal</small><b>${hex(v)}</b></div><div><small>ASCII character</small><b>${ch}</b></div><div><small>NIB-8 instruction</small><b style="font-size:15px">${mnem(v)}</b></div>`;
+  }
+  row.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;v^=1<<+b.dataset.k;render();});
+  $$('#l1 [data-v]').forEach(b=>b.onclick=()=>{v=+b.dataset.v;render();});
+  render();
+})();
+
+/* ---------- Lesson 1: 4-bit wheel ---------- */
+(function(){
+  const cx=190,cy=165;let h=`<circle cx="${cx}" cy="${cy}" r="118" class="w" style="stroke:var(--line);stroke-width:22;opacity:.55"/>`;
+  const P=(r,deg)=>[cx+r*Math.cos(deg*Math.PI/180),cy+r*Math.sin(deg*Math.PI/180)];
+  for(let k=0;k<16;k++){const a=-90+k*22.5,s=k<8?k:k-16;
+    const [x1,y1]=P(146,a),[x2,y2]=P(118,a),[x3,y3]=P(84,a);
+    h+=`<text x="${x1}" y="${y1+4}" class="mid bd">${k}</text><text x="${x2}" y="${y2+4}" class="mid" style="font-size:10.5px">${bin(k,4)}</text><text x="${x3}" y="${y3+4}" class="mid bd ${s<0?'tcu':'tte'}">${s}</text>`;}
+  const cl=(a,r1,r2)=>{const [x1,y1]=P(r1,a),[x2,y2]=P(r2,a);return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" class="wb" style="stroke-width:3.5"/>`;};
+  h+=cl(-101.25,100,136)+cl(78.75,100,136);
+  const [ax1,ay1]=P(168,-70),[ax2,ay2]=P(168,-35);
+  h+=`<path d="M${ax1} ${ay1} A168 168 0 0 1 ${ax2} ${ay2}" class="wt" marker-end="url(#aht)"/><text x="${P(182,-50)[0]}" y="${P(182,-50)[1]}" class="sm tte">+1</text>`;
+  const L=[["bd","Adding 1 moves one step clockwise,"],["bd","in both readings. Same adder circuit."],["",""],["tbad bd","Top red line — unsigned overflow:"],["","1111 + 1 → 0000, so 15 → 0"],["",""],["tbad bd","Bottom red line — signed overflow:"],["","0111 + 1 → 1000, so 7 → −8"],["",""],["","−1 + 1: 1111 → 0000 crosses only the"],["","unsigned cliff, so signed −1 + 1 = 0 ✓"],["",""],["sm","outer ring: unsigned · middle: bits · inner: signed"]];
+  L.forEach(([c,t],i)=>h+=`<text x="400" y="${56+i*19}" class="${c}">${t}</text>`);
+  svgEl('wheelSvg',h);
+})();
+
+/* ---------- Lesson 1: address vs contents ---------- */
+(function(){
+  const M=[17,0,99,6,5,250,42,8];let h='';
+  M.forEach((v,i)=>{const y=14+i*28;h+=`<text x="312" y="${y+18}" class="end sm">${i}</text><rect x="320" y="${y}" width="130" height="28" class="${i===3?'cu':i===6?'te':'bx'}"/><text x="385" y="${y+19}" class="mid bd">${v}</text>`;});
+  h+='<text x="385" y="258" class="mid sm">contents</text><text x="306" y="11" class="mid xs">address</text>';
+  svgEl('memcol',h);
+})();
+
+/* ---------- Lesson 2: gate shapes ---------- */
+const G={
+  AND:(x,y)=>`<path d="M${x} ${y} H${x+25} A20 20 0 0 1 ${x+25} ${y+40} H${x} Z" class="bx"/>`,
+  OR:(x,y)=>`<path d="M${x} ${y} Q${x+14} ${y+20} ${x} ${y+40} Q${x+34} ${y+40} ${x+50} ${y+20} Q${x+34} ${y} ${x} ${y} Z" class="bx"/>`,
+  XOR:(x,y)=>G.OR(x,y)+`<path d="M${x-7} ${y} Q${x+7} ${y+20} ${x-7} ${y+40}" class="w" style="stroke:var(--ink)"/>`,
+  NOT:(x,y)=>`<path d="M${x} ${y+2} L${x} ${y+38} L${x+40} ${y+20} Z" class="bx"/><circle cx="${x+45}" cy="${y+20}" r="5" class="bx"/>`,
+  NAND:(x,y)=>G.AND(x,y)+`<circle cx="${x+50}" cy="${y+20}" r="5" class="bx"/>`
+};
+const OUTX={AND:45,OR:50,XOR:50,NOT:50,NAND:55};
+const wc=v=>'w'+(v?' on1':'');
+
+/* ---------- Lesson 2: logic bench ---------- */
+(function(){
+  let A=0,B=0;
+  const rows=[['NOT','NOT A',(a,b)=>1-a],['AND','A AND B',(a,b)=>a&b],['OR','A OR B',(a,b)=>a|b],['XOR','A XOR B',(a,b)=>a^b],['NAND','A NAND B',(a,b)=>1-(a&b)]];
+  function render(){
+    let h='';
+    rows.forEach(([t,lab,f],i)=>{const y=18+i*56,gx=110,o=f(A,B);
+      if(t==='NOT'){h+=`<text x="16" y="${y+24}" class="sm">A</text><path d="M34 ${y+20} H${gx}" class="${wc(A)}"/>`;}
+      else{h+=`<text x="16" y="${y+14}" class="sm">A</text><text x="16" y="${y+34}" class="sm">B</text><path d="M34 ${y+10} H${gx+(t==='XOR'?-7:2)}" class="${wc(A)}"/><path d="M34 ${y+30} H${gx+(t==='XOR'?-7:2)}" class="${wc(B)}"/>`;}
+      h+=G[t](gx,y);
+      h+=`<path d="M${gx+OUTX[t]} ${y+20} H250" class="${wc(o)}"/><circle cx="262" cy="${y+20}" r="10" style="fill:${o?'var(--cu)':'var(--panel2)'};stroke:${o?'var(--cu)':'var(--line)'}"/>`;
+      h+=`<text x="284" y="${y+24}">${lab} = <tspan class="bd ${o?'tcu':''}">${o}</tspan></text>`;
+    });
+    $('#bench').innerHTML=h;
+    let t='<tr><th>A</th><th>B</th><th>NOT A</th><th>AND</th><th>OR</th><th>XOR</th><th>NAND</th></tr>';
+    for(let a=0;a<2;a++)for(let b=0;b<2;b++)t+=`<tr class="${a===A&&b===B?'cur':''}"><td>${a}</td><td>${b}</td>`+rows.map(r=>`<td>${r[2](a,b)}</td>`).join('')+'</tr>';
+    $('#ttab').innerHTML=t;
+    $('#gA').textContent=`A = ${A}`;$('#gB').textContent=`B = ${B}`;
+  }
+  $('#gA').onclick=()=>{A^=1;render();};$('#gB').onclick=()=>{B^=1;render();};
+  render();
+})();
+
+/* ---------- Lesson 2: mux ---------- */
+(function(){
+  let S=0;
+  function render(){
+    const out=S?12:7;
+    $('#muxSvg').innerHTML=
+      `<rect x="20" y="30" width="80" height="36" class="${S?'bg2':'cu'}"/><text x="60" y="53" class="mid bd">A = 7</text>`+
+      `<rect x="20" y="104" width="80" height="36" class="${S?'cu':'bg2'}"/><text x="60" y="127" class="mid bd">B = 12</text>`+
+      `<path d="M100 48 H198" class="${S?'w':'wc'}" style="stroke-width:${S?1.4:3}"/><path d="M100 122 H198" class="${S?'wc':'w'}" style="stroke-width:${S?3:1.4}"/>`+
+      `<polygon points="200,30 240,48 240,122 200,140" class="bx"/><text x="212" y="54" class="xs">0</text><text x="212" y="126" class="xs">1</text>`+
+      `<path d="M204 ${S?122:48} L236 85" class="wc" style="stroke-width:2.5"/>`+
+      `<path d="M220 6 V37" class="wp dash" marker-end="url(#ah)"/><text x="232" y="16" class="sm tpl">S = ${S}</text>`+
+      `<path d="M240 85 H330" class="wc" style="stroke-width:3" marker-end="url(#ahc)"/>`+
+      `<rect x="334" y="64" width="150" height="42" class="cu"/><text x="409" y="90" class="mid bd">output = ${out}</text>`;
+    $('#muxS').textContent=`S = ${S}`;
+  }
+  $('#muxS').onclick=()=>{S^=1;render();};render();
+})();
+
+/* ---------- Lesson 2: full adder ---------- */
+(function(){
+  let A=1,B=1,C=0;
+  function render(){
+    const P=A^B,Gv=A&B,S=P^C,PC=P&C,Co=Gv|PC;
+    const dot=(x,y,v)=>`<circle cx="${x}" cy="${y}" r="3.5" style="fill:${v?'var(--cu)':'var(--mute)'}"/>`;
+    let h='';
+    h+=`<text x="20" y="64" class="bd">A=${A}</text><text x="20" y="104" class="bd">B=${B}</text><text x="12" y="254" class="bd">Cin=${C}</text>`;
+    h+=`<path d="M62 60 H140 V70 H173" class="${wc(A)}"/><path d="M140 70 V140 H182" class="${wc(A)}"/>${dot(140,70,A)}`;
+    h+=`<path d="M62 100 H155 V90 H173" class="${wc(B)}"/><path d="M155 100 V160 H182" class="${wc(B)}"/>${dot(155,100,B)}`;
+    h+=`<path d="M230 80 H320 V110 H373" class="${wc(P)}"/><path d="M320 110 V190 H382" class="${wc(P)}"/>${dot(320,110,P)}`;
+    h+=`<path d="M62 250 H300 V130 H373" class="${wc(C)}"/><path d="M300 210 H382" class="${wc(C)}"/>${dot(300,210,C)}`;
+    h+=`<path d="M225 150 H260 V272 H500 V185 H524" class="${wc(Gv)}"/>`;
+    h+=`<path d="M425 200 H470 V165 H524" class="${wc(PC)}"/>`;
+    h+=`<path d="M430 120 H688" class="${wc(S)}"/><path d="M570 175 H688" class="${wc(Co)}"/>`;
+    h+=G.XOR(180,60)+G.AND(180,130)+G.XOR(380,100)+G.AND(380,180)+G.OR(520,155);
+    h+=`<text x="205" y="115" class="mid xs">XOR</text><text x="200" y="185" class="mid xs">AND</text><text x="405" y="155" class="mid xs">XOR</text><text x="400" y="235" class="mid xs">AND</text><text x="545" y="210" class="mid xs">OR</text>`;
+    h+=`<text x="262" y="74" class="sm">P = ${P}</text><text x="232" y="144" class="sm">G = ${Gv}</text><text x="432" y="222" class="sm">P·Cin = ${PC}</text>`;
+    const lamp=(y,v,l)=>`<circle cx="702" cy="${y}" r="12" style="fill:${v?'var(--cu)':'var(--panel2)'};stroke:${v?'var(--cu)':'var(--line)'}"/><text x="720" y="${y+5}" class="bd">${l}=${v}</text>`;
+    h+=lamp(120,S,'S')+lamp(175,Co,'Co');
+    $('#faSvg').innerHTML=h;
+    $('#faA').textContent=`A = ${A}`;$('#faB').textContent=`B = ${B}`;$('#faC').textContent=`Cin = ${C}`;
+    $('#faOut').innerHTML=`${A} + ${B} + ${C} = <b>${A+B+C}</b> = binary <b>${Co}${S}</b> (carry ${Co}, sum ${S})`;
+  }
+  $('#faA').onclick=()=>{A^=1;render();};$('#faB').onclick=()=>{B^=1;render();};$('#faC').onclick=()=>{C^=1;render();};render();
+})();
+
+/* ---------- Lesson 2: ripple adder with settling time ---------- */
+(function(){
+  let A=0b0111,B=0b0101,t=9,timer=null;
+  const sT=i=>2*i+2, cT=i=>i===0?0:2*i+1; // settle times: sum i, carry INTO column i (i=4 is carry out)
+  function render(){
+    let c=0,cin=[],sum=0;
+    for(let i=0;i<4;i++){const a=(A>>i)&1,b=(B>>i)&1;cin[i]=c;sum|=(a^b^c)<<i;c=(a&b)|(c&(a^b));}
+    cin[4]=c;
+    const pend=(ok,txt,cls)=>ok?`<div class="c ${cls}">${txt}</div>`:`<div class="c ${cls} pend">?</div>`;
+    let h='<div></div><div class="hd">carry out</div>'+[3,2,1,0].map(i=>`<div class="hd">bit ${i} (${1<<i})</div>`).join('');
+    h+='<div class="lab">carry in</div><div></div>'+[3,2,1,0].map(i=>t>=cT(i)?`<div class="c cy">${cin[i]}</div>`:`<div class="c cy pend">?</div>`).join('');
+    ['A','B'].forEach(r=>{const V=r==='A'?A:B;h+=`<div class="lab">${r}</div><div></div>`+[3,2,1,0].map(i=>{const b=(V>>i)&1;return `<button data-r="${r}" data-i="${i}" aria-pressed="${!!b}" aria-label="${r} bit ${i}">${b}</button>`}).join('');});
+    h+='<div class="lab">sum</div>'+pend(t>=cT(4),cin[4],'s')+[3,2,1,0].map(i=>pend(t>=sT(i),(sum>>i)&1,'s')).join('');
+    $('#rip').innerHTML=h;
+    const settled=[0,1,2,3].filter(i=>t>=sT(i)).length+(t>=cT(4)?1:0);
+    $('#ripOut').innerHTML=`${A} + ${B} = <b>${A+B}</b> &nbsp;·&nbsp; after ${t} gate delays, <b>${settled} of 5</b> output bits are guaranteed settled${settled===5?' — the answer is final.':'.'}`;
+    $('#ripT').value=t;$('#ripTv').textContent=t;
+    $$('#rip button').forEach(b=>b.onclick=()=>{const i=+b.dataset.i;if(b.dataset.r==='A')A^=1<<i;else B^=1<<i;render();});
+  }
+  $('#ripT').oninput=e=>{t=+e.target.value;render();};
+  $('#ripGo').onclick=()=>{if(timer)clearInterval(timer);if(RM){t=9;render();return;}t=0;render();timer=setInterval(()=>{t++;render();if(t>=9){clearInterval(timer);timer=null;}},450);};
+  render();
+})();
+
+/* ---------- Lesson 2: ALU ---------- */
+(function(){
+  let op='ADD';
+  function render(){
+    const A=Math.max(0,Math.min(255,+$('#aluA').value||0)),B=Math.max(0,Math.min(255,+$('#aluB').value||0));
+    const vals={ADD:(A+B)&255,SUB:(A-B+256)&255,AND:A&B,OR:A|B,XOR:A^B};
+    const units=[['ADD',op==='SUB'?'A + ~B + 1':'A + B',op==='SUB'?vals.SUB:vals.ADD,op==='ADD'||op==='SUB'],['AND','A AND B',vals.AND,op==='AND'],['OR','A OR B',vals.OR,op==='OR'],['XOR','A XOR B',vals.XOR,op==='XOR']];
+    const r=vals[op];
+    let h=`<rect x="20" y="50" width="90" height="40" class="bx"/><text x="65" y="75" class="mid bd">A = ${A}</text><rect x="20" y="170" width="90" height="40" class="bx"/><text x="65" y="195" class="mid bd">B = ${B}</text>`;
+    h+=`<path d="M110 70 H150 M150 32 V212 M110 190 H170 M170 48 V228" class="w"/>`;
+    units.forEach(([k,lab,v,sel],i)=>{const y=20+i*60;
+      h+=`<path d="M150 ${y+12} H198 M170 ${y+28} H198" class="w"/><circle cx="150" cy="${y+12}" r="3" class="mk"/><circle cx="170" cy="${y+28}" r="3" class="mk"/>`;
+      h+=`<rect x="200" y="${y}" width="120" height="40" class="${sel?'cu':'bg2'}"/><text x="260" y="${y+17}" class="mid ${sel?'bd':'sm'}">${k==='ADD'?'Adder':k}</text><text x="260" y="${y+32}" class="mid xs">${lab} = ${v}</text>`;
+      h+=`<path d="M320 ${y+20} H398" class="${sel?'wc':'w'}" style="stroke-width:${sel?3:1.2}"/>`;});
+    h+=`<polygon points="400,20 440,40 440,220 400,240" class="bx"/><text x="420" y="134" class="mid xs">mux</text><path d="M420 2 V28" class="wp dash" marker-end="url(#ah)"/><text x="432" y="12" class="sm tpl">op = ${op}</text>`;
+    h+=`<path d="M440 130 H498" class="wc" style="stroke-width:3" marker-end="url(#ahc)"/>`;
+    h+=`<rect x="500" y="100" width="150" height="60" class="cu"/><text x="575" y="126" class="mid bd" style="font-size:18px">${r}</text><text x="575" y="146" class="mid sm">${bin(r,8)}</text>`;
+    h+=`<rect x="670" y="100" width="72" height="60" class="${r===0?'te':'bg2'}"/><text x="706" y="126" class="mid bd">Z = ${r===0?1:0}</text><text x="706" y="146" class="mid xs">zero flag</text>`;
+    h+=`<text x="575" y="186" class="mid sm">8-bit result (wraps mod 256)</text>`;
+    $('#aluSvg').innerHTML=h;
+    $$('[data-op]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.op===op));
+  }
+  $$('[data-op]').forEach(b=>b.onclick=()=>{op=b.dataset.op;render();});
+  $('#aluA').oninput=render;$('#aluB').oninput=render;render();
+})();
+
+/* ---------- Lesson 3: timing diagram ---------- */
+(function(){
+  const bus=(x1,x2,y,lab)=>`<path d="M${x1} ${y+15} L${x1+5} ${y} H${x2-5} L${x2} ${y+15} L${x2-5} ${y+30} H${x1+5} Z" class="bx"/><text x="${(x1+x2)/2}" y="${y+20}" class="mid bd">${lab}</text>`;
+  let h='<text x="20" y="50" class="bd">CLK</text><text x="20" y="120" class="bd">D</text><text x="20" y="136" class="xs">input</text><text x="20" y="190" class="bd">Q</text><text x="20" y="206" class="xs">output</text>';
+  [120,280,440,600].forEach((e,i)=>{h+=`<rect x="${e-16}" y="98" width="16" height="34" class="te" style="opacity:.5;stroke:none"/><line x1="${e}" y1="22" x2="${e}" y2="214" class="w dash" style="stroke:var(--line)"/><path d="M${e} 132 L${e+6} 166" class="wt" marker-end="url(#aht)"/>`;});
+  h+='<path d="M80 60 H120 V30 H200 V60 H280 V30 H360 V60 H440 V30 H520 V60 H600 V30 H680 V60 H740" class="wc" style="stroke-width:2.2"/>';
+  [[80,170,'5'],[178,330,'9'],[338,520,'2'],[528,740,'7']].forEach(([a,b,l])=>h+=bus(a,b,100,l));
+  [[80,126,'0'],[134,286,'5'],[294,446,'9'],[454,606,'2'],[614,740,'7']].forEach(([a,b,l])=>h+=bus(a,b,168,l));
+  h+='<text x="104" y="92" class="xs">setup</text><text x="120" y="16" class="mid xs">rising edge</text>';
+  h+='<text x="528" y="146" class="sm tcu">D changes mid-cycle;</text><text x="528" y="159" class="sm tcu">Q waits for the next edge</text>';
+  h+='<text x="740" y="230" class="end xs">time →</text>';
+  svgEl('timingSvg',h);
+})();
+
+/* ---------- Lesson 3: clock explorer ---------- */
+(function(){
+  const R={
+    swap:{a:3,b:9,f:(A,B)=>[B,A],d:'A ← B and B ← A, at the same edge'},
+    acc:{a:3,b:9,f:(A,B)=>[(A+B)&255,A],d:'A ← A + B and B ← A, at the same edge'},
+    fib:{a:0,b:1,f:(A,B)=>[B,(A+B)&255],d:'A ← B and B ← A + B (Fibonacci pairs)'},
+    count:{a:0,b:0,f:(A,B,en)=>[en?(A+1)&255:A,B],d:'A ← A + 1, but only when write enable = 1'}
+  };
+  let rule='swap',A,B,en=1,hist=[],chg=[false,false];
+  function reset(){A=R[rule].a;B=R[rule].b;hist=[`(${A}, ${B})`];chg=[false,false];render();}
+  function render(){
+    const [nA,nB]=R[rule].f(A,B,en), cnt=rule==='count';
+    $('#clkRegs').innerHTML=`<div class="regbig ${chg[0]?'chg':''}"><small>REGISTER A</small><b>${A}</b><div class="nx">next = ${nA}${cnt&&!en?' (enable off: holds)':''}</div></div>`+
+      (cnt?`<div class="regbig" style="opacity:.45"><small>REGISTER B</small><b>—</b><div class="nx">not used by this rule</div></div>`:`<div class="regbig ${chg[1]?'chg':''}"><small>REGISTER B</small><b>${B}</b><div class="nx">next = ${nB}</div></div>`);
+    $('#clkMsg').innerHTML=`<b>Rule:</b> ${R[rule].d}. The "next" values are being computed <i>right now</i> by combinational logic from the current A and B. They take effect only at the edge.`;
+    $('#clkHist').innerHTML=hist.map((x,i)=>`<span>${i?'↑ ':''}${cnt?x.split(',')[0].replace('(',''):x}</span>`).join('');
+    $('#clkEn').hidden=!cnt;$('#clkEn').textContent=`Enable = ${en}`;$('#clkEn').setAttribute('aria-pressed',!!en);
+    $$('[data-rule]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.rule===rule));
+  }
+  $('#clkTick').onclick=()=>{const [nA,nB]=R[rule].f(A,B,en);chg=[nA!==A,nB!==B];A=nA;B=nB;hist.push(`(${A}, ${B})`);if(hist.length>14)hist.shift();render();};
+  $('#clkEn').onclick=()=>{en^=1;render();};
+  $('#clkReset').onclick=reset;
+  $$('[data-rule]').forEach(b=>b.onclick=()=>{rule=b.dataset.rule;en=1;reset();});
+  reset();
+})();
+
+/* ---------- Lesson 4: format bits ---------- */
+(function(){
+  const bits='00111010';let h='';
+  for(let i=0;i<8;i++){const x=40+i*60;h+=`<text x="${x+30}" y="22" class="mid xs">b${7-i}</text><rect x="${x}" y="30" width="60" height="50" class="${i<4?'cu':'te'}"/><text x="${x+30}" y="62" class="mid bd" style="font-size:18px">${bits[i]}</text>`;}
+  svgEl('fmtBits',h);
+})();
+
+/* ---------- Lesson 4: NIB-8 simulator ---------- */
+(function(){
+  const PROGS={
+    add:{mem:[0x18,0x39,0x2A,0xF0,0,0,0,0,23,19,0,0,0,0,0,0],code:[0,1,2,3],d:'M[10] ← M[8] + M[9]'},
+    count:{mem:[0x18,0x49,0x28,0x65,0x51,0xF0,0,0,3,1,0,0,0,0,0,0],code:[0,1,2,3,4,5],d:'count M[8] down to zero'},
+    mul:{mem:[0x1C,0x3D,0x2C,0x1E,0x4F,0x2E,0x68,0x50,0xF0,0,0,0,0,6,3,1],code:[0,1,2,3,4,5,6,7,8],d:'M[12] ← M[13] × M[14], by repeated addition'}
+  };
+  const NAMES={1:'LOAD',2:'STORE',3:'ADD',4:'SUB',5:'JMP',6:'JZ'};
+  const mn=v=>{const o=v>>4,a=v&15;return NAMES[o]?`${NAMES[o]} ${a}`:o===15?'HALT':null;};
+  let prog='add',base,s,ev,hist,timer=null,log;
+  const cells=[];
+  const memg=$('#memg');
+  for(let i=0;i<16;i++){const d=document.createElement('div');d.className='cell';d.innerHTML=`<div class="ad">${i}</div><input type="text" maxlength="2" aria-label="memory address ${i}" spellcheck="false"><div class="dc"></div>`;memg.appendChild(d);cells.push(d);
+    d.querySelector('input').addEventListener('change',e=>{const v=parseInt(e.target.value,16);if(isNaN(v)||v<0||v>255){render();return;}base[i]=v;reset();});}
+  function fresh(){return {mem:base.slice(),pc:0,ir:null,acc:0,phase:0,halted:false,ticks:0,instrs:0,ifetch:0,dreads:0,dwrites:0};}
+  function reset(){stop();s=fresh();ev=null;hist=[];log=[];render();}
+  function load(p){prog=p;base=PROGS[p].mem.slice();reset();}
+  function tick(){
+    if(s.halted)return false;
+    hist.push({s:JSON.stringify(s),ev,log:log.length});if(hist.length>3000)hist.shift();
+    const e={paths:[],blocks:[],reads:[],writes:[],chg:[]};
+    if(s.phase===0){
+      const old=s.pc;s.ir=s.mem[old];s.pc=(old+1)&15;s.ifetch++;s.phase=1;
+      Object.assign(e,{ph:0,paths:['pc2am','am2mem','mem2ir','pc2inc','inc2pm','pm2pc'],blocks:['b-pc','b-am','b-mem','b-ir','b-inc','b-pm'],reads:[old],chg:['PC','IR'],
+        msg:`<b>Fetch.</b> IR ← M[${old}] = ${hex(s.ir)}${mn(s.ir)?` (${mn(s.ir)})`:''}. At the same edge PC ← ${old} + 1 = <b>${s.pc}</b>.`});
+    }else if(s.phase===1){
+      const o=s.ir>>4,a=s.ir&15,m=mn(s.ir);s.phase=2;
+      const hint={1:`next, ACC will receive M[${a}]`,2:`next, M[${a}] will receive ACC`,3:`next, ACC will become ACC + M[${a}]`,4:`next, ACC will become ACC − M[${a}]`,5:`next, PC will become ${a}`,6:`next, PC becomes ${a} only if ACC is 0 (it is ${s.acc})`,15:'next, the machine will halt'}[o];
+      Object.assign(e,{ph:1,paths:['ir2ctl'],blocks:['b-ir','b-ctl'],msg:m?`<b>Decode.</b> Opcode ${o} = ${m.split(' ')[0]}${o!==15?`, address ${a}`:''}: ${hint}. Nothing visible changes.`:`<b>Decode.</b> Opcode ${o} is not a NIB-8 instruction. By our teaching rule the machine will halt.`});
+    }else{
+      const o=s.ir>>4,a=s.ir&15;e.ph=2;
+      if(o===1){s.acc=s.mem[a];s.dreads++;Object.assign(e,{paths:['ir2am','am2mem','mem2alu','alu2acc'],blocks:['b-am','b-mem','b-alu','b-acc'],reads:[a],chg:['ACC'],msg:`<b>Execute LOAD.</b> ACC ← M[${a}] = <b>${s.acc}</b>.`});}
+      else if(o===2){s.mem[a]=s.acc;s.dwrites++;Object.assign(e,{paths:['ir2am','am2mem','acc2mem'],blocks:['b-am','b-mem','b-acc'],writes:[a],msg:`<b>Execute STORE.</b> M[${a}] ← ACC = <b>${s.acc}</b>. ACC itself is unchanged.`});}
+      else if(o===3||o===4){const m=s.mem[a],old=s.acc;s.acc=o===3?(old+m)&255:(old-m+256)&255;s.dreads++;
+        Object.assign(e,{paths:['ir2am','am2mem','mem2alu','acc2alu','alu2acc'],blocks:['b-am','b-mem','b-alu','b-acc'],reads:[a],chg:['ACC'],msg:`<b>Execute ${o===3?'ADD':'SUB'}.</b> ACC ← ${old} ${o===3?'+':'−'} M[${a}] (${m}) = <b>${s.acc}</b>${(o===3&&old+m>255)||(o===4&&old<m)?' (wrapped mod 256)':''}.`});}
+      else if(o===5){s.pc=a;Object.assign(e,{paths:['ir2pm','pm2pc'],blocks:['b-pm','b-pc'],chg:['PC'],msg:`<b>Execute JMP.</b> PC ← ${a}. The next fetch comes from address ${a}.`});}
+      else if(o===6){if(s.acc===0){s.pc=a;Object.assign(e,{paths:['acc2ctl','ir2pm','pm2pc'],blocks:['b-acc','b-pm','b-pc'],chg:['PC'],msg:`<b>Execute JZ.</b> ACC is 0, so the branch is <b>taken</b>: PC ← ${a}.`});}
+        else Object.assign(e,{paths:['acc2ctl'],blocks:['b-acc'],msg:`<b>Execute JZ.</b> ACC is ${s.acc}, not 0, so <b>not taken</b>. PC stays ${s.pc}.`});}
+      else{s.halted=true;Object.assign(e,{paths:['ctl2halt'],blocks:['b-halt'],chg:['halted'],msg:o===15?`<b>Execute HALT.</b> The machine stops. Final PC is ${s.pc}, because fetching HALT already advanced it.`:`<b>Illegal opcode ${o}.</b> The machine halts (teaching rule).`});}
+      s.instrs++;s.phase=0;
+    }
+    s.ticks++;ev=e;
+    log.push([s.ticks,['Fetch','Decode','Execute'][e.ph],s.pc,s.ir===null?'—':hex(s.ir),s.acc,e.msg.replace(/<[^>]+>/g,'')]);
+    return true;
+  }
+  function render(){
+    const P=PROGS[prog];
+    cells.forEach((c,i)=>{const v=s.mem[i],inp=c.querySelector('input');if(document.activeElement!==inp)inp.value=v.toString(16).toUpperCase().padStart(2,'0');
+      const code=P.code.includes(i);c.className='cell'+(code?' code':'')+(i===s.pc&&!s.halted?' pc':'')+(ev&&ev.reads.includes(i)?' rd':'')+(ev&&ev.writes.includes(i)?' wr':'');
+      c.querySelector('.dc').textContent=code?(mn(v)||'?'):`= ${v}`;});
+    $$('#phring span').forEach((x,i)=>x.classList.toggle('on',!!ev&&ev.ph===i));
+    const R=[['PC',s.pc],['IR',s.ir===null?'—':hex(s.ir)],['IR means',s.ir===null?'—':(mn(s.ir)||'?')],['ACC',`${s.acc}`],['halted',s.halted?'yes':'no']];
+    $('#simRegs').innerHTML=R.map(([n,v])=>`<div class="reg ${ev&&ev.chg.includes(n==='IR means'?'IR':n)?'w':''}"><small>${n}</small><b>${v}</b></div>`).join('');
+    $('#simMsg').innerHTML=ev?ev.msg:`<b>Ready.</b> Program: ${P.d}. PC = 0, so the first tick fetches the byte at address 0.`;
+    $('#simCnt').innerHTML=[['clock ticks',s.ticks],['instructions done',s.instrs],['instruction fetches',s.ifetch],['data reads',s.dreads],['data writes',s.dwrites]].map(([n,v])=>`<div>${n}<b>${v}</b></div>`).join('');
+    $$('#dp .p').forEach(p=>p.classList.toggle('act',!!ev&&ev.paths.includes(p.id)));
+    $$('#dp .blk').forEach(b=>b.classList.toggle('act',!!ev&&ev.blocks.includes(b.id)));
+    const rows=log.slice(-10);
+    $('#simLog').innerHTML='<tr><th>tick</th><th>phase</th><th>PC after</th><th>IR</th><th>ACC</th><th>what happened</th></tr>'+(rows.length?rows.map(r=>`<tr><td class="m">${r[0]}</td><td class="m">${r[1]}</td><td class="m">${r[2]}</td><td class="m">${r[3]}</td><td class="m">${r[4]}</td><td style="font-size:13px">${r[5]}</td></tr>`).join(''):'<tr><td colspan="6" class="readout">No ticks yet.</td></tr>')+(log.length>10?`<tr><td colspan="6" class="readout">showing the last 10 of ${log.length} ticks</td></tr>`:'');
+    $('#simBack').disabled=!hist.length;$('#simTick').disabled=s.halted;$('#simInstr').disabled=s.halted;$('#simRun').disabled=s.halted&&!timer;
+    $$('[data-prog]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.prog===prog));
+  }
+  function stop(){if(timer){clearInterval(timer);timer=null;$('#simRun').textContent='Run';}}
+  $('#simTick').onclick=()=>{stop();tick();render();};
+  $('#simInstr').onclick=()=>{stop();do{if(!tick())break;}while(s.phase!==0&&!s.halted);render();};
+  $('#simBack').onclick=()=>{stop();const h=hist.pop();if(!h)return;s=JSON.parse(h.s);ev=h.ev;log.length=h.log;render();};
+  $('#simReset').onclick=reset;
+  $('#simRun').onclick=()=>{if(timer){stop();render();return;}
+    if(RM){let n=0;while(tick()&&n++<20000);render();return;}
+    $('#simRun').textContent='Pause';
+    timer=setInterval(()=>{const fast=s.ticks>150;let k=fast?30:1;while(k--&&tick());render();if(s.halted){stop();render();}},220);};
+  $$('[data-prog]').forEach(b=>b.onclick=()=>load(b.dataset.prog));
+  load('add');
+})();
+})();
+</script>
+</body>
+</html>

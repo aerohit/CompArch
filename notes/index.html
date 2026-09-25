@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gates to GPUs · Course Notes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="assets/notes.css">
+<script src="assets/notes.js"></script>
+<style>
+main{max-width:980px;margin:0 auto}
+.units{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px;margin:22px 0}
+.unit{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:16px 18px;display:flex;flex-direction:column;gap:8px;text-decoration:none;color:var(--ink)}
+a.unit:hover{border-color:var(--cu);box-shadow:0 0 0 3px var(--cu-soft)}
+.unit .k{font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--cu)}
+.unit h3{font-family:var(--display);font-size:25px;line-height:1.05;margin:0}
+.unit ol{margin:0;padding-left:20px;font-size:14px;color:var(--mute)}
+.unit ol li{margin:2px 0}
+.unit .ms{font-size:13.5px;border-top:1px dashed var(--line);padding-top:8px;margin-top:auto}
+.unit.planned{opacity:.6;background:transparent;border-style:dashed}
+.unit.planned .k{color:var(--mute)}
+.tag{display:inline-block;font:600 10px var(--mono);letter-spacing:.07em;text-transform:uppercase;padding:2px 7px;border-radius:10px;background:var(--te-soft);color:var(--te);margin-left:6px;vertical-align:2px}
+.planned .tag{background:var(--panel2);color:var(--mute)}
+.q4{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px;margin:16px 0}
+.q4 div{background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:12px 14px;font-size:14.5px}
+.q4 b{display:block;font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px}
+.notebook{background:var(--panel);border-left:4px solid var(--pl);padding:14px 18px;font-size:16px;line-height:1.9;max-width:68ch;border-radius:0 5px 5px 0}
+.notebook u{text-decoration:none;border-bottom:1.5px dotted var(--pl);padding:0 18px}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar"><div class="in">
+  <a class="brand" href="index.html">Gates <span>→</span> GPUs · Notes</a>
+  <nav class="unitnav" aria-label="Units"><a href="index.html" aria-current="page">Course map</a><a href="unit-01-build-a-computer.html">1 · Build a computer</a><a href="unit-02-registers-programs-contexts.html">2 · Programs &amp; contexts</a><a href="unit-03-faster-core.html">3 · A faster core</a><a href="unit-04-parallelism.html">4 · Parallelism</a><a href="cs149/index.html">CS149 lectures</a></nav>
+  <button class="themebtn" type="button">☾ Dark</button>
+</div></header>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk"/></marker>
+</defs></svg>
+
+<main id="main">
+<header class="hero">
+  <div class="kicker">Course notes · Units 1–4 of 7</div>
+  <h1>From a tiny computer to <em>modern CPUs and GPUs</em></h1>
+  <p class="lede">A course built as a chain of problems. Start with a machine that can run one instruction at a time from sixteen bytes of memory. Then, one lesson at a time, add exactly the mechanism needed to get past the machine's latest limitation, and say what it costs.</p>
+  <p style="max-width:68ch;color:var(--mute)">The goal: look at an unfamiliar CPU or GPU block diagram and explain why each major part exists, trace how a program uses it, and predict what limits performance. You need basic programming experience. No electronics, assembly or architecture background is assumed, and nothing has to be installed: every explorer runs in these pages.</p>
+</header>
+
+<h2 style="font-family:var(--display);font-size:34px;margin:40px 0 4px">Every lesson answers the same questions</h2>
+<p style="max-width:68ch">Each lesson opens with a four-part card, so you always know why you're learning something before you learn how it works:</p>
+<div class="q4">
+  <div><b style="color:var(--bad)">Limitation</b>What can the current machine do, and what wall has it hit?</div>
+  <div><b style="color:var(--te)">New mechanism</b>What single new idea do we add to get past it?</div>
+  <div><b style="color:var(--pl)">New state</b>What does it have to remember, and who owns that state?</div>
+  <div><b style="color:var(--cu)">Cost</b>What does it cost in area, energy, complexity or predictability, and when does it fail to help?</div>
+</div>
+<p style="max-width:68ch">Then comes an explanation with diagrams, a worked trace, an interactive explorer, <b>Predict</b> questions whose answers stay folded until you've committed to one, and a <b>checkpoint</b> to explain in your own words.</p>
+
+<h2 style="font-family:var(--display);font-size:34px;margin:44px 0 4px">The course map</h2>
+<div class="units">
+  <a class="unit" href="unit-01-build-a-computer.html"><span class="k">Unit 1 · Lessons 1–4 <span class="tag">ready</span></span><h3>Build the smallest useful computer</h3>
+    <ol start="1"><li>Bits and meaning</li><li>Gates, muxes, adders, the ALU</li><li>State and the clock</li><li>A stored-program machine (NIB-8)</li></ol>
+    <div class="ms"><b>Milestone:</b> explain how one fixed circuit can run different programs.</div></a>
+  <a class="unit" href="unit-02-registers-programs-contexts.html"><span class="k">Unit 2 · Lessons 5–7 <span class="tag">ready</span></span><h3>Registers, programs &amp; execution contexts</h3>
+    <ol start="5"><li>Register machines and RISC-V</li><li>One ISA, different hardware</li><li>Calls, stacks, traps, thread contexts</li></ol>
+    <div class="ms"><b>Milestone:</b> distinguish a program, process, thread, saved context and running hardware context.</div></a>
+  <a class="unit" href="unit-03-faster-core.html"><span class="k">Unit 3 · Lessons 8–15 <span class="tag">ready</span></span><h3>Make one CPU core faster</h3>
+    <ol start="8"><li>Pipelining</li><li>Hazards and forwarding</li><li>Caches</li><li>Virtual memory and the TLB</li><li>Branch prediction</li><li>Superscalar width</li><li>Renaming and out-of-order</li><li>Precise retirement, memory order</li></ol>
+    <div class="ms"><b>Milestone:</b> trace a load, an independent add and a dependent branch through a small out-of-order core.</div></a>
+  <a class="unit" href="unit-04-parallelism.html"><span class="k">Unit 4 · Lessons 16–19 <span class="tag">ready</span></span><h3>Add parallelism</h3>
+    <ol start="16"><li>Multicore and cache coherence</li><li>Memory ordering, synchronization</li><li>Hardware multithreading (SMT)</li><li>SIMD, vectors and tails</li></ol>
+    <div class="ms"><b>Milestone:</b> tell instruction-, thread- and data-level parallelism apart, and say what each still shares.</div></a>
+  <div class="unit planned"><span class="k">Unit 5 · Lessons 20–24 <span class="tag">planned</span></span><h3>Understand GPUs</h3>
+    <ol start="20"><li>SIMT and the programming model</li><li>Scheduling, divergence, occupancy</li><li>GPU memory traffic</li><li>Tiling and synchronization</li><li>Performance models, measurement</li></ol>
+    <div class="ms">Explain why a simple kernel is slow, and fix it.</div></div>
+  <div class="unit planned"><span class="k">Unit 6 · Lessons 25–28 <span class="tag">planned</span></span><h3>From processors to systems</h3>
+    <ol start="25"><li>Matrix hardware and number formats</li><li>Heterogeneous SoCs</li><li>Packaging, HBM, NUMA</li><li>Multiple GPUs and nodes</li></ol>
+    <div class="ms">Follow bytes from host memory to a kernel and back.</div></div>
+  <div class="unit planned"><span class="k">Unit 7 · Lessons 29–30 <span class="tag">planned</span></span><h3>Read real architectures</h3>
+    <ol start="29"><li>Case studies of current CPUs, GPUs and accelerators</li><li>Capstone: explain performance from first principles</li></ol>
+    <div class="ms">Predict, measure, change one thing, explain.</div></div>
+</div>
+
+<h2 style="font-family:var(--display);font-size:34px;margin:44px 0 4px">The chain so far</h2>
+<p style="max-width:68ch">Units 1–4 read as one continuous argument, where each mechanism answers the previous machine's bottleneck:</p>
+<figure class="fig"><div class="sc"><svg id="chainSvg" viewBox="0 0 760 475" role="img" aria-label="Chain of limitations and mechanisms across units 1 to 3"></svg></div>
+  <figcaption><b>Problems on the left, the mechanisms that answer them on the right.</b> Unit 5 continues the chain into GPUs: "enormous data parallelism" leads to SIMT, and "arithmetic units starved for bytes" leads to tiling and the Roofline model.</figcaption></figure>
+
+<h2 style="font-family:var(--display);font-size:34px;margin:44px 0 4px">Companion: Stanford CS149 lectures</h2>
+<p style="max-width:68ch">Self-contained study pages built from Stanford's <i>Parallel Computing</i> course, one per lecture. They look at the same hardware from a programmer's angle: what each feature demands from your code.</p>
+<div class="units"><a class="unit" href="cs149/lecture-02-modern-multicore.html"><span class="k">CS149 · Lecture 2 <span class="tag">ready</span></span><h3>A modern multi-core processor</h3>
+  <ol style="list-style:none;padding-left:0"><li>Multi-core, SIMD and hardware multithreading</li><li>Divergence, latency hiding, throughput</li><li>Kaby Lake core and V100 SM, with peak-rate arithmetic</li></ol>
+  <div class="ms">Pairs with Units 3–4. <a href="cs149/index.html">All CS149 lectures →</a></div></a></div>
+<h2 style="font-family:var(--display);font-size:34px;margin:44px 0 4px">How to study with these notes</h2>
+<ul style="max-width:68ch">
+  <li><b>Treat lesson numbers as dependencies, not deadlines.</b> Spend one session reading and a separate one predicting and experimenting. Pipelining hazards, out-of-order execution, and (later) memory ordering and GPU tiling deserve more than one pass.</li>
+  <li><b>Predict before you click.</b> Every explorer is more useful if you've written down what you expect first. When you're wrong, that's the lesson.</li>
+  <li><b>Keep a one-paragraph notebook entry per lesson:</b></li>
+</ul>
+<p class="notebook">The old limitation was <u>&nbsp;</u>. We added <u>&nbsp;</u>. The new state is <u>&nbsp;</u>. On the worked example, <u>&nbsp;</u> changes. The cost is <u>&nbsp;</u>. The idea fails to help when <u>&nbsp;</u>. I can test that by <u>&nbsp;</u>.</p>
+<p style="max-width:68ch"><b>Move on</b> when you can explain the mechanism without its diagram and solve a changed version of the example. If you can name the parts but can't trace the behaviour, do one more small trace before adding complexity.</p>
+
+<h2 style="font-family:var(--display);font-size:34px;margin:44px 0 4px">Ground rules these notes follow</h2>
+<div class="tbl"><table>
+  <tr><th>Rule</th><th>Why</th></tr>
+  <tr><td>Separate the <b>instruction contract</b> from any one <b>implementation</b></td><td>Most of this course is hidden machinery that must never change a program's results.</td></tr>
+  <tr><td>Label teaching machines, invented timings and ideal bounds</td><td>NIB-8, the 5-stage model and the tiny cache are for tracing, not specifications of real chips.</td></tr>
+  <tr><td>Keep <b>latency, throughput, bandwidth, capacity and energy</b> apart</td><td>Most performance confusion comes from blurring two of them.</td></tr>
+  <tr><td>Always ask: whose state is it, is it private or shared, and when does it become visible?</td><td>This question runs from function calls to GPU shared memory.</td></tr>
+  <tr><td>Name the cost of every mechanism</td><td>Nothing in hardware is free. Area, power and complexity are always in the trade.</td></tr>
+</table></div>
+
+<p style="max-width:68ch;margin-top:30px;color:var(--mute)">Want the one-page, big-picture tour of every stage from gates to datacenter GPUs first? See the <a href="https://claude.ai/artifact/RJuhPWv7f94kuwCQsjQxzJ">Gates to GPUs overview</a>. These notes go slower and deeper.</p>
+<div class="nextunit"><span></span><a href="unit-01-build-a-computer.html"><small>Start here</small>Unit 1 · Build the smallest useful computer →</a></div>
+</main>
+
+<script>
+(function(){
+  const C=[['1','Physical states need meaning','Binary encoding'],['1','Bits don\'t transform themselves','Gates, mux, adder, ALU'],['1','Results vanish; no sequence','Registers + clock'],['1','Fixed behaviour','Stored program, PC, control'],['2','One accumulator → memory detours','Register file, load/store ISA'],['2','Slowest instruction sets the clock','ISA vs implementation; multicycle'],['2','Calls and interrupts lose their place','ra, stack, traps, saved contexts'],['3','Hardware idle between uses','Pipelining'],['3','Overlap reads stale values','Stalls + forwarding'],['3','Memory ~100× too slow','Caches'],['3','No isolation between programs','Virtual memory + TLB'],['3','Fetch stalls at branches','Prediction + speculation'],['3','≤ 1 instruction per cycle','Superscalar width'],['3','Blocked instr. stalls ready ones','Renaming + out-of-order'],['3','Out-of-order results may be wrong','ROB, in-order retirement, LSQ'],['4','One core runs out of independent work','Multicore'],['4','Private cached copies disagree','Coherence protocol (MSI)'],['4','Coherent ≠ ordered across addresses','Consistency model + synchronization'],['4','One thread leaves slots empty','SMT (hardware threads)'],['4','Same op repeated per element','SIMD / vectors + masks']];
+  let h='';const col={1:'te',2:'pl',3:'cu',4:'okf'};
+  C.forEach(([u,p,m],i)=>{const y=8+i*23;h+=`<rect x="10" y="${y}" width="26" height="19" class="${col[u]}"/><text x="23" y="${y+14}" class="mid xs bd">U${u}</text><text x="340" y="${y+14}" class="end" style="font-size:11.5px">${p}</text><path d="M350 ${y+10} H408" class="w" marker-end="url(#ah)"/><text x="418" y="${y+14}" class="bd" style="font-size:11.5px">${m}</text>`;});
+  document.getElementById('chainSvg').innerHTML=h;
+})();
+</script>
+</body>
+</html>
