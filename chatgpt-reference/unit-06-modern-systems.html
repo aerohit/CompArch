@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en" data-theme="light">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="A correct answer matters. Knowing which state changed, and why, matters more. Make your prediction before revealing a solution."><title>Unit 1 — Worked answers · Architecture Field Notes</title><style>:root{--paper:#f8f7f2;--panel:#fffefa;--ink:#213d36;--text:#34433d;--muted:#65736b;--rule:#d8dfd4;--green:#216652;--soft:#e9f0e5;--orange:#a54c2e;--orange-soft:#f8e9dc;--code:#eef1e9;--shadow:0 12px 40px #213d3608;color-scheme:light;--mono:ui-monospace,SFMono-Regular,Consolas,monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;--serif:Georgia,"Times New Roman",serif}
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Choose a numerical representation. Find the physical memory. Follow the transfers and the dependencies that connect engines, chiplets, and GPUs."><title>Unit 6 — Connect the modern system · Architecture Field Notes</title><style>:root{--paper:#f8f7f2;--panel:#fffefa;--ink:#213d36;--text:#34433d;--muted:#65736b;--rule:#d8dfd4;--green:#216652;--soft:#e9f0e5;--orange:#a54c2e;--orange-soft:#f8e9dc;--code:#eef1e9;--shadow:0 12px 40px #213d3608;color-scheme:light;--mono:ui-monospace,SFMono-Regular,Consolas,monospace;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;--serif:Georgia,"Times New Roman",serif}
 html[data-theme=dark]{--paper:#14241f;--panel:#1b3028;--ink:#e5eddd;--text:#d0dccf;--muted:#a8b8a9;--rule:#3a5042;--green:#a5d1b1;--soft:#294133;--orange:#f0b18e;--orange-soft:#432f24;--code:#20362b;--shadow:none;color-scheme:dark}
 *{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:96px}body{margin:0;background:var(--paper);color:var(--text);font-family:var(--sans);font-size:16px;line-height:1.75}a{color:var(--green);text-decoration-thickness:1px;text-underline-offset:4px}a:hover{color:var(--orange)}button,input,select{font:inherit}button,select,summary{cursor:pointer}button{border:1px solid var(--rule);background:var(--panel);color:var(--ink);padding:9px 15px;border-radius:6px;font-size:14px;font-weight:600}button:hover{background:var(--soft)}button:disabled{opacity:.42;cursor:default}button.primary{background:var(--ink);border-color:var(--ink);color:var(--paper)}button.primary:hover{background:var(--green);border-color:var(--green)}:focus-visible{outline:3px solid var(--orange);outline-offset:4px}::selection{background:var(--soft);color:var(--ink)}.skip{position:absolute;left:18px;top:-100px;z-index:20;padding:10px;background:var(--panel)}.skip:focus{top:10px}.topbar{position:sticky;top:0;z-index:10;background:var(--paper);border-bottom:1px solid var(--rule)}.top-inner{max-width:1320px;margin:auto;padding:18px 38px;display:flex;align-items:center;justify-content:space-between;gap:22px}.brand{display:flex;gap:12px;align-items:center;text-decoration:none;color:var(--ink);font-size:12px;font-weight:750;letter-spacing:.13em;line-height:1.4}.brand-mark{display:grid;grid-template-columns:repeat(2,6px);gap:3px;transform:rotate(-12deg)}.brand-mark i{width:6px;height:6px;background:var(--green)}.brand small{display:block;color:var(--muted);font-size:10px;font-weight:500;letter-spacing:.1em}.topnav{display:flex;gap:28px;align-items:center}.topnav a{font-size:13px;text-decoration:none;white-space:nowrap;color:var(--muted)}.topnav a[aria-current=page]{color:var(--ink);font-weight:700}.theme{border:0;padding:6px 8px;color:var(--muted);font-size:12px}.reading-progress{height:2px;position:absolute;bottom:-1px;left:0;background:var(--orange);width:0;transition:width .08s linear}.layout{max-width:1320px;margin:0 auto;padding:48px 38px 80px;display:grid;grid-template-columns:214px minmax(0,850px);gap:66px;justify-content:space-between}.sidebar{position:sticky;top:110px;align-self:start;max-height:calc(100vh - 145px);overflow:auto;scrollbar-width:thin}.sidebar .eyebrow{margin:0 0 18px}.toc{border:0}.toc summary{list-style:none;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:15px}.toc summary::-webkit-details-marker{display:none}.toc a{display:block;padding:8px 12px;border-left:2px solid var(--rule);font-size:12px;line-height:1.6;color:var(--muted);text-decoration:none}.toc a.active{border-left-color:var(--green);color:var(--ink);background:var(--soft)}.sidebar-note{border-top:1px solid var(--rule);margin-top:28px;padding-top:20px;font-family:var(--serif);font-style:italic;color:var(--muted);font-size:16px;line-height:1.6}.side-return{display:block;margin:18px 0;font-size:12px}.hero{border-bottom:1px solid var(--rule);padding-bottom:35px;margin-bottom:36px}.eyebrow{font-size:10px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--green);line-height:1.5}.hero h1{font-family:var(--serif);color:var(--ink);font-size:clamp(38px,5.1vw,64px);line-height:1.08;font-weight:400;letter-spacing:-.045em;margin:20px 0}.hero .lede{font-size:17px;color:var(--muted);max-width:640px;line-height:1.7}.hero-meta{display:flex;flex-wrap:wrap;gap:9px 24px;font-family:var(--mono);font-size:10px;letter-spacing:.025em;color:var(--muted);margin-top:28px}.hero-meta span:first-child{color:var(--orange)}.hero-cta{display:inline-flex;align-items:center;gap:24px;margin-top:15px;padding:11px 17px;background:var(--ink);color:var(--paper);font-size:13px;text-decoration:none;border-radius:4px}.hero-cta:hover{background:var(--green);color:var(--paper)}.prose{min-width:0}.prose p,.prose li{max-width:76ch}.prose p{margin:17px 0}.prose h2{font-family:var(--serif);font-size:33px;line-height:1.2;font-weight:400;letter-spacing:-.025em;color:var(--ink);margin:62px 0 24px;scroll-margin-top:100px}.prose h2:first-child{margin-top:28px}.prose h3{font-size:17px;line-height:1.45;font-weight:650;color:var(--ink);margin:35px 0 12px}.prose h2[data-chapter]::before{content:attr(data-chapter);display:block;font:10px var(--mono);letter-spacing:.12em;color:var(--orange);margin-bottom:14px}.prose ul,.prose ol{padding-left:25px}.prose li{padding-left:4px;margin:9px 0}.prose strong{font-weight:650;color:var(--ink)}code{font: .87em var(--mono);background:var(--code);padding:2px 5px;border-radius:3px}pre{background:var(--code);padding:22px 25px;overflow:auto;border-radius:5px;line-height:1.8;font-size:13px;tab-size:4}pre code{padding:0;background:transparent;font:inherit}.table-wrap{overflow-x:auto;border:1px solid var(--rule);border-radius:5px;margin:25px 0;background:var(--panel)}table{width:100%;border-collapse:collapse;text-align:left;font-size:13px;line-height:1.65}th{font-weight:650;color:var(--ink);background:var(--soft)}td,th{padding:13px 16px;vertical-align:top;border-bottom:1px solid var(--rule)}tr:last-child td,tr:last-child th{border-bottom:0}.table-wrap th:first-child{min-width:108px}.table-wrap td:first-child{color:var(--ink)}.checkpoint{border-left:3px solid var(--green);background:var(--soft);padding:18px 23px!important;margin:26px 0!important;font-size:14px}.checkpoint strong{display:block;margin-bottom:5px}.milestone{font-family:var(--serif);font-size:19px;padding:6px 0 6px 20px;border-left:2px solid var(--orange)}blockquote{border-left:2px solid var(--orange);margin:26px 0;padding:5px 24px;font-family:var(--serif);font-size:21px;color:var(--ink)}.quiz-link{display:inline-block;font-size:12px;margin:4px 0 10px;font-weight:600}.footer{margin-top:70px;border-top:1px solid var(--rule);padding-top:25px;display:flex;justify-content:space-between;gap:24px;font-size:12px;color:var(--muted)}.footer a{text-decoration:none}.no-js{padding:15px;background:var(--orange-soft);font-size:13px}.visually-hidden{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 /* Teaching figures */
@@ -46,121 +46,280 @@ html[data-theme=dark]{--paper:#14241f;--panel:#1b3028;--ink:#e5eddd;--text:#d0dc
 </style></head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<header class="topbar"><div class="top-inner"><a class="brand" href="learning-path.html" aria-label="Architecture Field Notes, course home"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>ARCHITECTURE<small>FIELD NOTES</small></span></a><nav class="topnav" aria-label="Course pages"><a href="learning-path.html">Learning path</a><a href="unit-01-foundations.html">Unit 1</a><a href="unit-02-programs-and-contexts.html">Unit 2</a><a href="unit-03-faster-core.html">Unit 3</a><a href="unit-04-parallelism.html">Unit 4</a><a href="unit-05-gpus.html">Unit 5</a><a href="unit-06-modern-systems.html">Unit 6</a><a href="unit-01-answers.html" aria-current="page">Answers</a><button class="theme" id="theme-button">Dark mode</button></nav></div><div class="reading-progress" id="reading-progress" aria-hidden="true"></div></header>
-<div class="layout"><aside class="sidebar"><div class="eyebrow">Your reading map</div><details class="toc" id="contents" open><summary>On this page</summary><nav aria-label="Page contents"><a href="#lesson-1">Lesson 1</a><a href="#lesson-2">Lesson 2</a><a href="#lesson-3">Lesson 3</a><a href="#lesson-4">Lesson 4</a><a href="#transfer-exercises">Transfer exercises</a><a href="#readiness-check">Readiness check</a></nav></details><p class="sidebar-note">Trace the machine that is specified, not the one you expect.</p><a class="side-return" href="unit-01-answers.md">Original Markdown ↗</a></aside>
-<main id="main"><header class="hero"><div class="eyebrow">Unit 01 / Worked answers</div><h1>Make your reasoning<br>visible.</h1><p class="lede">A correct answer matters. Knowing which state changed, and why, matters more. Make your prediction before revealing a solution.</p><div class="hero-meta"><span>14 worked solutions</span><span>4 transfer exercises</span><span>A readiness check</span></div></header><noscript><p class="no-js">The complete reading material is available below. Turn on JavaScript to use the interactive explorations.</p></noscript><article class="prose"><p>Use with the <a href="unit-01-foundations.html">foundations workbook</a>. Try each prediction before reading its answer.</p>
-<div class="answer-tools"><button id="answer-toggle">Reveal all answers</button></div><h2 id="lesson-1">Lesson 1</h2>
-<details class="answer" id="answer-1"><summary><span class="answer-num">01</span>Bits and patterns</summary><div class="answer-body"><p class="answer-question">Interpret 00001101 as an unsigned value. How many distinct patterns can a 5-bit register hold?</p><p>00001101 is 8 + 4 + 1 = <strong>13</strong>. Five bits have <strong>32 distinct patterns</strong>, representing 0–31 under unsigned interpretation. The number of possibilities and the maximum unsigned value differ by one because zero is a possibility.</p>
-<a class="quiz-link" href="unit-01-foundations.html#lesson-1">Return to this lesson ↗</a></div></details><details class="answer" id="answer-2"><summary><span class="answer-num">02</span>Overflow in eight bits</summary><div class="answer-body"><p class="answer-question">In our 8-bit arithmetic, what is 255 + 2? Why is this not ordinary unbounded integer arithmetic?</p><p>255 + 2 gives <strong>1</strong> in our machine. The mathematical result is 257, and 257 modulo 256 is 1. Only the low eight bits are retained. This is a property of the specified fixed-width arithmetic, not of mathematical integers in general.</p>
-<a class="quiz-link" href="unit-01-foundations.html#lesson-1">Return to this lesson ↗</a></div></details><details class="answer" id="answer-3"><summary><span class="answer-num">03</span>Addresses and contents</summary><div class="answer-body"><p class="answer-question">If M[8] = 7 and M[7] = 99, what value does a direct read of address 8 return?</p><p>A direct read of address 8 returns <strong>7</strong>. It does not automatically use that result as a second address. Retrieving 99 would require another access using address 7, or an instruction explicitly defined to perform indirect addressing.</p>
-<a class="quiz-link" href="unit-01-foundations.html#lesson-1">Return to this lesson ↗</a></div></details><h2 id="lesson-2">Lesson 2</h2>
-<details class="answer" id="answer-4"><summary><span class="answer-num">04</span>Selecting a mux input</summary><div class="answer-body"><p class="answer-question">A mux has A = 7 and B = 12. What does it output for S = 0? What about S = 1?</p><p>S = 0 produces <strong>7</strong>; S = 1 produces <strong>12</strong>. A mux selects between inputs. It does not add them.</p>
-<a class="quiz-link" href="unit-01-foundations.html#lesson-2">Return to this lesson ↗</a></div></details><details class="answer" id="answer-5"><summary><span class="answer-num">05</span>Three ones into a full adder</summary><div class="answer-body"><p class="answer-question">What are the sum and carry-out for a full adder with A = 1, B = 1, carry-in = 1?</p><p>The three input bits sum to decimal 3, or binary 11. The <strong>sum bit is 1 and carry-out is 1</strong>.</p>
-<a class="quiz-link" href="unit-01-foundations.html#lesson-2">Return to this lesson ↗</a></div></details><details class="answer" id="answer-6"><summary><span class="answer-num">06</span>What an adder cannot do</summary><div class="answer-body"><p class="answer-question">Why does building a faster adder not, by itself, give us a programmable computer?</p><p>A faster adder only transforms its current inputs more quickly. A programmable machine also needs stored state, encoded instructions, and control logic that chooses the successive transformations.</p>
-<a class="quiz-link" href="unit-01-foundations.html#lesson-2">Return to this lesson ↗</a></div></details><h2 id="lesson-3">Lesson 3</h2>
-<details class="answer" id="answer-7"><summary><span class="answer-num">07</span>Simultaneous register updates</summary><div class="answer-body"><p class="answer-question">A = 3 and B = 9. At one edge, A_next = A_current + B_current and B_next = A_current. What are the new values?</p><p>The new values are <strong>A = 12 and B = 3</strong>. Both next-state expressions use the old values. B does not read the newly calculated 12 in this simultaneous update model.</p>
-<a class="quiz-link" href="unit-01-foundations.html#lesson-3">Return to this lesson ↗</a></div></details><details class="answer" id="answer-8"><summary><span class="answer-num">08</span>A disabled write</summary><div class="answer-body"><p class="answer-question">A register contains 12. Its adder output is 13, but its write enable is off. What happens at the next clock edge?</p><p>The register stays at <strong>12</strong>. The disabled write prevents it from capturing 13.</p>
-<a class="quiz-link" href="unit-01-foundations.html#lesson-3">Return to this lesson ↗</a></div></details><details class="answer" id="answer-9"><summary><span class="answer-num">09</span>Why clock frequency has limits</summary><div class="answer-body"><p class="answer-question">Why can we not always double a circuit&#x27;s clock frequency and expect correct results?</p><p>The next values may not settle before the capture edge. Propagation delay and register timing requirements impose limits. Faster clocking can therefore produce incorrect behavior; circuit design, voltage, and temperature affect those limits.</p>
-<a class="quiz-link" href="unit-01-foundations.html#lesson-3">Return to this lesson ↗</a></div></details><h2 id="lesson-4">Lesson 4</h2>
-<details class="answer" id="answer-10"><summary><span class="answer-num">10</span>After the addition, before the store</summary><div class="answer-body"><p class="answer-question">Immediately after tick 6 in the addition program, what are PC, ACC, and M[10]? Why has the output location not changed yet?</p><p>After tick 6, <strong>PC = 2, ACC = 12, and M[10] = 0</strong>. ADD has finished, but STORE has not executed. The instruction contract for ADD changes ACC only.</p>
-<a class="quiz-link" href="unit-01-foundations.html#lesson-4">Return to this lesson ↗</a></div></details><details class="answer" id="answer-11"><summary><span class="answer-num">11</span>250 + 10 in Tiny-8</summary><div class="answer-body"><p class="answer-question">Keep the addition program but initialize M[8] = 250 and M[9] = 10. What does it store?</p><p>It stores <strong>4</strong>. LOAD sets ACC to 250, ADD produces (250 + 10) modulo 256 = 4, and STORE writes 4 to M[10].</p>
-<a class="quiz-link" href="unit-01-foundations.html#lesson-4">Return to this lesson ↗</a></div></details><details class="answer" id="answer-12"><summary><span class="answer-num">12</span>Tracing the countdown</summary><div class="answer-body"><p class="answer-question">How many instructions does the countdown program execute, including HALT? How many clock ticks in our timing model?</p><p>It executes <strong>10 instructions and takes 30 ticks</strong>:</p>
+<header class="topbar"><div class="top-inner"><a class="brand" href="learning-path.html" aria-label="Architecture Field Notes, course home"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>ARCHITECTURE<small>FIELD NOTES</small></span></a><nav class="topnav" aria-label="Course pages"><a href="learning-path.html">Learning path</a><a href="unit-01-foundations.html">Unit 1</a><a href="unit-02-programs-and-contexts.html">Unit 2</a><a href="unit-03-faster-core.html">Unit 3</a><a href="unit-04-parallelism.html">Unit 4</a><a href="unit-05-gpus.html">Unit 5</a><a href="unit-06-modern-systems.html" aria-current="page">Unit 6</a><a href="unit-06-answers.html">Answers</a><button class="theme" id="theme-button">Dark mode</button></nav></div><div class="reading-progress" id="reading-progress" aria-hidden="true"></div></header>
+<div class="layout"><aside class="sidebar"><div class="eyebrow">Your reading map</div><details class="toc" id="contents" open><summary>On this page</summary><nav aria-label="Page contents"><a href="#lesson-25">25 · Matrix hardware &amp; precision</a><a href="#lesson-26">26 · Heterogeneous systems</a><a href="#lesson-27">27 · Packaging &amp; locality</a><a href="#lesson-28">28 · Multiple GPUs &amp; nodes</a><a href="#put-the-four-lessons-together">Put it together</a><a href="#finish-the-unit">Finish the unit</a></nav></details><p class="sidebar-note">Which values, which physical homes, which paths, and which completion events?</p><a class="side-return" href="unit-06-modern-systems.md">Original Markdown ↗</a></aside>
+<main id="main"><header class="hero"><div class="eyebrow">Unit 06 / Modern systems</div><h1>Beyond the kernel.<br>Across the system.</h1><p class="lede">Choose a numerical representation. Find the physical memory. Follow the transfers and the dependencies that connect engines, chiplets, and GPUs.</p><div class="hero-meta"><span>Lessons 25–28</span><span>6 interactive explorations</span><span>20 prediction exercises</span></div></header><noscript><p class="no-js">The complete reading material is available below. Turn on JavaScript to use the interactive explorations.</p></noscript><article class="prose"><p>A fast kernel is one stage of a larger computation. Its inputs have a numerical representation, occupy physical memory, and arrive through a finite path. Its results may need to join results from other devices. This unit follows that chain.</p>
+<p>Continue from <a href="unit-05-gpus.html">Unit 5</a>. Keep its distinctions between latency, throughput, requested bytes, physical traffic, and synchronization. You will add four more questions: <strong>Which numerical contract? Which physical home? Which communication path? Which dependency permits overlap?</strong></p>
+<p>All numerical machines and timings below are deliberately specified teaching models, not measurements of a commercial product. GB means 10⁹ bytes and GB/s means 10⁹ bytes per second. The <a href="unit-06-answers.html">worked answers</a> continue the course's question numbering.</p>
+<h2 id="lesson-25" data-chapter="LESSON 25">Matrix hardware and numerical formats</h2>
+<h3>Recognize a structured operation</h3>
+<p>In Unit 5, a thread kept an accumulator while a block reused input tiles. A matrix instruction exposes more of that regular computation at once. The essential mathematical operation is:</p>
+<pre><code class="language-text">D = C + A × B
+D[i,j] = C[i,j] + sum over k of A[i,k] × B[k,j]
+A is M×K; B is K×N; C and D are M×N.
+</code></pre>
+<p>Every A value can contribute to several output columns; every B value can contribute to several output rows. A specialized datapath can exploit this reuse and repeated multiply-accumulate structure. The instruction's shape and operand types define what work is offered to it. They do not reveal its exact physical circuit, cycle count, or energy.</p>
+<p>Take A = [[1,2],[3,4]], B = [[5,6],[7,8]], and C = [[10,0],[0,10]]. Expand the operation by reduction index k. At k = 0, the first column of A times the first row of B contributes [[5,6],[15,18]]. At k = 1, the contribution is [[14,16],[28,32]]. Adding both to C gives <strong>[[29,22],[43,60]]</strong>.</p>
+<figure class="figure u6-figure" aria-labelledby="mx-title"><div class="figure-kicker">Explore / 29 · Matrix accumulation</div><h3 id="mx-title">A column meets a row.</h3><p>Each reduction index contributes an outer product to all four accumulators. Highlighted entries are the operands used in the most recent step.</p><div class="controls"><button id="mx-prev">Previous</button><button class="primary" id="mx-next">Add next contribution →</button><button id="mx-reset">Restart</button><span class="status" id="mx-step"></span></div><div id="mx-matrices" class="u6-matrices"></div><div class="cpu-effect" id="mx-effect" aria-live="polite"></div><figcaption>This expands D = C + A×B mathematically. Steps are reduction terms, not an instruction sequence or a cycle trace of a commercial matrix unit.</figcaption></figure>
+<p>This is eight multiplications and eight additions, conventionally 16 FLOPs. A single matrix instruction can represent many scalar arithmetic operations, so instruction count is a poor proxy for work. Conversely, a narrow or irregular problem may spend too much time preparing operands or padding an unused tile to benefit from a high matrix peak.</p>
+<h3>The operand has a layout, not just values</h3>
+<p>The compiler or library must arrange the tile in the storage and layout an instruction accepts. A <strong>fragment</strong> is a thread's portion of a matrix operand/result in an interface that distributes that operand across threads. A logical row-major matrix need not appear as a simple contiguous row in each thread's registers. Read the instruction's shape, layout, type, alignment, participation, and completion rules together.</p>
+<p>NVIDIA PTX illustrates why rules must be tied to an instruction family: warp-level <code>wmma</code>, warp-group <code>wgmma</code>, and <code>tcgen05</code> do not share one universal participation protocol. In particular, <code>tcgen05.mma</code> has single-thread initiation semantics; do not infer that every matrix operation must be issued by every lane. Asynchronous forms also have explicit completion requirements. See the <a href="https://docs.nvidia.com/cuda/parallel-thread-execution/">PTX matrix instruction documentation</a>.</p>
+<p>For an application, a tuned matrix library is a useful first baseline. Inspect the supported dimensions, strides, data types, accumulation, and numerical modes before comparing timings. A claimed matrix throughput must name its precision, sparsity assumptions, operation-count convention, and actual workload.</p>
+<h3>Range and precision solve different problems</h3>
+<p>For a normal binary floating-point number, think of a sign, a significand near one, and a power-of-two exponent. More exponent bits mainly widen <strong>range</strong>. More fraction bits mainly improve the spacing of representable values within a given magnitude interval. Neither makes real-number arithmetic exact.</p>
 <div class="table-wrap"><table>
 <thead>
 <tr>
-<th>Instruction number</th>
-<th>Instruction address</th>
-<th>Operation</th>
-<th>ACC afterward</th>
-<th>PC afterward</th>
+<th>Format</th>
+<th>Sign / exponent / fraction bits</th>
+<th>Largest positive finite value</th>
+<th>Gap immediately above 1</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>1</td>
-<td>0</td>
-<td>LOAD 8</td>
-<td>3</td>
-<td>1</td>
+<td>FP32</td>
+<td>1 / 8 / 23</td>
+<td>About 3.40×10³⁸</td>
+<td>2⁻²³</td>
 </tr>
 <tr>
-<td>2</td>
-<td>1</td>
-<td>SUB 9</td>
-<td>2</td>
-<td>2</td>
+<td>FP16</td>
+<td>1 / 5 / 10</td>
+<td>65,504</td>
+<td>2⁻¹⁰</td>
 </tr>
 <tr>
-<td>3</td>
-<td>2</td>
-<td>JZ 4, not taken</td>
-<td>2</td>
-<td>3</td>
+<td>BF16</td>
+<td>1 / 8 / 7</td>
+<td>About 3.39×10³⁸</td>
+<td>2⁻⁷</td>
 </tr>
 <tr>
-<td>4</td>
-<td>3</td>
-<td>JMP 1</td>
-<td>2</td>
-<td>1</td>
+<td>FP8 E4M3FN</td>
+<td>1 / 4 / 3</td>
+<td>448</td>
+<td>2⁻³</td>
 </tr>
 <tr>
-<td>5</td>
-<td>1</td>
-<td>SUB 9</td>
-<td>1</td>
-<td>2</td>
-</tr>
-<tr>
-<td>6</td>
-<td>2</td>
-<td>JZ 4, not taken</td>
-<td>1</td>
-<td>3</td>
-</tr>
-<tr>
-<td>7</td>
-<td>3</td>
-<td>JMP 1</td>
-<td>1</td>
-<td>1</td>
-</tr>
-<tr>
-<td>8</td>
-<td>1</td>
-<td>SUB 9</td>
-<td>0</td>
-<td>2</td>
-</tr>
-<tr>
-<td>9</td>
-<td>2</td>
-<td>JZ 4, taken</td>
-<td>0</td>
-<td>4</td>
-</tr>
-<tr>
-<td>10</td>
-<td>4</td>
-<td>HALT</td>
-<td>0</td>
-<td>5</td>
+<td>FP8 E5M2</td>
+<td>1 / 5 / 2</td>
+<td>57,344</td>
+<td>2⁻²</td>
 </tr>
 </tbody>
 </table></div>
-<p>Every instruction takes three ticks by definition, including both taken and untaken branches. Real branch costs will be introduced with an explicit pipeline model later.</p>
-<a class="quiz-link" href="unit-01-foundations.html#lesson-4">Return to this lesson ↗</a></div></details><details class="answer" id="answer-13"><summary><span class="answer-num">13</span>Resuming in the middle of an instruction</summary><div class="answer-body"><p class="answer-question">Suppose you save only PC and ACC after tick 4 of the addition program. Why is that insufficient to resume at the exact next internal phase on another copy of the machine?</p><p>Tick 4 has fetched ADD 9 into <strong>IR = 0x39</strong> and advanced <strong>PC to 2</strong>. Decode and execute are still pending. Saving PC and ACC alone loses which instruction is in progress and which phase comes next. Resuming with a new fetch from PC = 2 would skip ADD. Exact mid-instruction resumption requires the relevant internal state as well as access to memory; a different design could instead define recovery to an instruction boundary.</p>
-<a class="quiz-link" href="unit-01-foundations.html#lesson-4">Return to this lesson ↗</a></div></details><details class="answer" id="answer-14"><summary><span class="answer-num">14</span>Counting memory accesses</summary><div class="answer-body"><p class="answer-question">How many instruction-memory reads, data-memory reads, and data-memory writes does the four-instruction addition program perform? Count the accesses, not the ticks.</p><p>There are <strong>four instruction reads</strong>, <strong>two data reads</strong> (M[8] and M[9]), and <strong>one data write</strong> (M[10]). Total: seven memory accesses. Decode performs no memory access in our specified model. The same physical memory serves both kinds of read; the categories describe why an access occurred.</p>
-<a class="quiz-link" href="unit-01-foundations.html#lesson-4">Return to this lesson ↗</a></div></details><h2 id="transfer-exercises">Transfer exercises</h2>
-<p>Use these after the main questions. They test whether you can carry the ideas to a slightly changed situation.</p>
-<p><strong>A. Can the addition program run twice without changing code?</strong> Yes, if you restore PC = 0 and clear Halted. The first LOAD replaces ACC, so its initial value does not affect the final sum. The output location also need not be cleared because STORE overwrites it. Keep the input words unchanged if you want the same answer.</p>
-<p><strong>B. If M[8] and M[9] are both zero, is the CPU doing no work?</strong> No. It still fetches, decodes, and executes the four instructions. Data values and amount of work are different things for this program.</p>
-<p><strong>C. If the countdown starts at zero, does it halt immediately?</strong> No. It subtracts before checking. The first SUB produces 255 under modulo-256 arithmetic. It reaches zero after 256 subtractions. Counting one LOAD, 256 SUBs, 256 JZs, 255 JMPs, and one HALT gives <strong>769 instructions, or 2,307 ticks</strong>. Moving the zero check before the subtraction would change this behavior. Trace the specified program, not its intended name.</p>
-<p><strong>D. Does our 4-bit PC imply a 4-bit ALU?</strong> No. The PC needs to select 16 instruction locations. ACC and the main data ALU operate on 8-bit values. Different widths serve different purposes.</p>
-<h2 id="readiness-check">Readiness check</h2>
-<p>You are ready to continue if you can trace both programs, explain simultaneous register updates, distinguish addresses from contents, and identify what must be preserved to resume work. Speed is not the criterion; explaining each change is.</p>
-<p>If the machine trace is confusing, repeat Lesson 4 with inputs 2 and 3. If arithmetic encodings are confusing, return to Lesson 1. If the timing is confusing, draw a vertical line for each clock edge and write the old and new state on opposite sides.</p>
-</article><footer class="footer"><span>Architecture Field Notes<br>Edition 01 · 25 September 2026</span><a href="unit-02-programs-and-contexts.html">Continue to Unit 2 →</a></footer></main></div>
+<p>The gap column describes these formats near one; it is not a constant absolute error bound across their entire ranges. Subnormals and special values need additional rules. The FP8 entries name particular encodings: “FP8” alone does not specify exponent allocation or treatment of infinities and NaNs. References: <a href="https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/mathematical-functions.html">CUDA floating-point appendix</a>, <a href="https://cloud.google.com/blog/products/ai-machine-learning/bfloat16-the-secret-to-high-performance-on-cloud-tpus">BF16 on Cloud TPUs</a>, and <a href="https://docs.nvidia.com/deeplearning/transformer-engine/features/low_precision_training/fp8_current_scaling/fp8_current_scaling.html">Transformer Engine's FP8 formats</a>.</p>
+<p>BF16 and FP16 both use two bytes, but their error behavior differs. Around one, FP16 has eight times finer spacing than BF16. BF16 offers a much larger exponent range. Choosing a format therefore requires looking at values and tolerated error, not only storage size.</p>
+<h3>Accumulation is another numerical choice</h3>
+<p>A matrix operation can use low-precision inputs and a wider accumulator. This preserves more of the sum than repeatedly rounding into a narrow accumulator, but <strong>cannot recover information already lost when inputs were converted</strong>. The exact product and accumulation semantics belong to the instruction; an FP32 output label alone is not a complete description.</p>
+<p>Order matters even in FP32. Under round-to-nearest, ties-to-even, 2²⁴ + 1 rounds to 2²⁴. Consequently, evaluating <code>(2²⁴ + 1) − 2²⁴</code> with an FP32 rounding after the first addition gives zero, whereas <code>2²⁴ + (1 − 2²⁴)</code> gives one. A parallel reduction can change grouping and therefore the last bits. Reproducibility, accuracy, and speed are related requirements, but not interchangeable ones.</p>
+<h3>Quantization trades resolution against clipping</h3>
+<p>Start with a simpler, explicitly integer model. For b bits, use symmetric codes from −Q to Q where Q = 2^(b−1)−1, leaving the extra negative code unused. With positive scale s:</p>
+<pre><code class="language-text">q = clip(round_to_nearest_even(x / s), −Q, Q)
+x_reconstructed = s × q
+</code></pre>
+<p>Small s gives a fine step between reconstructed values, but a narrow interval [−Qs, Qs]. Large s expands that interval while increasing rounding error for small values. A few outliers can force an unhelpful scale for the rest of a tensor. Per-channel or per-block scaling can respond to local ranges, at the cost of scale metadata and handling.</p>
+<figure class="figure u6-figure" aria-labelledby="q6-title"><div class="figure-kicker">Explore / 30 · Resolution and clipping</div><h3 id="q6-title">Keep the detail. Fit the outlier.</h3><p>A symmetric integer quantizer with nearest-even rounding. Compare each original value with its reconstruction on the same horizontal scale.</p><div class="controls"><label>Bits <select id="q6-bits"><option selected>4</option><option>8</option></select></label><label>Scale <select id="q6-scale"><option>0.25</option><option selected>0.5</option><option>1</option><option>2</option></select></label></div><div class="u6-legend"><span>● Original value</span><span class="u6-amber">◆ Reconstructed value</span></div><div id="q6-plot" class="u6-quantplot" aria-hidden="true"></div><div class="u3-stats"><div><span>Representable interval</span><strong id="q6-range"></strong></div><div><span>Clipped codes</span><strong id="q6-clips"></strong></div><div><span>Largest absolute error</span><strong id="q6-error"></strong></div></div><details class="trace-disclosure"><summary>Inspect the six values and errors</summary><div class="table-wrap"><table><thead><tr><th>Original</th><th>Code</th><th>Reconstructed</th><th>Absolute error</th><th>Clipped?</th></tr></thead><tbody id="q6-table"></tbody></table></div></details><div class="cpu-effect" id="q6-effect" aria-live="polite"></div><figcaption>q is restricted to −7…7 or −127…127. This is not an FP8/FP4 simulation. Floating-point spacing and scale encodings require a different model.</figcaption></figure>
+<p>For the six displayed values at 4 bits and s = 0.5, the reconstructed sequence is [−2.5,−1,0,0.5,1.5,3.5]. The last value clips from 6.2 to 3.5. At s = 1, clipping disappears, but small values round more coarsely. This visual is an <strong>integer quantizer</strong>, not an FP8 or FP4 emulator. Floating-point formats have nonuniform spacing and additional encoding rules. Modern low-precision matrix systems can combine floating-point elements with block scales; those scales and their supported types are part of the format contract.</p>
+<p>An accuracy evaluation should include representative data, absolute and relative error, and the downstream result that matters. Relative error near zero needs care. A numerically tolerable shortcut for inference may not be tolerable for another workload or for an iterative computation that accumulates error.</p>
+<h3>Predict before continuing</h3>
+<ol start="108">
+<li>For the displayed matrix example, what is C plus only the k = 0 contribution? What is the final D, and how many FLOPs are counted under the multiply-plus-add convention?</li>
+<li>FP16 and BF16 occupy the same bytes. Which has finer spacing near one, by what factor, and which has the wider exponent range?</li>
+<li>In the 4-bit integer quantizer, reconstruct x = 6.2 and x = 0.3 at scales 0.5 and 1. Which choice removes clipping, and what does it do to the small value's error?</li>
+<li>Can an FP32 accumulator restore a small input that rounded to zero during input conversion? Why can changing the order of an FP32 reduction change its result?</li>
+<li>A matrix unit advertises twice the FLOPs/s of another device. Name four workload or instruction properties you need before predicting a speedup.</li>
+</ol>
+<p class="checkpoint"><strong>Checkpoint</strong> separate input representation, accumulation semantics, tile layout, useful arithmetic, and data movement when evaluating a matrix operation.</p><a class="quiz-link" href="unit-06-answers.html#lesson-25">Check this lesson’s answers →</a>
+<h2 id="lesson-26" data-chapter="LESSON 26">Heterogeneous systems and shared memory</h2>
+<h3>Give each engine a job it can execute efficiently</h3>
+<p>A heterogeneous system joins different kinds of compute and movement engines. A CPU handles control-heavy work and general software; a GPU exposes broad parallel throughput; an NPU or other accelerator specializes in a supported set of operations and dataflows. A DMA engine transfers data without making the CPU execute a load/store loop for every element. These are roles, not universal performance rankings.</p>
+<p>A <strong>system-on-chip (SoC)</strong> integrates major system functions such as processing engines, memory interfaces, and I/O. Contemporary system designs can also span multiple dies. The internal <strong>fabric</strong> routes requests and responses among engines and controllers. Shared controllers and links can become bottlenecks when otherwise independent engines are active together.</p>
+<figure class="figure u6-figure" aria-labelledby="soc6-title"><div class="figure-kicker">System map / Engines, fabric, memory</div><h3 id="soc6-title">Different engines. Shared paths.</h3><div class="u6-engines"><div><strong>CPU</strong><span>Control & general work</span></div><div><strong>GPU</strong><span>Parallel throughput</span></div><div><strong>NPU</strong><span>Supported specialized work</span></div><div><strong>I/O & DMA</strong><span>Input, output & movement</span></div></div><div class="u6-connectors" aria-hidden="true">↕ &nbsp; ↕ &nbsp; ↕ &nbsp; ↕</div><div class="u6-fabric"><strong>On-system fabric</strong><span>Routes · arbitration · finite bandwidth</span></div><div class="u6-connectors" aria-hidden="true">↕</div><div class="u6-memory"><strong>Memory controllers → physical DRAM</strong><span>One possible shared-memory arrangement</span></div><figcaption>A conceptual SoC, not a product floorplan. Caches and translation are omitted. The picture alone makes no promise about coherence, equal access cost, or universal engine access.</figcaption></figure>
+<p>Follow a hypothetical camera workload: an input engine writes a buffer; an NPU transforms it; a GPU renders an overlay; a CPU consumes a compact result. Each handoff has a data dependency, a physical path, and a completion/visibility requirement. Running every stage on its locally fastest engine may lose overall if transfers, conversion, and synchronization dominate.</p>
+<h3>Three meanings that “shared” can hide</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Property</th>
+<th>What it provides</th>
+<th>What it does not establish by itself</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Shared physical memory</td>
+<td>Engines can use the same backing memory pool</td>
+<td>Equal latency, equal bandwidth, cache coherence, or safe concurrent access</td>
+</tr>
+<tr>
+<td>Shared/unified virtual addressing</td>
+<td>A common address-space scheme for describing allocations</td>
+<td>Permission for every engine to dereference every pointer, or local physical placement</td>
+</tr>
+<tr>
+<td>Coherent access</td>
+<td>The participating caches/memory agents follow a protocol for consistent views of shared locations</td>
+<td>Program-level ordering across different locations, absence of data races, or completion of queued work</td>
+</tr>
+<tr>
+<td>Managed migration</td>
+<td>Runtime/OS mechanisms can arrange placement and movement for supported allocations</td>
+<td>That no movement occurs, or that first access has no cost</td>
+</tr>
+</tbody>
+</table></div>
+<p>These properties can appear in different combinations. In CUDA specifically, unified virtual addressing and Unified Memory are separate features, and managed-memory behavior depends on platform capabilities. Query the relevant attributes rather than assuming all systems act the same. See <a href="https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/understanding-memory.html">CUDA unified and system memory</a>.</p>
+<p>An IOMMU provides device-side address translation and access control within configured mappings. Translation answers <strong>where the device may access</strong>; it does not by itself publish the CPU's latest writes or say that a producer has finished. A driver/runtime must use the platform's supported cache maintenance, coherence, and synchronization mechanisms.</p>
+<h3>A handoff is an ownership protocol</h3>
+<p>Consider a buffer that a CPU fills and a device consumes. First finish producing the required bytes. Then use the supported submission and synchronization mechanism to make those writes available before device consumption. While the device is using the buffer, avoid conflicting reuse. Before reading its output or recycling its storage, observe the required completion event. On a noncoherent path, cache maintenance may be part of these transitions; use the platform API rather than inventing a flag protocol.</p>
+<p>Even coherent memory does not make a simultaneous unsynchronized read and write safe. Recall Unit 4: coherence, ordering, and atomicity answer different questions. A completion event also has a scope—completion of one operation is not a promise that every device in the system is idle.</p>
+<h3>Pipeline independent chunks</h3>
+<p>Suppose each of four independent chunks requires a 2 ms host-to-device transfer, 3 ms computation, and 1 ms device-to-host transfer. Doing all three stages serially for each chunk costs <strong>24 ms</strong>. If the three stages have independent engines, buffers, and sufficient bandwidth, they can form a pipeline.</p>
+<p>The first result arrives after 2 + 3 + 1 = 6 ms. The compute stage sets the steady interval at max(2,3,1) = 3 ms. Four chunks therefore finish in <strong>6 + 3×3 = 15 ms</strong>. Work on a particular chunk still follows transfer-in → compute → transfer-out. Overlap comes from different chunks being at different stages.</p>
+<figure class="figure u6-figure" aria-labelledby="pipe6-title"><div class="figure-kicker">Explore / 31 · Legal overlap</div><h3 id="pipe6-title">One chunk waits. Another can advance.</h3><p>Transfer in: 2 ms · compute: 3 ms · transfer out: 1 ms per chunk. Every chunk preserves that order.</p><div class="controls"><label>Schedule <select id="pipe6-mode"><option value="overlap">Independent engines · overlap</option><option value="serial">Serial execution</option></select></label><label>Chunks <select id="pipe6-n"><option>2</option><option selected>4</option><option>8</option></select></label></div><div class="u6-chart-scroll"><div id="pipe6-chart" class="u6-pipeline" role="img" aria-label=""></div></div><div class="u3-stats"><div><span>Total completion time</span><strong id="pipe6-total"></strong></div><div><span>First result</span><strong id="pipe6-first"></strong></div><div><span>Result interval</span><strong id="pipe6-interval"></strong></div></div><details class="trace-disclosure"><summary>Read exact start and finish times</summary><div class="table-wrap"><table><thead><tr><th>Chunk</th><th>Stage</th><th>Start, ms</th><th>Finish, ms</th></tr></thead><tbody id="pipe6-table"></tbody></table></div></details><div class="cpu-effect" id="pipe6-effect" aria-live="polite"></div><figcaption>Fixed times, distinct buffers, one engine per stage, no shared bottleneck or setup cost. Each chart rescales to its own final time; use the time labels when comparing modes.</figcaption></figure>
+<p>The schedule assumes fixed per-chunk times, independent transfer directions, sufficient buffering, no resource contention, and no setup overhead. On CUDA systems, asynchronous API calls alone do not guarantee useful overlap: stream dependencies, host-memory properties, and hardware capabilities matter. See <a href="https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/asynchronous-execution.html">asynchronous execution</a>. Two engines drawing from one saturated memory interface may interfere even if their timeline bars overlap.</p>
+<h3>Power is a shared resource too</h3>
+<p>CPU, GPU, and specialized engines may share a package power and thermal budget. Increasing one engine's activity can reduce the frequency sustainable elsewhere. Dynamic switching power is often approximated as proportional to activity × capacitance × voltage² × frequency; leakage and other costs remain. This is an explanatory relationship, not a calculator for a real chip without its parameters.</p>
+<p>An energy comparison needs <strong>joules for the completed task</strong>, as well as time. A specialized engine may reduce arithmetic energy but require a costly conversion or transfer. Record the entire interval and the operating conditions; a short peak-throughput test need not describe sustained operation.</p>
+<h3>Predict before continuing</h3>
+<ol start="113">
+<li>CPU and GPU can name an allocation with one virtual address. Does this establish shared physical DRAM, coherent access, or zero transfer cost?</li>
+<li>A CPU writes data and immediately reuses its input buffer after submitting a device operation. What dependency is missing, even if the memory is coherent?</li>
+<li>With the specified 2/3/1 ms stages, how long do four chunks take serially and with the ideal pipeline? What are the first-result latency and steady completion interval?</li>
+<li>If the transfer engines share a saturated memory interface with computation, which pipeline assumption fails? Why is an asynchronous call insufficient evidence of overlap?</li>
+<li>An NPU kernel takes 2 ms versus 5 ms on the GPU, but adds 4 ms of nonoverlapping conversion and transfer. Which route finishes sooner under these assumptions, and what must an energy comparison measure?</li>
+</ol>
+<p class="checkpoint"><strong>Checkpoint</strong> draw a data path, then annotate each handoff with who may use the storage and which event permits the next stage.</p><a class="quiz-link" href="unit-06-answers.html#lesson-26">Check this lesson’s answers →</a>
+<h2 id="lesson-27" data-chapter="LESSON 27">Packaging, HBM, and memory locality</h2>
+<h3>A package is a physical arrangement</h3>
+<p>A <strong>die</strong> is an individual piece of semiconductor. A <strong>chiplet</strong> is a die intended to function as a building block in a larger design. A <strong>package</strong> connects and protects one or more dies and connects them to the board. An <strong>interposer</strong> or bridge can provide dense connections between nearby dies; three-dimensional integration can stack components vertically. These choices change the distance, density, cost, power, and bandwidth of communication.</p>
+<p>Splitting a large design can help manufacturing yield, reuse, and the choice of process for each function. It also introduces interfaces, assembly complexity, and potential locality boundaries. “Chiplet” tells you the construction strategy; it does not specify whether software sees one processor, several NUMA domains, one cache, or many.</p>
+<p>UCIe is one example of a standardized package-level die-to-die interface. An interface specification supplies interoperability rules; it does not make all chiplet designs interchangeable or all access paths equally fast. See the <a href="https://www.uciexpress.org/specifications">UCIe specifications overview</a>.</p>
+<h3>HBM gets bandwidth from a wide nearby interface</h3>
+<p>High Bandwidth Memory uses stacked DRAM with a wide interface near a processor package. Physical integration can provide many parallel connections without routing all of them across a conventional board-level memory interface. A memory controller still schedules accesses, and workloads still need locality and enough concurrent requests. HBM is capacity-constrained memory, not a giant register file. <a href="https://www.micron.com/products/memory/hbm">Micron's HBM overview</a> describes this stacked, wide-interface approach.</p>
+<p>Build a bandwidth estimate from units. A hypothetical stack has 1,024 data pins at 4 billion transferred bits per second per pin:</p>
+<pre><code class="language-text">1024 × 4×10⁹ / 8 = 512×10⁹ bytes/s = 512 GB/s per stack
+4 stacks: 2,048 GB/s = 2.048 TB/s raw aggregate
+4 stacks of 16 GB each: 64 GB capacity
+</code></pre>
+<p>The rate is already bits transferred per second per pin: <strong>do not multiply by two again</strong>. These are invented specification inputs for practice, not the specification of a named HBM generation. The aggregate is a raw ceiling; refresh, access patterns, controller utilization, and competing traffic affect delivered bandwidth. Capacity and bandwidth are separate dimensions. Doubling capacity alone does not prove doubled bandwidth, and high bandwidth does not imply a proportional reduction in the latency of one dependent read.</p>
+<h3>Locality depends on the requester</h3>
+<p>In a non-uniform memory access (<strong>NUMA</strong>) system, the cost of reaching memory depends on where the requester and memory reside. A core can reach a local controller directly or travel across a fabric to a remote controller. The virtual address can stay unchanged while the physical placement determines the route. The <a href="https://docs.kernel.org/mm/numa.html">Linux NUMA introduction</a> presents this distinction.</p>
+<p>Our teaching machine has two nodes. A thread runs on A; a cache-missing dependent load takes 80 ns from A's DRAM or 140 ns from B's DRAM. Assume each next address depends on the previous result, so no loads overlap. If fraction f is remote:</p>
+<pre><code class="language-text">mean latency = (1−f) × 80 + f × 140 ns
+time for 10⁶ such loads = mean latency in milliseconds
+</code></pre>
+<figure class="figure u6-figure" aria-labelledby="loc6-title"><div class="figure-kicker">Explore / 32 · The route of a miss</div><h3 id="loc6-title">The address stays. The distance changes.</h3><p>A thread runs on node A. Each load depends on the previous load's result, so requests cannot overlap.</p><div class="controls"><label>Remote fraction <select id="loc6-f"><option value="0">0% · all local</option><option value="0.25">25%</option><option value="0.5" selected>50%</option><option value="0.75">75%</option><option value="1">100% · all remote</option></select></label></div><div class="u6-route"><div class="u6-node"><strong>Node A</strong><span>Thread → local DRAM</span><b>80 ns</b></div><div class="u6-link">Fabric<br>→</div><div class="u6-node"><strong>Node B</strong><span>Remote DRAM</span><b>140 ns</b></div></div><div class="u6-label">Share of cache-missing dependent reads</div><div id="loc6-share" class="u6-share"></div><div class="u3-stats"><div><span>Mean read latency</span><strong id="loc6-ns"></strong></div><div><span>One million loads</span><strong id="loc6-ms"></strong></div><div><span>Relative to all local</span><strong id="loc6-ratio"></strong></div></div><div class="cpu-effect" id="loc6-effect" aria-live="polite"></div><figcaption>Hypothetical fixed latencies with no cache hits, queueing, translation cost, or other work. This dependent chain does not model a streaming bandwidth test.</figcaption></figure>
+<p>At f = 0.5, the mean is 110 ns and the million-load trace takes 110 ms. This is a serial latency model, <strong>not a streaming bandwidth model</strong>. Independent loads can overlap; multiple workers can saturate controllers or links. You cannot convert this weighted latency into a reliable GB/s prediction for a parallel streaming workload.</p>
+<h3>Allocation and execution must agree</h3>
+<p>On systems using local allocation policies, the thread that first faults in a page can influence its initial home. A successful allocation call alone does not prove all physical pages were allocated near the eventual worker. Read faults, shared zero pages, explicit policies, fallback, and migration complicate the simple “first touch” story. The <a href="https://cdn.kernel.org/doc/html/latest/admin-guide/mm/numa_memory_policy.html">Linux NUMA memory-policy documentation</a> describes policy scope and allocation behavior.</p>
+<p>A practical investigation connects worker placement, allocation policy, initialization, measured page placement, and later accesses. Parallel initialization by the eventual workers can help under a suitable policy; pinning a worker without placing its data may leave the remote route intact. Migrating pages also moves bytes and takes time.</p>
+<p>The same reasoning extends to accelerator memory: a value may be local to one GPU but remote to another, and a cache may hide some accesses. For each hot allocation, draw <strong>requester → caches → fabric/link → controller → physical memory</strong>. Mark where you count bytes and what else shares each path. A package drawing is useful only when connected to those access routes.</p>
+<h3>Predict before continuing</h3>
+<ol start="118">
+<li>For the hypothetical four-stack memory system, calculate raw bandwidth and capacity. Why should you not add an extra factor of two to the given pin rate?</li>
+<li>A thread on A sends 25% of its dependent cache-missing reads to B. Find the mean latency and time for one million reads.</li>
+<li>Why does that dependent-load calculation not predict the bandwidth of a loop with many independent reads? Name two resources that could limit the latter.</li>
+<li>Does moving a worker from B to A automatically move its already allocated pages? How could initialization and allocation policy change the outcome?</li>
+<li>A processor changes from one die to four chiplets. What evidence would you need before asserting four NUMA domains or a fourfold speedup?</li>
+</ol>
+<p class="checkpoint"><strong>Checkpoint</strong> use the physical route and access pattern to explain a cost. Treat package boundaries and software-visible locality domains as related but distinct facts.</p><a class="quiz-link" href="unit-06-answers.html#lesson-27">Check this lesson’s answers →</a>
+<h2 id="lesson-28" data-chapter="LESSON 28">Multiple GPUs and nodes</h2>
+<h3>Partition the work, then account for its edges</h3>
+<p>Several accelerators can hold more data and execute more work. They also need to exchange values when partitions interact. <strong>Strong scaling</strong> holds total work fixed and adds processors. <strong>Weak scaling</strong> grows work with processor count, often holding local work roughly fixed. A speedup number is incomplete until the workload rule is stated.</p>
+<p>In data-parallel training, workers process different data and combine gradient contributions. Tensor partitioning splits an operation and can require communication inside a layer. Pipeline partitioning assigns stages to devices and moves activations between them. These strategies create different dependencies and communication frequencies; they can also be combined. More devices do not remove the serial or communication parts of the computation.</p>
+<p>A <strong>rank</strong> identifies a participant in a communication operation. In our example there is one rank per GPU, but a rank is a software identity, not a hardware unit. The participants must agree on the collective's ordering, data size, type, and operation.</p>
+<h3>Know what the collective promises</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Collective</th>
+<th>Input</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Broadcast</td>
+<td>A buffer at a designated root</td>
+<td>Each rank receives that buffer</td>
+</tr>
+<tr>
+<td>Reduce</td>
+<td>A contribution at every rank</td>
+<td>The root receives the combined result</td>
+</tr>
+<tr>
+<td>All-reduce</td>
+<td>A contribution at every rank</td>
+<td>Every rank receives the combined result</td>
+</tr>
+<tr>
+<td>Reduce-scatter</td>
+<td>A contribution at every rank</td>
+<td>Each rank receives its assigned piece of the combined result</td>
+</tr>
+<tr>
+<td>All-gather</td>
+<td>A distinct piece at every rank</td>
+<td>Every rank receives the concatenated pieces</td>
+</tr>
+</tbody>
+</table></div>
+<p>The operation's semantics are independent of the algorithm used to carry it out. An all-reduce can be constructed from a reduce-scatter followed by an all-gather, but libraries choose among algorithms and protocols using message size, topology, and device capabilities. See <a href="https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/usage/collectives.html">NCCL collective operations</a>.</p>
+<h3>Follow a ring all-reduce</h3>
+<p>Arrange four ranks in a directed ring, R0 → R1 → R2 → R3 → R0. Each starts with a four-element vector, split into four single-element chunks:</p>
+<pre><code class="language-text">R0: [   1,    2,    3,    4]
+R1: [  10,   20,   30,   40]
+R2: [ 100,  200,  300,  400]
+R3: [1000, 2000, 3000, 4000]
+Wanted at every rank: [1111, 2222, 3333, 4444]
+</code></pre>
+<p>During three reduce-scatter rounds, each rank sends one selected partial chunk clockwise and adds a received partial chunk to its own contribution. Eventually each rank owns one chunk containing all four contributions. In this schedule R0 owns chunk 1, R1 owns chunk 2, R2 owns chunk 3, and R3 owns chunk 0; this rotation is a schedule choice. Three all-gather rounds circulate these complete chunks until everyone has all four.</p>
+<figure class="figure u6-figure" aria-labelledby="ring6-title"><div class="figure-kicker">Explore / 33 · Four-rank all-reduce</div><h3 id="ring6-title">Reduce the pieces. Share the result.</h3><p>Clockwise path: R0 → R1 → R2 → R3 → R0. A green cell marked “complete” includes one contribution from every rank.</p><div class="controls"><button id="ring6-prev">Previous</button><button class="primary" id="ring6-next">Next round →</button><button id="ring6-reset">Restart</button><span class="status" id="ring6-step"></span></div><div class="u6-ranks" id="ring6-ranks"></div><div class="u6-label">Transfers in the most recent round</div><div id="ring6-transfers" class="u6-transfers"></div><div class="cpu-effect" id="ring6-effect" aria-live="polite"></div><figcaption>Four-byte elements; each arrow carries one element per round. All sends use the state at the start of a round. Labels list contributors, so partial cells cannot be mistaken for complete sums.</figcaption></figure>
+<p>A round uses the state from before that round for every send. Otherwise the diagram would accidentally propagate a result several hops in one step. Contribution labels let you check that each final value includes each rank exactly once. Intermediate unreduced cells can remain stale; only a cell marked complete is a final sum.</p>
+<h3>Derive the communication cost</h3>
+<p>For P ranks and an M-byte contribution at each rank, split into P equal chunks. Each rank sends M/P bytes in each of P−1 reduce-scatter rounds and P−1 all-gather rounds:</p>
+<pre><code class="language-text">bytes sent per rank = 2 × (P−1)/P × M
+T_ring ≈ 2 × (P−1) × α + 2 × (P−1)/P × M/β
+</code></pre>
+<p>Here α is the fixed time per round and β is the sustained bandwidth of each concurrently usable directed ring link. We assume identical links, full-duplex send/receive, equal chunks, no competing traffic, and negligible reduction/packing cost. This model is for the chosen ring schedule, not every all-reduce implementation. Bytes received equal bytes sent; do not double the time again if the links already support the simultaneous transfers assumed here.</p>
+<p>With P = 4, M = 100 MB, β = 25 GB/s, and α = 5 μs, each rank sends 150 MB. The transfer term is 6 ms and the six rounds add 0.03 ms: <strong>6.03 ms</strong>. For the tiny four-element visual, each element is assumed four bytes, so M = 16 B and each rank sends 24 B over six rounds. The tiny example teaches values and scheduling, not efficient message sizing.</p>
+<figure class="figure u6-figure" aria-labelledby="scale6-title"><div class="figure-kicker">Explore / 34 · Strong scaling</div><h3 id="scale6-title">Less compute. Communication remains.</h3><p>Fixed total compute: 40 ms on one rank. A blocking ring all-reduce follows. Per-link bandwidth: 25 GB/s · fixed time: 5 μs per round.</p><div class="controls"><label>Contribution per rank <select id="scale6-mb"><option value="1">1 MB</option><option value="100" selected>100 MB</option><option value="400">400 MB</option></select></label></div><div class="u6-legend"><span>Green · compute</span><span class="u6-amber">Amber · communication</span></div><div id="scale6-bars" class="u6-scalebars" aria-hidden="true"></div><div class="table-wrap"><table><thead><tr><th>Ranks</th><th>Compute</th><th>Communication</th><th>Total</th><th>Speedup</th><th>Efficiency</th></tr></thead><tbody id="scale6-table"></tbody></table></div><div class="cpu-effect" id="scale6-effect" aria-live="polite"></div><figcaption>Times are milliseconds. Ideal compute division, independent full-duplex ring links, no packing/reduction cost or contention. One rank requires no collective. This is an analytical model, not measured scaling.</figcaption></figure>
+<p>The scaling visual keeps total compute fixed at 40 ms on one rank and assumes ideal compute division. A blocking all-reduce follows computation. At four ranks, total time is 40/4 + 6.03 = <strong>16.03 ms</strong>, speedup about <strong>2.50×</strong>, efficiency about <strong>62.4%</strong>. At eight ranks, communication takes 7.07 ms, giving <strong>12.07 ms</strong>, only <strong>3.31×</strong> speedup. Try a larger message and watch communication consume the savings.</p>
+<h3>A logical ring still uses physical links</h3>
+<p>A direct GPU link, a PCIe path through a switch, a CPU interconnect, and a network hop have different bandwidth, latency, and contention. Several logical ring edges can share one physical bottleneck. If every node must push data through one NIC or one oversubscribed switch link, adding logical connections does not increase that cut's capacity.</p>
+<p>When reading advertised bandwidth, distinguish per-link from aggregate, one direction from the sum of both directions, raw line rate from payload rate, and local scale-up links from inter-node network links. A direct device-to-device DMA path can avoid staging through a CPU buffer while still requiring mappings, permissions, synchronization, and physical transfer time. “Direct” is not a promise of cache coherence or free communication.</p>
+<h3>Overlap has a dependency graph</h3>
+<p>The scaling model intentionally places the collective after compute. Real programs may produce independent buckets gradually and begin communicating an earlier bucket while computing a later one. Only data that is ready can be sent, and the consumer of a collective result must await its completion. The last communication tail can remain exposed, and communication can contend with compute for memory bandwidth.</p>
+<p>For perfectly overlapping independent stages, max(compute time, communication time) is an optimistic bound. Adding their times describes serialization. Neither formula alone proves what the program achieves. Inspect a timeline, include the final synchronization, and measure the complete iteration. Numerical changes from a different reduction order also need an accuracy check.</p>
+<h3>Predict before continuing</h3>
+<ol start="123">
+<li>After the ring's three reduce-scatter rounds, does every rank already possess a complete result vector? Which complete chunk does each rank own in this schedule?</li>
+<li>For four ranks and a 100 MB contribution, how many bytes does each rank send across both phases? Find the modeled time with β = 25 GB/s and α = 5 μs.</li>
+<li>With 40 ms of fixed total compute, what are runtime, speedup, and efficiency at four ranks in the specified blocking model? What changes at eight ranks?</li>
+<li>Two logical ring edges share one physical link whose capacity is 25 GB/s. Why is the independent-link calculation optimistic? Can a “direct” path eliminate the dependency on completion?</li>
+<li>A collective requires a gradient bucket that has not yet been computed. Can launching it asynchronously overlap that bucket's production with its transfer? How could earlier completed buckets still provide overlap?</li>
+</ol>
+<p class="checkpoint"><strong>Checkpoint</strong> draw the collective's data dependencies and physical routes before applying a bandwidth number or claiming a scaling result.</p><a class="quiz-link" href="unit-06-answers.html#lesson-28">Check this lesson’s answers →</a>
+<h2 id="put-the-four-lessons-together">Put the four lessons together</h2>
+<p>Trace this hypothetical iteration. A CPU prepares input in host memory. Four GPUs receive separate chunks, execute low-precision matrix operations with a specified accumulator, combine four-byte gradient values with an all-reduce, then return a compact result for CPU consumption.</p>
+<ol>
+<li><strong>Name the representation.</strong> Distinguish input elements, scale metadata, accumulators, collective buffers, and output conversion. Quantizing inputs does not automatically shrink a still-FP32 communication buffer.</li>
+<li><strong>Name the physical homes.</strong> Mark which CPU node supplies host data and which GPU owns each device allocation. Common pointer naming is not a placement guarantee.</li>
+<li><strong>Draw every movement.</strong> Host → GPU, HBM → on-chip tile storage, GPU → neighboring GPU, and GPU → host. A byte can cross several boundaries; each boundary has its own useful count and physical traffic.</li>
+<li><strong>Establish the handoffs.</strong> Input production precedes its transfer; transfer precedes consumption; local gradient production precedes reduction; reduction completion precedes use of the combined result; output transfer completion precedes CPU reading.</li>
+<li><strong>Find the critical path.</strong> Overlap independent chunks only where engine capacity and dependencies permit. Include initialization, conversion, launch, transfer, collective, and synchronization in the interval you intend to optimize.</li>
+<li><strong>Validate the answer.</strong> Compare to a suitable numerical reference, then measure representative steady-state and first-use behavior separately. A faster incorrect result does not complete the task.</li>
+</ol>
+<p class="milestone"><strong>Milestone:</strong> produce one annotated diagram of this iteration and a time budget whose assumptions are explicit. Explain which change you would try first and what measurement could show that your hypothesis was wrong.</p>
+<h2 id="finish-the-unit">Finish the unit</h2>
+<p>You should now be able to expand a matrix operation, reason about range and rounding, separate meanings of shared memory, schedule a three-stage pipeline, identify a NUMA route, derive ring traffic, and explain limited multi-GPU scaling.</p>
+<p>Use the <a href="unit-06-answers.html">worked answers and transfer exercises</a> before moving on. Unit 7 will apply the course to documented CPU/GPU architecture case studies and a measured capstone, distinguishing established facts, vendor claims, and unknown implementation details.</p>
+</article><footer class="footer"><span>Architecture Field Notes<br>Edition 01 · 25 September 2026</span><a href="unit-06-answers.html">Check your reasoning →</a></footer></main></div>
 <script>(() => {
  'use strict';
  const byId=id=>document.getElementById(id);
@@ -235,5 +394,36 @@ html[data-theme=dark]{--paper:#14241f;--panel:#1b3028;--ink:#e5eddd;--text:#d0dc
  const answerToggle=byId('answer-toggle');if(answerToggle){const answers=[...document.querySelectorAll('details.answer')];function label(){answerToggle.textContent=answers.every(a=>a.open)?'Hide all answers':'Reveal all answers';}answerToggle.addEventListener('click',()=>{const open=!answers.every(a=>a.open);answers.forEach(a=>a.open=open);label();});answers.forEach(a=>a.addEventListener('toggle',label));}
  function revealAnchor(){if(location.hash){const target=byId(decodeURIComponent(location.hash.slice(1)));if(target&&target.matches('details'))target.open=true;}}
  window.addEventListener('hashchange',revealAnchor);revealAnchor();
+})();
+</script><script>(function(root){
+'use strict';
+const A=[[1,2],[3,4]], B=[[5,6],[7,8]], C=[[10,0],[0,10]];
+function matrix(k){return C.map((row,i)=>row.map((c,j)=>c+Array.from({length:k},(_,t)=>A[i][t]*B[t][j]).reduce((a,b)=>a+b,0)));}
+function nearestEven(x){const lo=Math.floor(x), f=x-lo;return f<.5?lo:f>.5?lo+1:lo%2===0?lo:lo+1;}
+const values=[-2.7,-.9,-.1,.3,1.6,6.2];
+function quant(bits,scale){const Q=2**(bits-1)-1;const rows=values.map(x=>{const raw=nearestEven(x/scale),q=Math.max(-Q,Math.min(Q,raw)),y=q*scale;return {x,q,y,error:Math.abs(x-y),clipped:raw!==q};});return {Q,range:Q*scale,rows,maxError:Math.max(...rows.map(r=>r.error)),clipped:rows.filter(r=>r.clipped).length};}
+function pipeline(n,mode='overlap',times=[2,3,1]){const end=[0,0,0],tasks=[];let serialEnd=0;for(let chunk=0;chunk<n;chunk++){let prior=mode==='serial'?serialEnd:0;for(let stage=0;stage<3;stage++){const start=Math.max(end[stage],prior),finish=start+times[stage];tasks.push({chunk,stage,start,finish});end[stage]=finish;prior=finish;}serialEnd=prior;}return {tasks,total:end[2],first:times.reduce((a,b)=>a+b,0),interval:mode==='serial'?times.reduce((a,b)=>a+b,0):Math.max(...times)};}
+function locality(f){return {fraction:f,ns:80+60*f,ms:80+60*f};}
+function ring(){const P=4;let cells=Array.from({length:P},(_,r)=>Array.from({length:P},(_,c)=>({value:(c+1)*10**r,contributors:[r]})));const states=[{phase:'Initial contributions',cells:structuredClone(cells),transfers:[]}];for(let step=0;step<6;step++){const prev=structuredClone(cells),gather=step>=3,s=gather?step-3:step,transfers=[];for(let r=0;r<P;r++){const to=(r+1)%P,chunk=gather?(r+1-s+8)%P:(r-s+8)%P,src=prev[r][chunk];transfers.push({from:r,to,chunk,value:src.value});cells[to][chunk]=gather?structuredClone(src):{value:prev[to][chunk].value+src.value,contributors:[...prev[to][chunk].contributors,...src.contributors].sort()};}states.push({phase:(gather?'All-gather':'Reduce-scatter')+' · round '+(s+1),cells:structuredClone(cells),transfers});}return states;}
+function scaling(p,mb){const alpha=.005,beta=25,comm=p===1?0:2*(p-1)*alpha+2*(p-1)/p*mb/beta,compute=40/p,total=compute+comm;return {p,mb,comm,compute,total,speedup:40/total,efficiency:40/total/p,bytesMB:p===1?0:2*(p-1)/p*mb};}
+const api={A,B,C,matrix,nearestEven,quant,pipeline,locality,ring,scaling};if(typeof module!=='undefined'&&module.exports)module.exports=api;else root.CourseUnit6Models=api;
+})(typeof window!=='undefined'?window:globalThis);
+
+(()=>{'use strict';
+const M=window.CourseUnit6Models,$=id=>document.getElementById(id);if(!$('mx-next'))return;
+const num=n=>Number(n.toFixed(3)).toString(),set=(id,value)=>$(id).textContent=value;
+function stepper(prefix,last,render){let i=0;const draw=()=>{$(prefix+'-prev').disabled=i===0;$(prefix+'-next').disabled=i===last;set(prefix+'-step',`Step ${i} / ${last}`);render(i);};$(prefix+'-prev').addEventListener('click',()=>{i=Math.max(0,i-1);draw();});$(prefix+'-next').addEventListener('click',()=>{i=Math.min(last,i+1);draw();});$(prefix+'-reset').addEventListener('click',()=>{i=0;draw();});draw();}
+function matrixHTML(title,values,selected,result=false){return `<div class="u6-matrix ${result?'result':''}"><strong>${title}</strong><div class="u6-matrix-grid">${values.map((row,r)=>row.map((v,c)=>`<span class="${selected(r,c)?'operand':''}">${v}</span>`).join('')).join('')}</div></div>`;}
+stepper('mx',2,k=>{$('mx-matrices').innerHTML=matrixHTML('A · 2×2',M.A,(r,c)=>k>0&&c===k-1)+matrixHTML('B · 2×2',M.B,(r,c)=>k>0&&r===k-1)+matrixHTML(k===0?'C · initial':k===2?'D · complete':'Accumulator',M.matrix(k),()=>false,true);set('mx-effect',k===0?'Begin with C = [[10,0],[0,10]]. No products have been added.':k===1?'Add k = 0: [[5,6],[15,18]]. The accumulator is now [[15,6],[15,28]].':'Add k = 1: [[14,16],[28,32]]. Final D = [[29,22],[43,60]]. Eight multiplications plus eight additions = 16 FLOPs.');});
+function quant(){const b=+$('q6-bits').value,s=+$('q6-scale').value,q=M.quant(b,s);$('q6-plot').innerHTML=q.rows.map(r=>`<div class="u6-qrow"><span>${num(r.x)}</span><div class="u6-qtrack"><i style="left:${(r.x+3)*10}%">●</i><b style="left:${(r.y+3)*10}%">◆</b></div></div>`).join('')+'<div class="u6-qaxis"><span style="left:0%">−3</span><span style="left:30%">0</span><span style="left:60%">3</span><span style="left:100%">7</span></div>';$('q6-table').innerHTML=q.rows.map(r=>`<tr><td>${num(r.x)}</td><td>${r.q}</td><td>${num(r.y)}</td><td>${num(r.error)}</td><td>${r.clipped?'Yes':'No'}</td></tr>`).join('');set('q6-range',`±${num(q.range)}`);set('q6-clips',`${q.clipped} / 6`);set('q6-error',num(q.maxError));set('q6-effect',`Scale ${s} spaces reconstructed values ${s} units apart. ${q.clipped?'The outlier exceeds the code range and clips.':'No code clips for these six inputs.'} Largest absolute error: ${num(q.maxError)}. Increasing the number of codes at the same scale extends range; it does not refine the step size.`);}
+['q6-bits','q6-scale'].forEach(id=>$(id).addEventListener('change',quant));quant();
+const stages=['Transfer in','Compute','Transfer out'];
+function pipeline(){const n=+$('pipe6-n').value,mode=$('pipe6-mode').value,p=M.pipeline(n,mode);$('pipe6-chart').innerHTML=stages.map((name,stage)=>`<div class="u6-pipe-row"><span>${name}</span><div class="u6-pipe-lane">${p.tasks.filter(t=>t.stage===stage).map(t=>`<span class="u6-pipe-bar ${t.chunk%2?'odd':''}" style="left:${100*t.start/p.total}%;width:${100*(t.finish-t.start)/p.total}%">${t.chunk+1}</span>`).join('')}</div></div>`).join('')+`<div class="u6-pipe-axis">${[0,.25,.5,.75,1].map(x=>`<span style="left:${x*100}%">${num(x*p.total)}${x===1?' ms':''}</span>`).join('')}</div>`;$('pipe6-chart').setAttribute('aria-label',`${mode==='serial'?'Serial':'Overlapping'} schedule for ${n} chunks. Total ${p.total} milliseconds. Exact times in the following expandable table.`);$('pipe6-table').innerHTML=p.tasks.map(t=>`<tr><td>${t.chunk+1}</td><td>${stages[t.stage]}</td><td>${t.start}</td><td>${t.finish}</td></tr>`).join('');set('pipe6-total',p.total+' ms');set('pipe6-first',p.first+' ms');set('pipe6-interval',p.interval+' ms');set('pipe6-effect',mode==='serial'?`${n} chunks × 6 ms = ${p.total} ms. Every chunk finishes before the next one begins.`:`First result at 6 ms, then one every 3 ms. ${n} chunks finish in ${p.total} ms, versus ${n*6} ms serially. Compute is the longest stage.`);}
+['pipe6-n','pipe6-mode'].forEach(id=>$(id).addEventListener('change',pipeline));pipeline();
+function locality(){const l=M.locality(+$('loc6-f').value);$('loc6-share').innerHTML=(l.fraction<1?`<span style="width:${100*(1-l.fraction)}%">${100*(1-l.fraction)}% local</span>`:'')+(l.fraction>0?`<span class="remote" style="width:${100*l.fraction}%">${100*l.fraction}% remote</span>`:'');set('loc6-ns',l.ns+' ns');set('loc6-ms',l.ms+' ms');set('loc6-ratio',num(l.ns/80)+'×');set('loc6-effect',`${100*(1-l.fraction)}% × 80 ns + ${100*l.fraction}% × 140 ns = ${l.ns} ns per load. One million serialized loads therefore take ${l.ms} ms.`);}
+$('loc6-f').addEventListener('change',locality);locality();
+const states=M.ring();stepper('ring6',6,i=>{const s=states[i];$('ring6-ranks').innerHTML=s.cells.map((cells,r)=>`<div class="u6-rank"><strong>Rank ${r}</strong><div class="u6-rank-cells">${cells.map((c,j)=>`<div class="u6-ringcell ${c.contributors.length===4?'complete':''}"><span>Chunk ${j}</span><b>${c.value}</b><small>${c.contributors.length===4?'Complete':'Partial'}<br>From ${c.contributors.map(x=>'R'+x).join(' + ')}</small></div>`).join('')}</div></div>`).join('');$('ring6-transfers').innerHTML=s.transfers.length?s.transfers.map(t=>`<div><strong>R${t.from} → R${t.to}</strong><br>Chunk ${t.chunk} · value ${t.value}</div>`).join(''):'<div>No transfers yet. Each cell contains only its local contribution.</div>';set('ring6-effect',s.phase+'. '+(i===0?'Each rank begins with four local values.':i<3?'Add each received partial chunk to its local partial value.':i===3?'Reduce-scatter is complete: one full chunk per rank. The other cells are not yet final.':i<6?'Copy complete chunks clockwise. No more arithmetic is needed.':'Every rank now has [1111,2222,3333,4444]. Each rank sent six four-byte chunks, or 24 bytes.'));});
+function scaling(){const mb=+$('scale6-mb').value,rows=[1,2,4,8].map(p=>M.scaling(p,mb)),max=Math.max(...rows.map(r=>r.total));$('scale6-bars').innerHTML=rows.map(r=>`<div class="u6-scale-row"><span>P=${r.p}</span><div class="u6-scale-track"><span style="width:${100*r.compute/max}%"></span><span class="comm" style="width:${100*r.comm/max}%"></span></div><span>${r.total.toFixed(2)} ms</span></div>`).join('');$('scale6-table').innerHTML=rows.map(r=>`<tr><td>${r.p}</td><td>${r.compute.toFixed(2)}</td><td>${r.comm.toFixed(2)}</td><td>${r.total.toFixed(2)}</td><td>${r.speedup.toFixed(2)}×</td><td>${(r.efficiency*100).toFixed(1)}%</td></tr>`).join('');const r=rows[3];set('scale6-effect',`At eight ranks: ${r.compute.toFixed(2)} ms compute + ${r.comm.toFixed(2)} ms communication = ${r.total.toFixed(2)} ms. Speedup ${r.speedup.toFixed(2)}×, efficiency ${(r.efficiency*100).toFixed(1)}%. Each rank sends ${num(r.bytesMB)} MB across the two phases.`);}
+$('scale6-mb').addEventListener('change',scaling);scaling();
 })();
 </script></body></html>

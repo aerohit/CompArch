@@ -1,0 +1,650 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Unit 5 · Understand GPUs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="assets/notes.css">
+<script src="assets/notes.js"></script>
+<style>
+.calc{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px;align-items:end}
+.stat{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-top:12px}
+.stat div{background:var(--panel2);border-radius:4px;padding:6px 10px;font:500 11px var(--mono);color:var(--mute)}
+.stat b{display:block;font-size:17px;color:var(--ink)}
+.lanes{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:4px}
+.lanes button{height:48px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font:600 12px var(--mono)}
+.lanes button small{font-size:10px;font-weight:500}
+.lanes button.T{background:var(--te-soft);border-color:var(--te);color:var(--ink)}
+.lanes button.F{background:var(--pl-soft);border-color:var(--pl);color:var(--ink)}
+.strip{display:flex;flex-wrap:wrap;gap:3px;margin-top:10px}
+.strip span{min-width:40px;padding:3px 6px;border-radius:3px;font:600 11px var(--mono);text-align:center}
+.strip .h{background:var(--ok-soft);color:var(--ok)} .strip .n{background:var(--panel2);color:var(--mute)} .strip .cur{outline:2px solid var(--ink)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar"><div class="in">
+  <a class="brand" href="index.html">Gates <span>→</span> GPUs · Notes</a>
+  <nav class="unitnav" aria-label="Units"><a href="index.html">Course map</a><a href="unit-01-build-a-computer.html">1 · Build a computer</a><a href="unit-02-registers-programs-contexts.html">2 · Programs &amp; contexts</a><a href="unit-03-faster-core.html">3 · A faster core</a><a href="unit-04-parallelism.html">4 · Parallelism</a><a href="unit-05-gpus.html" aria-current="page">5 · GPUs</a><a href="cs149/index.html">CS149 lectures</a></nav>
+  <button class="themebtn" type="button">☾ Dark</button>
+</div></header>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk"/></marker>
+  <marker id="ahc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkc"/></marker>
+  <marker id="aht" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkt"/></marker>
+  <marker id="ahp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkp"/></marker>
+  <marker id="ahb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkb"/></marker>
+</defs></svg>
+
+<div class="wrap">
+<nav class="toc" aria-label="On this page"></nav>
+<main id="main">
+
+<header class="hero">
+  <div class="kicker">Unit 5 · Lessons 20–24</div>
+  <h1>Understand <em>GPUs</em></h1>
+  <p class="lede">Unit 4 gave us three ways to overlap work: more cores, more resident hardware contexts, and more data elements per instruction. A GPU uses all three at once, at a scale no CPU attempts. It keeps <b>thousands of logical threads</b> resident, groups them so that one instruction drives many lanes, and pairs them with a memory system built for <b>throughput</b> rather than the latency of one thread. The interesting question isn't whether the hardware is fast. It's how a particular program supplies enough independent, well-organized work to keep that machinery busy.</p>
+  <dl class="outcome">
+    <dt>You'll be able to</dt><dd>Map an array element to its block, thread, warp and lane. Calculate how many warps fit on a processing unit and what limits them. Explain how switching between ready warps hides latency, and what divergence costs. Count the memory sectors and bank conflicts an access pattern causes. Trace a tiled matrix multiply through both of its barriers. Bound a kernel's speed with the Roofline model and design a measurement that tests the bound.</dd>
+    <dt>Carries over</dt><dd>SIMD lanes, masks and tails (Lesson 19), hardware contexts that stay resident (Lesson 18), caches and lines (Lesson 10), synchronization and publication (Lesson 17).</dd>
+    <dt>A note on models</dt><dd>Every explorer is an explicit teaching model with its assumptions stated: an SM with invented capacities, a scheduler with one issue slot, 8-lane groups and 8 memory banks for legibility, a synthetic 10 TFLOP/s device. None of them describes a shipping GPU. Where real hardware differs, the text says so.</dd>
+  </dl>
+  <div class="insight">A GPU is fast when the program gives it <b>many independent threads</b>, <b>grouped so neighbours take the same path</b> and <b>touch neighbouring addresses</b>, doing <b>enough arithmetic per byte</b>. Each lesson below takes one of those conditions apart.</div>
+  <div class="lessonmap">
+    <a href="#l20"><b>LESSON 20</b>From an array loop to SIMT</a>
+    <a href="#l21"><b>LESSON 21</b>Capacity, readiness, issue</a>
+    <a href="#l22"><b>LESSON 22</b>Make memory traffic explicit</a>
+    <a href="#l23"><b>LESSON 23</b>Reuse a tile, coordinate it</a>
+    <a href="#l24"><b>LESSON 24</b>Predict a limit, measure it</a>
+  </div>
+</header>
+
+<!-- =============================== LESSON 20 =============================== -->
+<section class="lesson" id="l20" data-toc="SIMT & the thread hierarchy" data-n="20">
+  <div class="lesson-h"><div class="kicker">Lesson 20</div><h2>From an array loop to SIMT</h2></div>
+  <div class="card4">
+    <div class="c1"><span class="l">Limitation</span>A CPU vector instruction handles 8 or 16 elements. Millions of independent outputs still need a long sequence of instructions, and one core can only hide so much memory latency.</div>
+    <div class="c2"><span class="l">New mechanism</span><b>SIMT</b>, single instruction, multiple threads. The programmer writes one element's work as a <i>thread</i>; the hardware groups threads to share instruction issue.</div>
+    <div class="c3"><span class="l">New state</span>Per-thread registers and indices, per-block shared memory, per-warp scheduling state, all held resident on a processing unit (an SM).</div>
+    <div class="c4"><span class="l">Cost</span>Storage for many contexts, lanes wasted by tails and divergent branches, and data that must be moved to where the threads run.</div>
+  </div>
+
+  <h3 class="part">One thread per element</h3>
+  <p>Take the simplest parallel loop there is: <code>for (i = 0; i &lt; N; i++) c[i] = a[i] + b[i];</code>. No output depends on any other, so all N additions could happen in any order. On a CPU we'd split the loop across cores and vectorize each core's chunk (Lesson 19). A GPU programming model takes a different view: <b>write the work for one element</b>, and launch one logical <b>thread</b> per element. In CUDA:</p>
+  <div class="asm" style="max-width:640px"><div class="r"><span class="a"></span><span class="i">__global__ void add_arrays(const float* a, const float* b, float* c, size_t n) {</span></div><div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;size_t i = size_t(blockIdx.x) * blockDim.x + threadIdx.x;</span></div><div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;if (i &lt; n) c[i] = a[i] + b[i];</span></div><div class="r"><span class="a"></span><span class="i">}</span></div><div class="r"><span class="a"></span><span class="c">// launch: threads = 64; blocks = 1 + (n − 1) / threads; add_arrays&lt;&lt;&lt;blocks, threads&gt;&gt;&gt;(a, b, c, n);</span></div></div>
+  <p>Every thread runs the same function, but each computes a different <b>index</b> from its position in the launch: which block it's in (<code>blockIdx.x</code>), how big blocks are (<code>blockDim.x</code>), and where it sits in its block (<code>threadIdx.x</code>). All indices start at 0. The launch rounds up to whole blocks, so there may be more threads than elements. The guard <code>if (i &lt; n)</code> stops the extra ones touching memory that isn't theirs.</p>
+  <p><b>SIMT</b> (single instruction, multiple threads) names this arrangement. The programmer thinks in <i>threads</i>, each with its own index and private values. The hardware groups threads to share instruction issue, and the arithmetic usually runs on SIMD-style lanes underneath. SIMT and SIMD aren't rival technologies: SIMT describes the programming and scheduling view, SIMD the execution resources.</p>
+  <div class="pitfall"><b>A GPU thread is not a core.</b> Launching a million threads doesn't mean a million run at once, or that there are a million of anything in hardware. Threads are logical units of work. They wait until a processing unit has room for them, and the unit keeps many of them resident and picks ready instructions from among them over time.</div>
+
+  <h3 class="part">Name the levels before drawing the chip</h3>
+  <figure class="fig"><div class="sc"><svg id="hierSvg" viewBox="0 0 760 290" role="img" aria-label="A grid of blocks; each block holds threads grouped into 32-thread warps; blocks are placed onto streaming multiprocessors, and extra blocks wait" style="min-width:560px"></svg></div>
+    <figcaption><b>Software levels on the left, hardware on the right.</b> A launch creates a <b>grid</b> of <b>blocks</b>. Each block's threads are grouped, in order, into <b>warps</b> of 32. Each block is placed on one <b>SM</b> (streaming multiprocessor), which holds the state of all its resident warps. Blocks that don't fit wait for a block to finish. Block numbers say nothing about which SM, or in what order.</figcaption></figure>
+  <div class="tbl"><table>
+    <tr><th>Level</th><th>NVIDIA CUDA term</th><th>AMD / HIP term</th><th>What it is</th></tr>
+    <tr><td>One logical invocation</td><td>Thread</td><td>Thread / work-item</td><td>Private values plus an index into the problem</td></tr>
+    <tr><td>A cooperating group</td><td>Thread block</td><td>Block / workgroup</td><td>Threads that can share a scratchpad and synchronize with each other</td></tr>
+    <tr><td>All groups of one launch</td><td>Grid</td><td>Grid / dispatch</td><td>Every block of this kernel invocation</td></tr>
+    <tr><td>A hardware issue group</td><td>Warp (32 threads)</td><td>Wavefront (width depends on the architecture)</td><td>Threads grouped to share instruction issue</td></tr>
+    <tr><td>A processing unit</td><td>Streaming multiprocessor (SM)</td><td>Compute unit (CU); some designs pair them</td><td>Registers, schedulers, execution units and local storage</td></tr>
+  </table></div>
+  <p>These are correspondences for reading diagrams, not interchangeable specifications. A CUDA warp is always 32 threads, but AMD's wavefront width and compute-unit organization vary by architecture, so don't translate NVIDIA numbers by swapping labels. A block runs entirely on one SM, and several blocks can share an SM if resources permit. A grid can be far larger than what fits on the GPU at once. Crucially, <b>launch order is not execution order</b>: a block must never wait for another ordinary block to make progress, because that block may not even be resident yet.</p>
+
+  <h3 class="part">Try it: map elements to blocks, warps and lanes</h3>
+  <figure class="fig"><div class="widget">
+    <div class="calc">
+      <div><span class="readout">Elements N = <b id="gmNv"></b></span><input type="range" id="gmN" min="1" max="200" value="70" aria-label="Number of elements"></div>
+      <div><span class="readout">Threads per block</span><div class="seg" role="group" aria-label="Threads per block"><button data-gmt="32">32</button><button data-gmt="48">48</button><button data-gmt="64" aria-pressed="true">64</button><button data-gmt="96">96</button></div></div>
+    </div>
+    <div class="sc" style="padding:10px 0 0"><svg id="gmSvg" viewBox="0 0 760 200" role="img" aria-label="Each block as rows of 32-lane warps; lanes coloured by whether they pass the guard" style="min-width:560px"></svg></div>
+    <div class="stat" id="gmStat"></div>
+    <p class="msg" id="gmMsg"></p>
+  </div><figcaption><b>Three different counts.</b> Each block is drawn as its warps, one row of 32 lanes each. <b>Solid</b> lanes pass the guard and do an addition. <b>Outlined</b> lanes are launched threads that fail <code>i &lt; N</code>. <b>Dashed</b> positions have no thread at all: the last warp of a block whose size isn't a multiple of 32. Hardware never fills them with threads from the next block, because warps form within a block. Click any lane to see its coordinates.</figcaption></figure>
+
+  <h3 class="part">Follow one value through the machine</h3>
+  <p>Thread <i>i</i> computes its index, loads <code>a[i]</code> and <code>b[i]</code>, adds them in a private register, and stores <code>c[i]</code>. Its neighbours in the warp run the same instructions on their own values: register <code>r1</code> in lane 5 and <code>r1</code> in lane 6 are different storage. A warp instruction describes the group's operation, but the hardware may carry it out over several cycles or on specialized units. "32 threads per warp" says nothing about how many physical ALUs execute a given instruction, or how long it takes.</p>
+  <figure class="fig"><div class="sc"><svg id="smSvg" viewBox="0 0 760 270" role="img" aria-label="Inside a teaching SM: warp schedulers choose among resident warps; execution lanes; a large register file partitioned among warps; shared memory partitioned among blocks; L1 cache" style="min-width:560px"></svg></div>
+    <figcaption><b>What an SM holds.</b> A large <b>register file</b> split among all resident threads (every warp keeps its registers in place, so switching warps costs nothing). <b>Shared memory</b>, a scratchpad split among resident blocks. <b>Warp schedulers</b> that pick a ready warp each cycle, and the execution lanes they feed. Compare Lecture 2's <a href="cs149/lecture-02-modern-multicore.html#s12">V100 SM</a>: the same pieces at real scale.</figcaption></figure>
+  <p>The host CPU <b>enqueues</b> the launch and can carry on without waiting, so reading <code>c</code> back on the host needs an explicit completion step. What the GPU buys you is amortized instruction control across many lanes and enough parallel work to keep them busy. What it costs is context storage, data movement, inactive lanes and coordination. A long chain of dependent operations, such as following a linked list, doesn't become parallel just because it runs on a GPU.</p>
+
+  <div class="predict"><div class="ph"><b>Predict</b><span>Use the explorer to check.</span></div><ol>
+    <li>N = 70 with 64 threads per block: how many blocks, launched threads and warps? How many lanes of block 1's first warp pass the guard?
+      <details><summary>Show answer</summary><div class="ans"><p><b>2 blocks, 128 threads, 4 warps</b> (two 32-thread warps per block). Block 1 starts at global index 64, so only indices 64–69 pass <code>i &lt; 70</code>: <b>6 lanes</b> of its first warp. Its second warp has no useful lanes. Those 58 surplus threads exist; they just skip the guarded work.</p></div></details></li>
+    <li>With 48 threads per block, thread 17 of block 2 has which global index, warp and lane? Why can't a partial warp borrow threads from the next block?
+      <details><summary>Show answer</summary><div class="ans"><p>Global index 2 × 48 + 17 = <b>113</b>. Warp ⌊17 / 32⌋ = <b>0</b>, lane 17 mod 32 = <b>17</b>. Warps are formed within a block, and a block has its own shared memory and its own synchronization scope. Mixing blocks in one warp would break both. The next block starts its own warp numbering.</p></div></details></li>
+    <li>Does launching 1,000 blocks mean 1,000 are resident at once, or that block 0 runs first?
+      <details><summary>Show answer</summary><div class="ans"><p><b>Neither.</b> Only as many blocks as fit are resident; the rest wait. The scheduler promises no order by block number. A correct kernel works under any permitted schedule, and one where resident blocks wait for a not-yet-scheduled block can deadlock.</p></div></details></li>
+    <li>Distinguish a thread's register value, a block's shared-memory value and an element of a global array.
+      <details><summary>Show answer</summary><div class="ans"><p>A <b>register</b> value belongs to one thread, even though all threads' registers live in one physical register file. <b>Shared memory</b> belongs to a block and lets its threads cooperate. A <b>global</b> array element has an address any block can reach. Being reachable doesn't make communication safe: races still need ordering.</p></div></details></li>
+    <li>Why doesn't a 32-thread warp imply 32 physical ALUs per instruction, or a one-cycle latency?
+      <details><summary>Show answer</summary><div class="ans"><p>Warp width is a <i>logical</i> grouping. How many physical lanes execute an instruction, over how many cycles, with what latency, depends on the instruction and the implementation. The width alone gives you none of those timing facts.</p></div></details></li>
+  </ol></div>
+  <p class="checkpoint">Map an element to its block, thread, warp and lane, without confusing any of them with an SM or with a physical arithmetic unit.</p>
+</section>
+
+<!-- =============================== LESSON 21 =============================== -->
+<section class="lesson" id="l21" data-toc="Occupancy, scheduling, divergence" data-n="21">
+  <div class="lesson-h"><div class="kicker">Lesson 21</div><h2>Capacity, readiness, and useful issue</h2></div>
+  <div class="card4">
+    <div class="c1"><span class="l">Limitation</span>A single warp waiting on memory leaves the SM idle for hundreds of cycles, and a branch that splits a warp leaves lanes idle.</div>
+    <div class="c2"><span class="l">New mechanism</span>Keep <b>many warps resident</b> and issue from whichever is ready. Execute divergent paths under an <b>active mask</b>.</div>
+    <div class="c3"><span class="l">New state</span>Per-warp readiness (scoreboards), active masks and reconvergence information, and per-block resource allocations.</div>
+    <div class="c4"><span class="l">Cost</span>Registers and shared memory limit how many warps fit. Masked lanes do no useful work.</div>
+  </div>
+
+  <h3 class="part">Resident, eligible, issued</h3>
+  <p>Three words that are easy to blur, and shouldn't be:</p>
+  <ul>
+    <li>A <b>resident</b> warp has been admitted to an SM and holds the resources it needs to stay there.</li>
+    <li>An <b>eligible</b> warp can issue its next instruction <i>now</i>: its operands are ready, the execution unit it needs is free, and no synchronization is holding it back.</li>
+    <li>An <b>issued</b> warp is the one actually selected in a given cycle.</li>
+  </ul>
+  <p>A warp can be resident for hundreds of cycles without being eligible, typically while it waits for a load. <b>Occupancy</b> is the number of resident warps relative to the SM's maximum. It measures <i>capacity in use</i>, not useful work: an SM full of warps that are all waiting does nothing.</p>
+
+  <h3 class="part">Try it: what fits on a teaching SM</h3>
+  <p>Our invented SM can hold at most <b>8 warps, 256 threads, 4 blocks, 8,192 registers</b> (32-bit) and <b>16 KiB of shared memory</b>. A block has T threads, each needing R registers, and the block needs S KiB of shared memory. Every limit gives a maximum number of blocks, and the smallest one wins:</p>
+  <div class="asm" style="max-width:720px"><div class="r"><span class="a"></span><span class="i">warps_per_block = ⌈T / 32⌉</span></div><div class="r"><span class="a"></span><span class="i">blocks = min(4, ⌊256 / T⌋, ⌊8 / warps_per_block⌋, ⌊8192 / (T × R)⌋, ⌊16 / S⌋)</span></div><div class="r"><span class="a"></span><span class="i">occupancy = blocks × warps_per_block / 8</span></div></div>
+  <figure class="fig"><div class="widget">
+    <div class="calc">
+      <div><span class="readout">Threads per block T</span><div class="seg" role="group" aria-label="Threads per block"><button data-ot="32">32</button><button data-ot="64" aria-pressed="true">64</button><button data-ot="128">128</button><button data-ot="256">256</button></div></div>
+      <div><span class="readout">Registers per thread R = <b id="orV"></b></span><input type="range" id="orR" min="16" max="128" step="8" value="32" aria-label="Registers per thread"></div>
+      <div><span class="readout">Shared memory per block S = <b id="osV"></b></span><input type="range" id="osS" min="0" max="16" step="1" value="4" aria-label="Shared memory per block in KiB"></div>
+    </div>
+    <div class="sc" style="padding:10px 0 0"><svg id="occSvg" viewBox="0 0 760 250" role="img" aria-label="Blocks allowed by each resource limit, and the SM's warp slots filled by resident blocks" style="min-width:560px"></svg></div>
+    <p class="msg" id="occMsg"></p>
+  </div><figcaption><b>The tightest limit decides.</b> Each bar is how many blocks one resource would allow; the shortest bar (highlighted) sets the answer. Below, the SM's 8 warp slots, filled by resident blocks. Real GPUs allocate registers and shared memory in architecture-specific chunks and have more limits than these. Use the vendor's occupancy calculator for real launches.</figcaption></figure>
+  <p>With T = 64, R = 32 and S = 4, four blocks fit: 8 warps, 100%. Double R to 64 and the register file only holds two blocks: 50%. Keep R = 32 but double S to 8 KiB and shared memory also allows only two blocks: 50%. Same occupancy, different limiting resource, and therefore a different fix.</p>
+  <div class="pitfall"><b>Occupancy is a means, not the goal.</b> Forcing the compiler to use fewer registers can raise occupancy but cause <b>spills</b>: values that no longer fit in registers are stored to thread-private memory and reloaded, adding instructions and memory traffic. Smaller tiles can raise occupancy while increasing repeated loads. The objective is the shortest time to a correct result, not the highest occupancy percentage.</div>
+
+  <h3 class="part">Try it: hide latency by picking another ready warp</h3>
+  <p>A toy scheduler: <b>one instruction issue per cycle</b>. Every warp runs <code>LD → ADD → STORE</code>. A load issued in cycle <i>c</i> delivers its value at the start of cycle <i>c</i> + L. The ADD's result is ready the next cycle. Each cycle the scheduler issues from the <b>lowest-numbered eligible warp</b>. No bandwidth limits, no fetch delays.</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 8px"><span class="readout">Resident warps:</span><div class="seg" role="group" aria-label="Resident warps"><button data-ww="1">1</button><button data-ww="2">2</button><button data-ww="4" aria-pressed="true">4</button><button data-ww="8">8</button></div>
+      <span class="readout" style="margin-left:8px">Load latency L:</span><div class="seg" role="group" aria-label="Load latency"><button data-wl="4" aria-pressed="true">4</button><button data-wl="8">8</button><button data-wl="16">16</button></div></div>
+    <div class="sc" style="padding:0"><svg id="wsSvg" viewBox="0 0 760 200" role="img" aria-label="Per-warp timeline: issue cycles for load, add and store, waiting periods, and idle issue slots" style="min-width:560px"></svg></div>
+    <div class="stat" id="wsStat"></div>
+    <p class="msg" id="wsMsg"></p>
+  </div><figcaption><b>Latency stays; throughput rises.</b> Each row is a warp; the bottom row is the single issue slot, which is idle (hatched) when no warp is eligible. With L = 4, one warp takes 6 cycles and fills 3 of them; four warps take 12 cycles and fill every one. The load latency is unchanged; there is just other work to issue while it passes. No registers are saved or restored to switch: every warp's state stays resident.</figcaption></figure>
+  <p>Four warps complete four units of work in 12 cycles, so 1/3 unit per cycle. One warp completes one unit in 6 cycles: 1/6 per cycle. The <b>throughput</b> doubled, while each warp's own <b>latency</b> got longer (warp 3 finishes at cycle 12). The number of warps needed grows with the latency: try L = 16. Real schedulers have several issue slots, pipelines with different latencies, and finite memory queues and bandwidth. Independent instructions <i>within</i> a warp help too. And no amount of ready warps can make a saturated memory channel deliver more bytes.</p>
+
+  <h3 class="part">Try it: divergence wastes lanes</h3>
+  <p>When lanes of one warp take different branches, each lane must still get its own result. The hardware runs the paths one after the other under an <b>active mask</b>: lanes not on the current path are switched off, as in Lesson 19. (For short branches the compiler may use predicated instructions instead; the lane accounting is similar.) Our model has 8 lanes for legibility, not CUDA's 32. Each lane starts with value lane + 1. The <b>true</b> path does <code>+10, ×2</code> (2 instructions); the <b>false</b> path does <code>−1, ×3, +5</code> (3 instructions). A path with no active lanes is skipped.</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 8px"><span class="readout">Preset:</span><div class="seg" role="group" aria-label="Branch presets"><button data-dv="half" aria-pressed="true">4 true, 4 false</button><button data-dv="all">all true</button><button data-dv="one">one true</button><button data-dv="none">all false</button></div><span class="readout">or click lanes to flip them</span></div>
+    <div class="lanes" id="dvLanes"></div>
+    <div class="sc" style="padding:10px 0 0"><svg id="dvSvg" viewBox="0 0 760 220" role="img" aria-label="Each issued group instruction with its active mask, and each lane's value" style="min-width:560px"></svg></div>
+    <p class="msg" id="dvMsg"></p>
+  </div><figcaption><b>Count lane-instruction positions, not source lines.</b> Each row is one group instruction; filled cells are active lanes doing useful work, hatched cells are masked lanes that occupy a position and do nothing. Utilization = useful positions ÷ (8 × instructions issued). Branch and reconvergence overhead are left out.</figcaption></figure>
+  <p>A branch that is <b>uniform within each warp</b> costs nothing extra, even if different warps go different ways: each warp simply runs its one path. So sorting or grouping data so that neighbours decide alike can help, though the regrouping has its own cost and can worsen memory access. Measure the whole change.</p>
+  <div class="pitfall"><b>Don't treat a warp as implicitly synchronized.</b> Diagrams with one shared program counter are a simplification. Since Volta, NVIDIA GPUs schedule threads within a warp independently, so threads of one warp must still use the documented synchronization primitives to communicate.</div>
+
+  <div class="predict"><div class="ph"><b>Predict</b><span>Check each with an explorer.</span></div><ol>
+    <li>On the teaching SM, what is the potential occupancy for T = 64, R = 64, S = 4? What limits it? What about R = 32, S = 8?
+      <details><summary>Show answer</summary><div class="ans"><p>Each block is 2 warps and needs 64 × 64 = 4,096 registers. The register file allows ⌊8192 / 4096⌋ = <b>2 blocks</b>: 4 warps, <b>50%</b>, limited by <b>registers</b>. With R = 32 and S = 8 KiB, shared memory allows ⌊16 / 8⌋ = 2 blocks: again 50%, now limited by <b>shared memory</b>.</p></div></details></li>
+    <li>Why might cutting a kernel's register count raise occupancy and still make it slower?
+      <details><summary>Show answer</summary><div class="ans"><p>Values that no longer fit <b>spill</b> to thread-private memory, adding loads, stores, latency and traffic. More resident warps can't make up for that if the extra memory work dominates. Check the compiler's spill report, then time it.</p></div></details></li>
+    <li>In the scheduler model (L = 4), when can a load issued in cycle 2 first feed its ADD? How many cycles and filled slots for two warps?
+      <details><summary>Show answer</summary><div class="ans"><p>Its value is ready at the start of <b>cycle 6</b>. But in cycle 6 the lowest-numbered rule picks warp 0's STORE, so warp 1's ADD issues in cycle 7. Two warps take <b>8 cycles</b> and fill <b>6 of 8</b> slots (75%). Ready isn't the same as issued.</p></div></details></li>
+    <li>In the divergence model, one lane takes the true path and seven the false path. What is the utilization?
+      <details><summary>Show answer</summary><div class="ans"><p>Both paths run: 2 + 3 = 5 group instructions, 8 × 5 = <b>40</b> positions. Useful: 1 × 2 + 7 × 3 = <b>23</b>. Utilization <b>57.5%</b>, different from the 4/4 split's 50% because the paths have different lengths.</p></div></details></li>
+    <li>A profiler shows high occupancy, but few eligible warps and little issue activity. Is adding more arithmetic units a demonstrated fix?
+      <details><summary>Show answer</summary><div class="ans"><p><b>No.</b> The warps are resident but not ready. Find out what they wait for: dependent loads, arithmetic latency, barriers or busy pipelines. Look at memory traffic and bandwidth, stall reasons and issue activity together. If operands aren't arriving, more ALUs just wait too.</p></div></details></li>
+  </ol></div>
+  <p class="checkpoint">Answer four questions separately for any kernel: does the work fit (residency), is it ready (eligibility), does it issue, and how many of the participating lanes do useful work?</p>
+</section>
+
+<!-- =============================== LESSON 22 =============================== -->
+<section class="lesson" id="l22" data-toc="GPU memory traffic" data-n="22">
+  <div class="lesson-h"><div class="kicker">Lesson 22</div><h2>Make the memory traffic explicit</h2></div>
+  <div class="card4">
+    <div class="c1"><span class="l">Limitation</span>Thirty-two threads issue 32 addresses with one load instruction. If those addresses are scattered, the memory system moves far more bytes than the program uses.</div>
+    <div class="c2"><span class="l">New mechanism</span><b>Coalescing</b> merges a warp's requests into as few fixed-size transfers as cover them. <b>Shared memory</b> is split into <b>banks</b> that serve lanes in parallel.</div>
+    <div class="c3"><span class="l">New state</span>Several memory spaces with different owners: registers, shared memory, local memory, global memory, plus hardware caches.</div>
+    <div class="c4"><span class="l">Cost</span>Layout now matters as much as instruction count: a bad stride can multiply the bytes moved, and a bad shared-memory pattern serializes lanes.</div>
+  </div>
+
+  <h3 class="part">Name the storage and who can see it</h3>
+  <figure class="fig"><div class="sc"><svg id="msSvg" viewBox="0 0 760 270" role="img" aria-label="Memory spaces: registers per thread and shared memory per block inside each SM; L1 per SM; L2 shared by all SMs; device DRAM holding global memory and local memory" style="min-width:560px"></svg></div>
+    <figcaption><b>Where each kind of data lives.</b> Registers and shared memory are on the SM. <b>Local</b> memory, despite its name, is thread-private data (such as spills) stored in device memory, reached through the caches. <b>Global</b> memory is the big shared address space. The caches keep copies of global and local data automatically; shared memory is a scratchpad the program manages itself.</figcaption></figure>
+  <div class="tbl"><table>
+    <tr><th>Storage</th><th>Who owns it</th><th>What to remember</th></tr>
+    <tr><td>Registers</td><td>One thread</td><td>Fastest working state, but it uses up the capacity that limits residency</td></tr>
+    <tr><td>Shared memory (AMD: LDS)</td><td>One block</td><td>On-chip scratchpad the program manages explicitly; needs coordination</td></tr>
+    <tr><td>Local memory (CUDA)</td><td>One thread</td><td>Holds spills and addressable private arrays; lives in device memory, possibly cached</td></tr>
+    <tr><td>Global memory</td><td>The whole grid</td><td>Large address space; each access travels through the cache hierarchy</td></tr>
+    <tr><td>Hardware caches</td><td>Managed by hardware</td><td>Reuse can cut traffic further out; not something the program owns</td></tr>
+  </table></div>
+  <p>Two traps in the names. CUDA <b>local</b> means thread-private, not on-chip: a local-memory access can be as slow as a global one. And touching a <b>global</b> address doesn't prove a DRAM access: a cache hit is served earlier in the hierarchy.</p>
+
+  <h3 class="part">Try it: count sectors for one load instruction</h3>
+  <p>Model: one warp of 32 active lanes, each loading one aligned 4-byte word. Lane <i>l</i> asks for byte address <code>base + 4 × stride × l</code>. The memory system moves data in aligned <b>32-byte sectors</b>, so the cost of the instruction is the number of distinct sectors it touches. Everything starts outside the cache we're modelling.</p>
+  <figure class="fig"><div class="widget">
+    <div class="calc">
+      <div><span class="readout">Word stride</span><div class="seg" role="group" aria-label="Stride"><button data-cs="1" aria-pressed="true">1</button><button data-cs="2">2</button><button data-cs="4">4</button><button data-cs="8">8</button><button data-cs="32">32</button></div></div>
+      <div><span class="readout">Base offset</span><div class="seg" role="group" aria-label="Base offset"><button data-cb="0" aria-pressed="true">0 B</button><button data-cb="4">4 B</button><button data-cb="16">16 B</button></div></div>
+      <div><span class="readout">Lane order</span><div class="seg" role="group" aria-label="Lane order"><button data-co="0" aria-pressed="true">in order</button><button data-co="1">reversed</button></div></div>
+    </div>
+    <div class="sc" style="padding:10px 0 0"><svg id="coSvg" viewBox="0 0 760 200" role="img" aria-label="Memory as 32-byte sectors; touched sectors filled in proportion to the bytes actually requested" style="min-width:560px"></svg></div>
+    <div class="stat" id="coStat"></div>
+    <p class="msg" id="coMsg"></p>
+  </div><figcaption><b>Useful bytes versus moved bytes.</b> Each box is one 32-byte sector (8 words). Touched sectors are outlined, and the filled part is the bytes lanes actually asked for. The requested data is always 128 bytes; what changes is how many sectors carry it. Reversing the lane order leaves the set of sectors, and so the count, unchanged: coalescing depends on which addresses are needed together, not on which lane asks for which.</figcaption></figure>
+  <div class="tbl"><table>
+    <tr><th>Stride</th><th>Base</th><th>Useful bytes</th><th>Sectors</th><th>Sector bytes</th><th>Useful fraction</th></tr>
+    <tr><td class="m">1</td><td class="m">0 B</td><td class="m">128</td><td class="m">4</td><td class="m">128</td><td class="m">100%</td></tr>
+    <tr><td class="m">1</td><td class="m">4 B</td><td class="m">128</td><td class="m">5</td><td class="m">160</td><td class="m">80%</td></tr>
+    <tr><td class="m">2</td><td class="m">0 B</td><td class="m">128</td><td class="m">8</td><td class="m">256</td><td class="m">50%</td></tr>
+    <tr><td class="m">8</td><td class="m">0 B</td><td class="m">128</td><td class="m">32</td><td class="m">1,024</td><td class="m">12.5%</td></tr>
+  </table></div>
+  <p>The 32-byte sector model matches NVIDIA's description for recent GPUs, but it's a counting exercise for <i>one</i> instruction, not a DRAM command count. Neighbouring warps may use the sectors this one over-fetched, requests can merge further down the hierarchy, and caches change the byte count at each boundary. Layout is where this bites in real code: an <b>array of structures</b> spaces the same field of consecutive objects far apart (a large stride), while a <b>structure of arrays</b> makes it contiguous. Which is right depends on which fields are used together.</p>
+
+  <h3 class="part">Try it: shared-memory banks</h3>
+  <p>On-chip memory has limited ports too. Shared memory is divided into <b>banks</b>, each of which can serve one distinct word per round. Our model has <b>8 banks</b> of 4-byte words and 8 requesting lanes: word <i>w</i> lives in bank <i>w</i> mod 8. If several lanes read the <i>same</i> word, it's <b>broadcast</b> in one round. Different words in the same bank are a <b>bank conflict</b>, served in successive rounds.</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 8px"><span class="readout">Each lane reads word:</span><div class="seg" role="group" aria-label="Access pattern"><button data-bk="1,0" aria-pressed="true">lane</button><button data-bk="2,0">2 × lane</button><button data-bk="8,0">8 × lane (8×8 tile column)</button><button data-bk="9,0">9 × lane (padded pitch 9)</button><button data-bk="10,0">10 × lane (pitch 10)</button><button data-bk="0,0">0 (all the same)</button></div></div>
+    <div class="sc" style="padding:0"><svg id="bkSvg" viewBox="0 0 760 250" role="img" aria-label="Eight banks as columns; each lane's request placed in its bank and service round" style="min-width:560px"></svg></div>
+    <p class="msg" id="bkMsg"></p>
+  </div><figcaption><b>Rounds = the most distinct words any one bank must serve.</b> Each column is a bank, each row a service round. Reading a column of an 8×8 row-major tile means word stride 8: every lane lands in bank 0, eight rounds. Padding each row to 9 words shifts every row by one bank, so the same column spreads across all eight banks in one round, at the cost of one unused word per row. Real GPUs have more banks (32 is common) with their own rules; the principle is the same.</figcaption></figure>
+  <p>Traffic is a consequence of code <i>and</i> allocation. A spill adds loads and stores of private values. An uncoalesced access multiplies bytes at one boundary; a cache hit removes traffic at another; staging data in shared memory adds on-chip instructions but can cut repeated global loads. For vector addition, though, the useful bytes stay <b>12 per element</b> (two 4-byte reads and one 4-byte write) however wide the machine. Once bandwidth limits the speed, more arithmetic units change nothing unless the algorithm reuses data. Lesson 24 turns that into a bound.</p>
+
+  <div class="predict"><div class="ph"><b>Predict</b><span>Check with the explorers.</span></div><ol>
+    <li>Stride 2, aligned base: how many sectors and sector bytes? What fraction is useful?
+      <details><summary>Show answer</summary><div class="ans"><p>Addresses 0, 8, 16, …, 248: each 32-byte sector holds four requested words. <b>8 sectors, 256 bytes</b> for 128 useful: <b>50%</b>.</p></div></details></li>
+    <li>Stride 1: what changes when the base moves by 4 bytes? Why might a whole array's DRAM traffic differ from summing these per-warp counts?
+      <details><summary>Show answer</summary><div class="ans"><p>Bytes 4 to 131 now touch a fifth sector: <b>160 bytes, 80%</b>. But the next warp needs that fifth sector anyway, so across the array the over-fetch is largely reused, and caches and request merging change the count further. Per-instruction sectors are one boundary's accounting, not the DRAM total.</p></div></details></li>
+    <li>In the 8-bank model, compare rounds for word addresses l, 8l, 9l and the constant 0. Which uses broadcast?
+      <details><summary>Show answer</summary><div class="ans"><p><b>l</b>: 1 round. <b>8l</b>: 8 rounds, eight different words all in bank 0. <b>9l</b>: 1 round, since 9l mod 8 = l. <b>0</b>: 1 round, by <b>broadcast</b> of the one word.</p></div></details></li>
+    <li>Why can a CUDA local-memory load cost far more than a register read? Does being thread-private put it on chip?
+      <details><summary>Show answer</summary><div class="ans"><p>Local memory is an <i>address space</i> with private visibility, backed by device memory and reached through the caches. <b>Private doesn't mean on-chip.</b> A register is read directly by the instruction, with no memory access at all.</p></div></details></li>
+    <li>Two access patterns touch exactly the same sectors in a different lane order. Must their sector counts differ? Could the kernels still perform differently?
+      <details><summary>Show answer</summary><div class="ans"><p>The counts are <b>equal</b>: a permutation of lanes doesn't change the set of sectors. Whole kernels can still differ through cache reuse across instructions, dependencies, divergence, instruction count or bank conflicts. Equal traffic is one equal property, not equal speed.</p></div></details></li>
+  </ol></div>
+  <p class="checkpoint">For an access pattern, compute the useful bytes, the sector bytes and the bank-conflict rounds under stated rules, then say where each conclusion stops being valid.</p>
+</section>
+
+<!-- =============================== LESSON 23 =============================== -->
+<section class="lesson" id="l23" data-toc="Tiling & barriers" data-n="23">
+  <div class="lesson-h"><div class="kicker">Lesson 23</div><h2>Reuse a tile, then coordinate its lifetime</h2></div>
+  <div class="card4">
+    <div class="c1"><span class="l">Limitation</span>In matrix multiplication every input value is used many times. Loading it from global memory for every use wastes bandwidth.</div>
+    <div class="c2"><span class="l">New mechanism</span><b>Tiling</b>: a block loads a small piece of each input into shared memory once, and all its threads reuse it from there.</div>
+    <div class="c3"><span class="l">New state</span>Shared tiles owned by the block, plus a private running sum in each thread's registers.</div>
+    <div class="c4"><span class="l">Cost</span>Shared memory and registers (so less residency), and two <b>barriers</b> per tile to keep threads from racing each other.</div>
+  </div>
+
+  <h3 class="part">Why matrix multiplication rewards reuse</h3>
+  <p>In C = A × B, each output is a dot product: C[r, c] = Σ<sub>k</sub> A[r, k] × B[k, c]. Outputs in the same <b>row</b> of C all use the same row of A; outputs in the same <b>column</b> all use the same column of B. Loading both operands from global memory for every multiply ignores that. A <b>tile</b> is a sub-region processed together: one block computes a T × T tile of C. It loads a T × T piece of A and a T × T piece of B into shared memory, uses them for the next T values of k, then replaces them with the next pieces. Each thread keeps its running sum in a private register throughout.</p>
+
+  <h3 class="part">Try it: a complete 2 × 2 tile, step by step</h3>
+  <p>A is 2 × 4 and B is 4 × 2, so C is 2 × 2. One block of four threads owns the four outputs; thread (r, c) computes C[r, c]. The reduction dimension has length 4, handled in two tiles of width 2. In each load phase, thread (r, c) loads one entry of each shared tile, so four threads load eight words, and every thread then <i>uses values its neighbours loaded</i>.</p>
+  <figure class="fig"><div class="widget">
+    <div class="sc" style="padding:0"><svg id="tlSvg" viewBox="0 0 760 330" role="img" aria-label="Matrices A and B in global memory, the shared tiles As and Bs, each thread's private sum, and C" style="min-width:560px"></svg></div>
+    <div class="strip" id="tlStrip"></div>
+    <p class="msg" id="tlMsg"></p>
+    <div class="ctrl"><button id="tlBack">◀ Back</button><button id="tlNext" class="pri">Next step ▶</button><button id="tlReset">Reset</button><span class="readout" id="tlOut"></span></div>
+  </div><figcaption><b>Phases, not cycles.</b> The steps are conceptual phases of the algorithm, not hardware cycles, and threads don't necessarily move through them together. That's exactly why the barriers exist. Highlighted cells are the ones in use this step. Private sums survive from one tile to the next; C is written only once, at the end.</figcaption></figure>
+  <p>After the first tile (k = 0, 1) the partial sums are [[7, 10], [23, 34]]. Thread (0, 0), for instance, computes 1 × 1 + 2 × 3 = 7. The second tile (k = 2, 3) adds 3 × 5 + 4 × 7 = 43 to it, giving 50. The final result is <b>[[50, 60], [114, 140]]</b>. Don't confuse C's two dimensions (2 × 2) with the reduction length (4).</p>
+
+  <h3 class="part">Why two barriers?</h3>
+  <p><code>__syncthreads()</code> is a <b>barrier</b>: no thread in the block passes it until every thread has reached it. The tiled loop needs two per tile, and they protect against two different hazards:</p>
+  <figure class="fig"><div class="sc"><svg id="brSvg" viewBox="0 0 760 250" role="img" aria-label="Two race timelines: without the first barrier a fast thread reads a tile entry before its neighbour writes it; without the second a fast thread overwrites an entry while a slow thread is still reading it" style="min-width:560px"></svg></div>
+    <figcaption><b>Publication before use; consumption before reuse.</b> Left: with no barrier after loading, fast thread 0 reads Bs[1][0] before slow thread 2 has written it, and multiplies by stale data. Right: with no barrier before the next load, fast thread 0 overwrites As[0][1] with the next tile's value while slow thread 1 still needs the current one. Either race gives wrong sums with no out-of-bounds access and no error message.</figcaption></figure>
+  <p>Here is the kernel for square n × n row-major matrices, launched with ⌈n / T⌉ × ⌈n / T⌉ blocks of T × T threads:</p>
+  <div class="asm" style="max-width:700px">
+    <div class="r"><span class="a"></span><span class="i">template&lt;int T&gt; __global__ void tiled_square(const float* A, const float* B, float* C, size_t n) {</span></div>
+    <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;__shared__ float As[T][T], Bs[T][T];</span></div>
+    <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;int x = threadIdx.x, y = threadIdx.y;</span></div>
+    <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;size_t row = size_t(blockIdx.y) * T + y, col = size_t(blockIdx.x) * T + x;</span></div>
+    <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;float sum = 0.0f;</span><span class="c">// private running sum</span></div>
+    <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;for (size_t base = 0; base &lt; n; base += T) {</span></div>
+    <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;&nbsp;&nbsp;As[y][x] = (row &lt; n &amp;&amp; base + x &lt; n) ? A[row * n + base + x] : 0.0f;</span></div>
+    <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;&nbsp;&nbsp;Bs[y][x] = (base + y &lt; n &amp;&amp; col &lt; n) ? B[(base + y) * n + col] : 0.0f;</span></div>
+    <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;&nbsp;&nbsp;__syncthreads();</span><span class="c">// barrier 1: tile is loaded</span></div>
+    <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;&nbsp;&nbsp;for (int k = 0; k &lt; T; ++k) sum += As[y][k] * Bs[k][x];</span></div>
+    <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;&nbsp;&nbsp;__syncthreads();</span><span class="c">// barrier 2: everyone finished reading</span></div>
+    <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;}</span></div>
+    <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;if (row &lt; n &amp;&amp; col &lt; n) C[row * n + col] = sum;</span><span class="c">// guard only the store</span></div>
+    <div class="r"><span class="a"></span><span class="i">}</span></div>
+  </div>
+  <p>Notice how edges are handled. At an edge tile some positions fall outside the matrices. Those threads load a <b>zero</b> into the tile (zero adds nothing to a sum) instead of skipping the load, and <b>every thread still reaches both barriers</b>. Only the final store is guarded. A thread that returned early would never reach the barrier, and the rest of the block would wait for it forever. The kernel is a teaching sketch: production libraries give each thread several outputs, use other tile shapes, and overlap loading with computing.</p>
+
+  <h3 class="part">Count the reuse</h3>
+  <p>For one T × T output tile with reduction length K (a multiple of T), the tiled algorithm requests <b>2TK</b> input words from global memory and writes <b>T²</b> outputs, while doing T²K multiply-adds, which is <b>2T²K FLOPs</b> (counting multiply and add separately). With 4-byte words:</p>
+  <div class="asm" style="max-width:720px"><div class="r"><span class="a"></span><span class="i">requested bytes = 4 × (2TK + T²)</span></div><div class="r"><span class="a"></span><span class="i">FLOPs           = 2T²K</span></div><div class="r"><span class="a"></span><span class="i">intensity       = TK / (4K + 2T)  FLOPs per byte</span></div></div>
+  <p>In our example (T = 2, K = 4): 16 input words plus 4 outputs = <b>80 bytes</b> for 32 FLOPs. Loading both operands for every multiply-add separately would request 32 input words plus 4 outputs = <b>144 bytes</b> for the same 32 FLOPs. Intensity grows with T: bigger tiles mean more reuse per byte. These are bytes the algorithm <i>requests</i>, not proven DRAM traffic: caches might rescue some of the naive version's repeats, and staging adds its own instructions and barriers. So 144 / 80 is not a guaranteed speedup.</p>
+  <p>A <b>double-buffered</b> version keeps two tiles, loading the next while computing on the current one. It then has to track, for each buffer, when it is filled and when it is safe to overwrite: the same two hazards, now overlapping in time. Asynchronous copies have their own completion operations; issuing a copy doesn't mean its data has arrived.</p>
+
+  <div class="predict"><div class="ph"><b>Predict</b><span>Trace it by hand, then check with the stepper.</span></div><ol>
+    <li>What is the partial C after reduction indices 0 and 1, and the final C after 2 and 3?
+      <details><summary>Show answer</summary><div class="ans"><p>Partial <b>[[7, 10], [23, 34]]</b>; final <b>[[50, 60], [114, 140]]</b>. For example C[1, 1] = 5×2 + 6×4 + 7×6 + 8×8 = 10 + 24 + 42 + 64 = <b>140</b>.</p></div></details></li>
+    <li>Name one failure allowed by removing the barrier after loading, and a different one allowed by removing the barrier before the next load.
+      <details><summary>Show answer</summary><div class="ans"><p>Without barrier 1, a thread can <b>read a tile entry before its neighbour has written it</b>. Without barrier 2, a fast thread can <b>overwrite an entry with the next tile's value while a slow thread is still reading the current one</b>. The first orders writing before reading; the second orders reading before rewriting.</p></div></details></li>
+    <li>Count input words, output words and FLOPs for the example. Why isn't 144 / 80 a measured speedup?
+      <details><summary>Show answer</summary><div class="ans"><p>Tiled: <b>16 input + 4 output words = 80 bytes</b>, <b>32 FLOPs</b>. Independent operand loads: 32 + 4 words = <b>144 bytes</b>, a ratio of 1.8. It counts <i>requested</i> bytes. Caches can cut the naive version's physical traffic, and tiling adds instructions and barriers, so the time ratio must be measured.</p></div></details></li>
+    <li>At an edge tile, why fill invalid positions with zero and still reach both barriers? What happens to invalid stores?
+      <details><summary>Show answer</summary><div class="ans"><p>Zero contributes nothing to a sum, and loading it avoids an invalid memory access. Every thread must still reach both barriers so the others can safely read and reuse the tile. Threads whose output lies outside C simply <b>skip the final store</b>.</p></div></details></li>
+    <li>A larger tile cuts repeated global loads but doubles shared memory and lowers residency. Is it necessarily faster?
+      <details><summary>Show answer</summary><div class="ans"><p><b>No.</b> It raises reuse, but also uses more registers and shared memory, admits fewer blocks, may change bank behaviour and leaves more idle work at the edges. Measure traffic, resource use, eligible warps, barrier stalls and total time.</p></div></details></li>
+  </ol></div>
+  <p class="checkpoint">For every shared tile entry and every private sum, say who writes it, who reads it, and how long it must live. Explain each barrier with a concrete producer/consumer race.</p>
+</section>
+
+<!-- =============================== LESSON 24 =============================== -->
+<section class="lesson" id="l24" data-toc="Roofline & measurement" data-n="24">
+  <div class="lesson-h"><div class="kicker">Lesson 24</div><h2>Predict a limit, then measure the right interval</h2></div>
+  <div class="card4">
+    <div class="c1"><span class="l">Limitation</span>Diagrams explain mechanisms but don't say how fast a kernel <i>can</i> go, or whether a change helped.</div>
+    <div class="c2"><span class="l">New mechanism</span>The <b>Roofline</b> bound: performance is capped by compute or by bandwidth × arithmetic intensity, whichever is lower.</div>
+    <div class="c3"><span class="l">New state</span>A measurement plan: the work, the byte boundary, the ceilings, and the time interval being measured.</div>
+    <div class="c4"><span class="l">Cost</span>Bounds are only as good as their assumptions, and timings mean nothing without a stated interval.</div>
+  </div>
+
+  <h3 class="part">From diagrams to a performance hypothesis</h3>
+  <p>Let W be the floating-point operations a kernel performs, and Q the bytes it moves across a <i>named</i> memory boundary (say, DRAM). Its <b>arithmetic intensity</b> is I = W / Q, in FLOPs per byte. Let P be the device's compute ceiling for that exact kind of arithmetic, and β its bandwidth at that same boundary. Then:</p>
+  <div class="asm" style="max-width:720px"><div class="r"><span class="a"></span><span class="i">performance    ≤ min(P, β × I)</span></div><div class="r"><span class="a"></span><span class="i">execution time ≥ max(W / P, Q / β)</span></div><div class="r"><span class="a"></span><span class="i">ridge point    = P / β</span><span class="c">// intensity where the two meet</span></div></div>
+  <p>It's a maximum, not a sum, because computing and moving data can overlap. That's a best case: dependencies, issue limits, cache behaviour, synchronization and too little parallel work can all push a kernel below the roof. And the ceilings must match the kernel. A matrix-unit peak is the wrong ceiling for a scalar addition kernel, and a point below the sloped roof doesn't by itself prove DRAM bandwidth is saturated.</p>
+
+  <h3 class="part">Try it: a Roofline you can check by hand</h3>
+  <p>A made-up device: <b>P = 10 TFLOP/s</b> for our arithmetic and <b>β = 200 GB/s</b> (decimal units: 1 GB = 10⁹ bytes). These are teaching numbers, not any real product.</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 8px"><span class="readout">Workload:</span><div class="seg" role="group" aria-label="Workload"><button data-rw="add" aria-pressed="true">vector add, 10⁶ floats</button><button data-rw="m1">matmul 1024², no reuse</button><button data-rw="m16">matmul, tile 16</button><button data-rw="m64">matmul, tile 64</button></div></div>
+    <div class="calc">
+      <div><span class="readout">Compute ceiling P = <b id="rfPv"></b></span><input type="range" id="rfP" min="0" max="3" step="1" value="1" aria-label="Compute ceiling"></div>
+      <div><span class="readout">Bandwidth β = <b id="rfBv"></b></span><input type="range" id="rfB" min="0" max="3" step="1" value="0" aria-label="Memory bandwidth"></div>
+      <div><span class="readout">Fixed overhead H = <b id="rfHv"></b></span><input type="range" id="rfH" min="0" max="50" step="5" value="0" aria-label="Fixed overhead in microseconds"></div>
+    </div>
+    <div class="sc" style="padding:10px 0 0"><svg id="rfSvg" viewBox="0 0 760 300" role="img" aria-label="Roofline chart: performance ceiling versus arithmetic intensity, log-log, with the workload plotted" style="min-width:560px"></svg></div>
+    <div class="stat" id="rfStat"></div>
+    <p class="msg" id="rfMsg"></p>
+  </div><figcaption><b>A ceiling, not a benchmark.</b> Both axes are logarithmic. Left of the ridge the sloped roof, bandwidth × intensity, is the limit: the kernel is <b>memory-bound</b>. Right of it the flat roof, P, is the limit: <b>compute-bound</b>. Matmul presets assume 1024 × 1024 matrices, 2n³ FLOPs and requested bytes 8n³/T + 4n², with no reuse between blocks. Tile 64 is a traffic tile, not a 64 × 64-thread block of the simple kernel. H adds a fixed, un-overlapped cost: time = H + max(W/P, Q/β).</figcaption></figure>
+  <p>For one million float additions: W = 10⁶ FLOPs, Q = 12 × 10⁶ bytes, so I = 1/12 FLOP per byte. Compute time is 0.1 μs; memory time is <b>60 μs</b>. The ceiling is about <b>16.7 GFLOP/s</b>, over 500 times below the 10 TFLOP/s peak. Doubling compute changes nothing for this kernel; doubling bandwidth halves its bound. The ridge sits at 10 × 10¹² / 200 × 10⁹ = <b>50 FLOPs per byte</b>. Moving a kernel toward it takes genuinely useful reuse (like tiling), not padding the FLOP count with pointless arithmetic.</p>
+  <p>Fixed costs matter more as the useful work shrinks. With H = 10 μs the vector add takes 10 + 60 = 70 μs. A hypothetical algorithm that halved its traffic would take 10 + 30 = 40 μs: a 1.75× speedup, not 2×, because the overhead didn't shrink.</p>
+
+  <h3 class="part">Decide what "time" means</h3>
+  <p>A kernel launch returns to the CPU as soon as the work is <b>queued</b>, usually long before the GPU finishes. Timing just the launch call measures submission, not execution. Choose the interval deliberately:</p>
+  <figure class="fig"><div class="sc"><svg id="tmSvg" viewBox="0 0 760 230" role="img" aria-label="Host and GPU timelines: the launch call returns quickly; the kernel runs later on the GPU; events bracket the device interval; end-to-end includes copies" style="min-width:560px"></svg></div>
+    <figcaption><b>Three different intervals.</b> The host's launch call is short. Events recorded into the same <b>stream</b> (an ordered queue of GPU work) bracket the kernel's device time. End-to-end latency includes the copies and waiting for completion. Each answers a different question, and a reported time is meaningless without saying which.</figcaption></figure>
+  <div class="tbl"><table>
+    <tr><th>Question</th><th>Include in the interval</th></tr>
+    <tr><td>How long does this kernel run on data already on the device?</td><td>The device work in one stream, bracketed by events; no allocation or copies</td></tr>
+    <tr><td>How long from input to usable output?</td><td>Copies, launches, computation, dependencies and completion</td></tr>
+    <tr><td>How much work can a pipeline sustain?</td><td>A steady-state batch with its intended overlap, divided by the work completed</td></tr>
+  </table></div>
+  <p>To time device work: record a start event in a stream, launch the work, record a stop event in the same stream, <b>wait for the stop event</b>, then ask for the elapsed time. Repeating the kernel R times and dividing reduces timer-resolution error, but repeated runs on the same data find it in cache (report it as warm, not cold), and the batch can include gaps if the CPU enqueues slowly.</p>
+  <h3 class="part">A disciplined experiment</h3>
+  <ol>
+    <li><b>Check correctness first</b>, against a reference, including sizes that aren't multiples of the block size.</li>
+    <li><b>Record the setup</b>: GPU model, compiler, launch configuration, precision, input shape, whether inputs start on the device.</li>
+    <li><b>Warm up</b>, collect repeated samples, and report a representative value and its spread. Keep cold-cache and warm-cache results apart.</li>
+    <li><b>Profile to test a specific hypothesis.</b> Too many sectors? Inspect requests and bytes at the relevant cache level. Waiting for operands? Inspect eligible warps and stall reasons. Low residency? Inspect register and shared-memory allocation. Launch overhead? Look at a CPU/GPU timeline. Profilers replay and perturb work, so take baseline timings separately.</li>
+    <li><b>Change one thing</b>, such as layout, tile shape, block size or reuse, and predict which metric should move before you measure. A speedup with an unexpected metric change is still evidence, but of a different explanation.</li>
+  </ol>
+
+  <div class="predict"><div class="ph"><b>Predict</b><span>Check with the Roofline explorer.</span></div><ol>
+    <li>For 10⁶ float additions on the 10 TFLOP/s, 200 GB/s device: intensity, compute time, memory time and ceiling?
+      <details><summary>Show answer</summary><div class="ans"><p>I = 10⁶ / 12×10⁶ = <b>1/12 FLOP/B</b>. W/P = <b>0.1 μs</b>, Q/β = <b>60 μs</b>. The bound is the larger, 60 μs, a ceiling of β × I ≈ <b>16.7 GFLOP/s</b>. It assumes Q is the true byte count at that boundary, and no fixed overhead.</p></div></details></li>
+    <li>What is the ridge intensity? Which bound changes if only compute capacity doubles?
+      <details><summary>Show answer</summary><div class="ans"><p>Ridge = <b>50 FLOPs/B</b>. Doubling P halves the compute time (0.1 → 0.05 μs) and moves the ridge to 100, but the 60 μs memory time still decides the vector add. Doubling bandwidth would halve it to 30 μs.</p></div></details></li>
+    <li>With H = 10 μs, compare the 12 MB vector add with a hypothetical 6 MB version. Why is the speedup less than 2?
+      <details><summary>Show answer</summary><div class="ans"><p>10 + max(0.1, 60) = <b>70 μs</b> versus 10 + max(0.1, 30) = <b>40 μs</b>: <b>1.75×</b>. The fixed 10 μs didn't shrink. (Vector addition can't actually drop required bytes; the 6 MB case is hypothetical.)</p></div></details></li>
+    <li>Why isn't timing the CPU's launch call enough? Describe an event-based measurement and one limitation of timing repeated work.
+      <details><summary>Show answer</summary><div class="ans"><p>The launch returns once the work is queued. Record start and stop events in the same stream around the work, wait for the stop event, then read the elapsed time, after a warm-up and with errors checked. Repeating the work makes later runs warm-cache, and the batch may include host-side enqueue gaps.</p></div></details></li>
+    <li>A kernel has 100% potential occupancy but is slow. Give two distinct hypotheses and the measurements that would tell them apart.
+      <details><summary>Show answer</summary><div class="ans"><p>(1) <b>Memory bandwidth is saturated</b>: measure bytes at the relevant boundary and the achieved byte rate against β. (2) <b>Dependency latency leaves few eligible warps</b>: measure eligible warps, issue activity and stall reasons, possibly with bandwidth well below its ceiling. Divergence, barriers, instruction throughput and launch overhead are other candidates. Occupancy alone chooses none of them.</p></div></details></li>
+  </ol></div>
+  <p class="checkpoint">Before explaining a speedup, state the work, the byte boundary, the applicable ceiling, the measurement interval and the uncertainty.</p>
+</section>
+
+<section class="lesson" id="wrap" data-toc="Putting it together" data-n="✓">
+  <div class="lesson-h"><div class="kicker">Unit 5 · Summary</div><h2>Putting it together</h2></div>
+  <p>Launch N = 70 float additions in two blocks of 64 threads, with every array starting on a 32-byte boundary. Predict the thread indices and active lanes, then count sectors for each load and store instruction.</p>
+  <details class="predict" style="padding:0"><summary style="margin:12px 16px">Work it out, then open</summary><div class="ans" style="margin:0 16px 16px">
+    <p><b>Lanes:</b> 4 warps with 32, 32, 6 and 0 lanes passing the guard. Counting the launch as 128 additions would overstate the work.</p>
+    <p><b>Sectors per array:</b> the two full warps touch 4 sectors each; the 6-lane warp touches 1; the empty warp makes no guarded access. That's <b>9 sectors</b> per array, and <b>27 sectors = 864 bytes</b> for the two loads and the store, against <b>70 × 12 = 840 useful bytes</b>: 97.2% useful under this accounting. That's a coalescing count, not proven DRAM traffic.</p>
+    <p><b>At a million elements</b> the same kernel offers plenty of work to hide latency, but its intensity is 1/12 FLOP/B, so bandwidth is the likely limit. Only measurement can confirm what's actually busy. Staging the inputs through shared memory would add work with no benefit, because each element is used once. Matrix multiplication is different: its reuse is what makes tiling pay.</p>
+  </div></details>
+  <div class="tbl"><table>
+    <tr><th>Question</th><th>A good answer mentions</th></tr>
+    <tr><td>Where does one output come from?</td><td>Its index, the guard, a private result, a global store</td></tr>
+    <tr><td>What can run at the same time?</td><td>Independent blocks and warps, within actual residency limits</td></tr>
+    <tr><td>What can make it wait?</td><td>Dependencies, busy pipelines, memory, barriers</td></tr>
+    <tr><td>Which bytes travel?</td><td>Active addresses, sectors, reuse, and a named boundary</td></tr>
+    <tr><td>What does a tile change?</td><td>Reuse, shared storage, registers, synchronization</td></tr>
+    <tr><td>What would prove it helped?</td><td>Correctness, a predicted metric change, and a timing with a stated interval</td></tr>
+  </table></div>
+  <p>The through-line from Unit 4 holds: each mechanism helps only when the program supplies what it needs. SIMT needs many independent threads; latency hiding needs enough <i>eligible</i> warps; lanes need coherent branches; the memory system needs neighbouring addresses; and the arithmetic units need enough reuse per byte. For the same ideas from a programmer's angle, see the <a href="cs149/lecture-02-modern-multicore.html">CS149 Lecture 2 companion</a>. Unit 6 will add matrix hardware and number formats, then follow data through whole systems of chips.</p>
+  <p class="credit">Inspired by the Unit 5 outline and worked answers in <code>chatgpt-reference/</code>, rewritten and redrawn here. Every model on this page is an original teaching construction with its assumptions stated. The 8-lane groups, 8-bank shared memory, teaching-SM capacities and the 10 TFLOP/s device are invented for legibility; none describes a shipping GPU. For real details see NVIDIA's CUDA programming guide and AMD's ROCm architecture documentation.</p>
+  <div class="nextunit"><a href="unit-04-parallelism.html"><small>← Unit 4</small>Add parallelism</a><a href="index.html"><small>Back to</small>Course map →</a></div>
+</section>
+
+</main>
+</div>
+<script>
+(function(){
+const {$,$$}=NOTES;
+document.querySelector('svg defs').insertAdjacentHTML('beforeend','<pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--panel2)"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--mute);stroke-width:1.2;opacity:.45"/></pattern>');
+const A=(d,c='w',m='ah')=>`<path d="${d}" class="${c}" marker-end="url(#${m})"/>`;
+const T=(x,y,t,cls='',st='')=>`<text x="${x}" y="${y}" class="${cls}" style="${st}">${t}</text>`;
+const R=(x,y,w,h,c,st='')=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="${c}" style="${st}"/>`;
+const H=(x,y,w,h)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" style="fill:url(#hatch);stroke:var(--mute);stroke-width:.5"/>`;
+const setVB=(id,w,h,s)=>{const e=document.getElementById(id);e.setAttribute('viewBox',`0 0 ${w} ${h}`);e.innerHTML=s;};
+const pct=v=>{const x=v*100;return (Math.abs(x-Math.round(x))<1e-9?x.toFixed(0):x.toFixed(1))+'%';};
+const fmtT=s=>s<1e-6?(s*1e9).toFixed(1)+' ns':s<1e-3?(s*1e6).toFixed(s<1e-5?2:1)+' μs':s<1?(s*1e3).toFixed(2)+' ms':s.toFixed(2)+' s';
+
+/* L20 hierarchy figure */
+(function(){let s=T(125,18,'Software: a grid of blocks','mid bd');
+  s+=R(10,28,230,236,'bg2');for(let b=0;b<6;b++){const x=22+(b%2)*108,y=40+Math.floor(b/2)*74;s+=R(x,y,96,64,'cu')+T(x+48,y+16,`block ${b}`,'mid xs');for(let w=0;w<2;w++){for(let t=0;t<16;t++)s+=R(x+6+t*5.3,y+24+w*18,4,12,'te');s+=T(x+92,y+34+w*18,'','end xs');}}
+  s+=T(125,280,'each block: 64 threads = 2 warps','mid xs');
+  s+=T(372,18,'One block, as warps','mid bd');s+=R(262,28,220,120,'cu');s+=T(372,46,'block 0 (64 threads)','mid xs');
+  [0,1].forEach(w=>{const y=58+w*42;s+=T(270,y+11,`warp ${w}: threads ${w*32}–${w*32+31}`,'xs');for(let t=0;t<32;t++)s+=R(270+t*6.4,y+16,5,14,'te');});
+  s+=T(372,170,'Warps form in order within a block.','mid xs')+T(372,184,'Lanes 0–31 of a warp share','mid xs')+T(372,198,'instruction issue.','mid xs');
+  s+=T(625,18,'Hardware: SMs','mid bd');
+  const sm=(x,y,lab,bl)=>{let q=R(x,y,240,70,'bx')+T(x+8,y+16,lab,'bd xs');bl.forEach((b,i)=>q+=R(x+12+i*112,y+26,100,34,'cu')+T(x+62+i*112,y+48,`block ${b}`,'mid xs'));return q;};
+  s+=sm(505,28,'SM 0 (resident)',[2,0])+sm(505,110,'SM 1 (resident)',[5,1]);
+  s+=R(505,196,240,54,'bg2','stroke-dasharray:4 3;stroke:var(--mute)')+T(513,212,'waiting for space','xs')+R(517,220,100,24,'cu','opacity:.55')+T(567,236,'block 3','mid xs')+R(629,220,100,24,'cu','opacity:.55')+T(679,236,'block 4','mid xs');
+  s+=A('M242 236 C 320 240, 470 240, 500 76')+A('M242 252 C 330 266, 460 264, 500 226');
+  s+=T(625,280,'no order by block number','mid xs');
+  setVB('hierSvg',760,290,s);})();
+
+/* L20 grid-map explorer */
+(function(){let N=70,TPB=64,sel=null;
+  function draw(){const nb=Math.ceil(N/TPB),wpb=Math.ceil(TPB/32),cw=19,ch=16,x0=70;let s='',y=24;const warpsU=[];
+    s+=T(x0,14,'lane 0','xs')+T(x0+31*cw+cw,14,'lane 31','end xs');
+    for(let b=0;b<nb;b++){s+=T(8,y+12,`block ${b}`,'bd xs');
+      for(let w=0;w<wpb;w++){let u=0;s+=T(x0-6,y+12,`w${w}`,'end xs');
+        for(let l=0;l<32;l++){const t=w*32+l,i=b*TPB+t,x=x0+l*cw;const ex=t<TPB,ac=ex&&i<N;if(ac)u++;const on=sel&&sel.b===b&&sel.t===t;
+          s+=`<rect x="${x}" y="${y}" width="${cw-3}" height="${ch}" data-b="${b}" data-t="${t}" class="${ac?'te':ex?'bx':''}" style="${ac?'':ex?'':'fill:none;stroke:var(--line);stroke-dasharray:3 2'}${on?';stroke:var(--cu);stroke-width:2.5':''};cursor:${ex?'pointer':'default'}"/>`;}
+        warpsU.push(u);s+=T(x0+32*cw+6,y+12,`${u} active`,'xs');y+=ch+4;}
+      y+=10;}
+    setVB('gmSvg',760,y+6,s);
+    const launched=nb*TPB,W=nb*wpb;
+    $('#gmStat').innerHTML=[['blocks',nb],['launched threads',launched],['warps',W],['useful lanes',N],['of warp positions',pct(N/(W*32))],['of launched threads',pct(N/launched)]].map(([k,v])=>`<div>${k}<b>${v}</b></div>`).join('');
+    let m=`${nb} block${nb>1?'s':''} of ${TPB} threads cover ${N} element${N>1?'s':''}. Active lanes per warp: <b>[${warpsU.join(', ')}]</b>.`;
+    if(TPB%32)m+=` Each block's last warp has only ${TPB%32} threads: its other ${32-TPB%32} positions don't exist (dashed), and the next block doesn't fill them.`;
+    if(sel){const i=sel.b*TPB+sel.t;m=`<b>Block ${sel.b}, thread ${sel.t}</b>: global index ${sel.b} × ${TPB} + ${sel.t} = <b>${i}</b>. Warp ⌊${sel.t}/32⌋ = <b>${Math.floor(sel.t/32)}</b>, lane ${sel.t} mod 32 = <b>${sel.t%32}</b>. ${i<N?`It passes the guard and computes c[${i}].`:`It fails the guard (${i} ≥ ${N}) and does nothing.`}`;}
+    $('#gmMsg').innerHTML=m;$('#gmNv').textContent=N;
+    $$('[data-gmt]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.gmt===TPB));}
+  $('#gmSvg').addEventListener('click',e=>{const r=e.target.closest('rect[data-b]');if(!r)return;const t=+r.dataset.t;if(t>=TPB)return;sel={b:+r.dataset.b,t};draw();});
+  $('#gmN').oninput=e=>{N=+e.target.value;sel=null;draw();};$$('[data-gmt]').forEach(b=>b.onclick=()=>{TPB=+b.dataset.gmt;sel=null;draw();});draw();})();
+
+/* L20 teaching SM */
+(function(){let s=R(10,10,740,250,'bg2')+T(22,30,'A teaching SM','bd');
+  [0,1].forEach(k=>{const x=40+k*190;s+=R(x,40,170,44,'cu')+T(x+85,58,`warp scheduler ${k}`,'mid bd xs')+T(x+85,74,'picks one ready warp','mid xs');
+    for(let l=0;l<16;l++)s+=R(x+(l%8)*21,100+Math.floor(l/8)*22,18,18,'pl');s+=A(`M${x+85} 86 V98`);});
+  s+=T(230,160,'execution lanes','mid xs');
+  s+=R(420,40,310,100,'te')+T(575,58,'register file (8,192 × 32-bit)','mid bd xs');for(let w=0;w<8;w++)s+=R(430+w*37,68,33,62,'te','fill:var(--panel)')+T(446.5+w*37,103,`W${w}`,'mid xs');
+  s+=R(420,152,310,40,'bx')+T(575,168,'shared memory (16 KiB)','mid bd xs')+R(428,174,96,12,'cu')+T(476,184,'block 0','mid xs','font-size:9px')+R(528,174,96,12,'cu')+T(576,184,'block 1','mid xs','font-size:9px')+T(680,184,'free','mid xs');
+  s+=R(420,204,310,40,'bx')+T(575,228,'L1 cache','mid xs');
+  const st=[['W0','ready','tte'],['W1','waiting: load','tbad'],['W2','waiting: load','tbad'],['W3','ready','tte'],['W4','waiting: ADD','tbad'],['W5','ready','tte'],['W6','at barrier','tbad'],['W7','waiting: load','tbad']];
+  s+=T(40,186,'resident warps this cycle:','xs');st.forEach(([w,t,c],i)=>{const x=40+(i%2)*170,y=202+Math.floor(i/2)*14;s+=T(x,y,`${w}: `,'xs')+T(x+26,y,t,`xs ${c}`);});
+  setVB('smSvg',760,270,s);})();
+
+/* L21 occupancy */
+(function(){let Tt=64;
+  function draw(){const Rr=+$('#orR').value,S=+$('#osS').value;$('#orV').textContent=Rr;$('#osV').textContent=S+' KiB';
+    const wpb=Math.ceil(Tt/32),L=[['block slots (max 4)',4],['threads: ⌊256 / T⌋',Math.floor(256/Tt)],['warps: ⌊8 / warps per block⌋',Math.floor(8/wpb)],['registers: ⌊8192 / (T × R)⌋',Math.floor(8192/(Tt*Rr))],['shared memory: ⌊16 / S⌋',S>0?Math.floor(16/S):Infinity]];
+    const nb=Math.min(...L.map(l=>l[1])),occ=nb*wpb/8;let s='';const sc=v=>Math.min(v,8)/8*300;
+    L.forEach(([n,v],i)=>{const y=14+i*30,lim=v===nb;s+=T(250,y+15,n,'end xs')+R(260,y,Math.max(2,sc(v)),20,lim?'cu':'te','opacity:'+(lim?1:.55))+T(266+sc(v),y+15,v===Infinity?'no limit (S = 0)':`${v} block${v===1?'':'s'}`,`xs ${lim?'bd':''}`);});
+    s+=T(20,190,'SM warp slots:','bd xs');for(let k=0;k<8;k++){const b=Math.floor(k/wpb),on=b<nb;s+=R(120+k*72,172,66,30,on?'cu':'bg2',on?'':'opacity:.6')+T(153+k*72,191,on?`B${b} w${k%wpb}`:'empty','mid xs');}
+    s+=T(120,228,`registers used: ${nb*Tt*Rr} / 8192   ·   shared memory used: ${nb*S} / 16 KiB   ·   threads: ${nb*Tt} / 256`,'xs');
+    setVB('occSvg',760,240,s);
+    const lims=L.filter(l=>l[1]===nb).map(l=>l[0].split(':')[0].replace(' (max 4)',''));
+    $('#occMsg').innerHTML=nb===0?`<b>The block doesn't fit</b>: ${lims.join(' and ')} allow zero blocks. Shrink T, R or S.`:`<b>${nb} block${nb>1?'s':''}</b> × ${wpb} warp${wpb>1?'s':''} = ${nb*wpb} resident warps: <b>${pct(occ)}</b> potential occupancy. Limited by <b>${lims.join(', ')}</b>.${lims.length>1?' Several limits tie, so relaxing one alone changes nothing.':''}`;
+    $$('[data-ot]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.ot===Tt));}
+  $$('[data-ot]').forEach(b=>b.onclick=()=>{Tt=+b.dataset.ot;draw();});$('#orR').oninput=draw;$('#osS').oninput=draw;draw();})();
+
+/* L21 warp scheduler */
+(function(){let NW=4,L=4;
+  function sim(){const st=[...Array(NW)].map(()=>({pc:0,ready:1,iss:[]})),slots=[];let c=0;
+    while(st.some(w=>w.pc<3)&&c<999){c++;let p=-1;for(let w=0;w<NW;w++)if(st[w].pc<3&&st[w].ready<=c){p=w;break;}slots.push(p);
+      if(p>=0){const w=st[p];w.iss.push(c);w.ready=w.pc===0?c+L:w.pc===1?c+1:1e9;w.pc++;}}return {c,slots,st};}
+  function draw(){const r=sim(),x0=70,cw=Math.min(40,640/r.c),rh=18;let s='';
+    for(let k=1;k<=r.c;k++)if(r.c<=24||k%2===1)s+=T(x0+(k-.5)*cw,12,k,'mid xs');
+    r.st.forEach((w,i)=>{const y=20+i*(rh+4);s+=T(x0-8,y+13,`W${i}`,'end xs');
+      s+=R(x0+w.iss[0]*cw,y+5,(w.iss[0]+L-1-w.iss[0])*cw,rh-10,'te','opacity:.35');
+      ['LD','ADD','ST'].forEach((n,j)=>{const c=w.iss[j];s+=R(x0+(c-1)*cw+1,y,cw-2,rh,j===0?'te':j===1?'cu':'pl')+(cw>=22?T(x0+(c-.5)*cw,y+13,n,'mid xs','font-weight:600'):'');});});
+    const y=24+NW*(rh+4);s+=T(x0-8,y+13,'issue','end xs');
+    r.slots.forEach((p,k)=>{s+=p<0?H(x0+k*cw+1,y,cw-2,rh):R(x0+k*cw+1,y,cw-2,rh,'bx')+(cw>=20?T(x0+(k+.5)*cw,y+13,`W${p}`,'mid xs'):'');});
+    setVB('wsSvg',760,y+rh+8,s);
+    const f=r.slots.filter(p=>p>=0).length;
+    $('#wsStat').innerHTML=[['total cycles',r.c],['filled issue slots',`${f} / ${r.c}`],['utilization',pct(f/r.c)],['throughput',`${(NW/r.c).toFixed(3)} warps/cycle`],['load latency',`${L} cycles`]].map(([k,v])=>`<div>${k}<b>${v}</b></div>`).join('');
+    const need=Math.ceil((L+2)/3);
+    $('#wsMsg').innerHTML=`${NW} warp${NW>1?'s':''} finish in <b>${r.c} cycles</b> with ${f} of ${r.c} issue slots filled (${pct(f/r.c)}). ${f===r.c?'Every slot is busy: there was always another warp ready while loads were in flight.':`${r.c-f} slot${r.c-f>1?'s':''} idle: too few warps to cover a ${L}-cycle load. Each warp brings 3 instructions of work, so covering the latency takes roughly ${need} or more warps.`}`;
+    $$('[data-ww]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.ww===NW));$$('[data-wl]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.wl===L));}
+  $$('[data-ww]').forEach(b=>b.onclick=()=>{NW=+b.dataset.ww;draw();});$$('[data-wl]').forEach(b=>b.onclick=()=>{L=+b.dataset.wl;draw();});draw();})();
+
+/* L21 divergence */
+(function(){const PR={half:[1,0,1,0,1,0,1,0],all:[1,1,1,1,1,1,1,1],one:[1,0,0,0,0,0,0,0],none:[0,0,0,0,0,0,0,0]};let p=[...PR.half];
+  function draw(){$('#dvLanes').innerHTML=p.map((v,l)=>`<button class="${v?'T':'F'}" data-ln="${l}">lane ${l}<small>${v?'true':'false'}</small></button>`).join('');
+    $$('#dvLanes button').forEach(b=>b.onclick=()=>{p[+b.dataset.ln]^=1;$$('[data-dv]').forEach(x=>x.setAttribute('aria-pressed',false));draw();});
+    const v=p.map((_,l)=>l+1),rows=[],nT=p.filter(Boolean).length,nF=8-nT;
+    const run=(on,lab,f)=>{rows.push({lab,m:p.map(x=>x===on)});p.forEach((x,l)=>{if(x===on)v[l]=f(v[l]);});};
+    if(nT){run(1,'true path: +10',a=>a+10);run(1,'true path: ×2',a=>a*2);}
+    if(nF){run(0,'false path: −1',a=>a-1);run(0,'false path: ×3',a=>a*3);run(0,'false path: +5',a=>a+5);}
+    const x0=170,cw=68;let s=T(x0-10,16,'instruction','end xs');for(let l=0;l<8;l++)s+=T(x0+l*cw+cw/2,16,`lane ${l}`,'mid xs');
+    s+=T(x0-10,40,'start (lane + 1)','end xs');for(let l=0;l<8;l++)s+=T(x0+l*cw+cw/2,40,l+1,'mid xs');
+    rows.forEach((r,i)=>{const y=50+i*26;s+=T(x0-10,y+15,r.lab,'end xs');r.m.forEach((on,l)=>s+=on?R(x0+l*cw+2,y,cw-4,20,p[l]?'te':'pl'):H(x0+l*cw+2,y,cw-4,20));});
+    const yr=56+rows.length*26;s+=T(x0-10,yr+14,'result','end bd xs');v.forEach((a,l)=>s+=T(x0+l*cw+cw/2,yr+14,a,'mid bd'));
+    setVB('dvSvg',760,yr+26,s);
+    const useful=nT*2+nF*3,pos=8*rows.length;
+    $('#dvMsg').innerHTML=`<b>${rows.length} group instruction${rows.length===1?'':'s'}</b> × 8 lanes = ${pos} positions; useful: ${nT} × 2 + ${nF} × 3 = ${useful}. Utilization <b>${pos?pct(useful/pos):'–'}</b>. ${nT&&nF?'Both paths run, one after the other, with the other lanes masked off.':'The branch is uniform, so only one path runs and no lane is wasted.'}`;}
+  $$('[data-dv]').forEach(b=>b.onclick=()=>{p=[...PR[b.dataset.dv]];$$('[data-dv]').forEach(x=>x.setAttribute('aria-pressed',x===b));draw();});draw();})();
+
+/* L22 memory spaces */
+(function(){let s=R(10,10,500,190,'bg2')+T(22,28,'GPU chip','bd xs');
+  [0,1].forEach(k=>{const x=24+k*244;s+=R(x,38,230,110,'bx')+T(x+10,54,`SM ${k}`,'bd xs')+R(x+10,62,100,40,'te')+T(x+60,80,'registers','mid xs')+T(x+60,94,'per thread','mid xs')+R(x+120,62,100,40,'pl')+T(x+170,80,'shared memory','mid xs')+T(x+170,94,'per block','mid xs')+R(x+10,110,210,28,'cu','opacity:.5')+T(x+115,128,'L1 cache (hardware-managed)','mid xs');});
+  s+=R(24,158,474,32,'cu','opacity:.5')+T(261,178,'L2 cache, shared by all SMs','mid xs');
+  s+=R(560,40,190,150,'bx')+T(655,58,'device memory (DRAM / HBM)','mid bd xs')+R(572,70,166,50,'cu')+T(655,92,'global memory','mid xs')+T(655,108,'visible to the whole grid','mid xs')+R(572,128,166,50,'cu','opacity:.6')+T(655,150,'local memory','mid xs')+T(655,166,'per thread: spills, arrays','mid xs');
+  s+=`<path d="M500 174 H556" class="w" marker-start="url(#ah)" marker-end="url(#ah)"/>`+`<path d="M139 148 V156" class="w"/><path d="M383 148 V156" class="w"/>`;
+  s+=R(560,210,190,44,'bg2','stroke-dasharray:4 3;stroke:var(--mute)')+T(655,236,'host (CPU) memory','mid xs')+`<path d="M655 192 V208" class="w dash" marker-start="url(#ah)" marker-end="url(#ah)"/>`+T(664,203,'explicit copies','xs');
+  s+=T(22,228,'Nearer the lanes: faster and smaller, owned by fewer threads.','xs')+T(22,244,'Farther out: larger and slower, shared more widely.','xs');
+  setVB('msSvg',760,270,s);})();
+
+/* L22 coalescing */
+(function(){let st=1,base=0,rev=0;
+  function draw(){const lanes=[...Array(32).keys()],addr=lanes.map(l=>base+4*st*(rev?31-l:l)),sec={};addr.forEach(a=>{const k=Math.floor(a/32);sec[k]=(sec[k]||0)+4;});
+    const ks=Object.keys(sec).map(Number),lo=Math.min(...ks),hi=Math.max(...ks),span=hi-lo+1,per=32,bw=21,bh=28;let s='';
+    const rows=Math.ceil(span/per);
+    for(let k=0;k<span;k++){const sid=lo+k,x=60+(k%per)*bw,y=26+Math.floor(k/per)*(bh+18),u=sec[sid]||0;
+      if(k%per===0)s+=T(54,y+18,`byte ${sid*32}`,'end xs');
+      s+=R(x,y,bw-3,bh,u?'bx':'bg2',u?'stroke:var(--cu);stroke-width:1.6':'opacity:.5');if(u)s+=R(x,y+bh-bh*u/32,bw-3,bh*u/32,'cu');}
+    const H0=26+rows*(bh+18);
+    s+=T(60,14,'each box = one 32-byte sector (filled part = bytes actually requested)','xs');
+    const ex=[0,1,2,31].map(l=>`lane ${l} → byte ${addr[l]}`).join(' · ');s+=T(60,H0+8,ex+' …','xs');
+    setVB('coSvg',760,H0+18,s);
+    const n=ks.length;$('#coStat').innerHTML=[['useful bytes',128],['sectors touched',n],['sector bytes',n*32],['useful fraction',pct(128/(n*32))]].map(([k,v])=>`<div>${k}<b>${v}</b></div>`).join('');
+    $('#coMsg').innerHTML=`Stride ${st}, base ${base} B: the 32 words span bytes ${Math.min(...addr)}–${Math.max(...addr)+3}, touching <b>${n} sector${n>1?'s':''}</b> = ${n*32} bytes moved for 128 used (<b>${pct(128/(n*32))}</b>). ${st===1&&base===0?'Perfectly coalesced: four full sectors.':st===1?'A misaligned start spills into one extra sector.':`Each sector holds only ${Math.max(1,Math.floor(8/st))} requested word${st>=8?'':'s'}, so most moved bytes are wasted.`}${rev?' The lanes are reversed, but the set of sectors is identical.':''}`;
+    $$('[data-cs]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.cs===st));$$('[data-cb]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.cb===base));$$('[data-co]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.co===rev));}
+  $$('[data-cs]').forEach(b=>b.onclick=()=>{st=+b.dataset.cs;draw();});$$('[data-cb]').forEach(b=>b.onclick=()=>{base=+b.dataset.cb;draw();});$$('[data-co]').forEach(b=>b.onclick=()=>{rev=+b.dataset.co;draw();});draw();})();
+
+/* L22 banks */
+(function(){let a=1;
+  function draw(){const w=[...Array(8).keys()].map(l=>a*l),bank={};w.forEach((x,l)=>{const b=x%8;bank[b]=bank[b]||{};(bank[b][x]=bank[b][x]||[]).push(l);});
+    const rounds=Math.max(...Object.values(bank).map(o=>Object.keys(o).length));let s='';const x0=90,cw=82,rh=24;
+    for(let b=0;b<8;b++)s+=T(x0+b*cw+cw/2,16,`bank ${b}`,'mid xs');
+    for(let r=0;r<Math.max(rounds,1);r++){s+=T(x0-8,34+r*(rh+4)+15,`round ${r+1}`,'end xs');for(let b=0;b<8;b++)s+=R(x0+b*cw+2,34+r*(rh+4),cw-4,rh,'bg2','opacity:.5');}
+    Object.entries(bank).forEach(([b,o])=>Object.entries(o).forEach(([word,ls],r)=>{const x=x0+b*cw+2,y=34+r*(rh+4);s+=R(x,y,cw-4,rh,ls.length>1?'pl':rounds>1&&Object.keys(o).length>1?'cu':'te')+T(x+(cw-4)/2,y+16,`${ls.length>1?`L${ls[0]}–L${ls[ls.length-1]}`:`L${ls[0]}`}: w${word}`,'mid xs');}));
+    const Hh=40+rounds*(rh+4);setVB('bkSvg',760,Hh+6,s);
+    $('#bkMsg').innerHTML=`Lanes read words ${w.join(', ')}. <b>${rounds} round${rounds>1?'s':''}</b>. ${a===0?'Every lane wants the same word, which is <b>broadcast</b> once.':rounds===1?'Every lane hits a different bank: no conflict.':`Bank conflict: some bank must serve ${rounds} different words, one per round.`}${a===9?' The padding shifts each row by one bank, so the column spreads across all eight.':''}${a===8?' This is a column of an 8×8 row-major tile.':''}`;
+    $$('[data-bk]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.bk.split(',')[0]===a));}
+  $$('[data-bk]').forEach(b=>b.onclick=()=>{a=+b.dataset.bk.split(',')[0];draw();});draw();})();
+
+/* L23 tile stepper */
+(function(){const Am=[[1,2,3,4],[5,6,7,8]],Bm=[[1,2],[3,4],[5,6],[7,8]];
+  const ST=[{p:'start'},{p:'load',t:0},{p:'bar1',t:0},{p:'k',k:0},{p:'k',k:1},{p:'bar2',t:0},{p:'load',t:1},{p:'bar1',t:1},{p:'k',k:2},{p:'k',k:3},{p:'bar2',t:1},{p:'store'}];
+  const LAB=['start','load tile 0','barrier 1','k = 0','k = 1','barrier 2','load tile 1','barrier 1','k = 2','k = 3','barrier 2','store C'];let cur=0;
+  function state(n){let As=[[null,null],[null,null]],Bs=[[null,null],[null,null]],S=[[0,0],[0,0]],C=null,rd=0;
+    for(let i=1;i<=n;i++){const s=ST[i];if(s.p==='load'){const b=s.t*2;As=[[Am[0][b],Am[0][b+1]],[Am[1][b],Am[1][b+1]]];Bs=[[Bm[b][0],Bm[b][1]],[Bm[b+1][0],Bm[b+1][1]]];rd+=8;}
+      if(s.p==='k'){const kk=s.k%2;S=S.map((row,r)=>row.map((v,c)=>v+As[r][kk]*Bs[kk][c]));}if(s.p==='store')C=S.map(r=>[...r]);}
+    return {As,Bs,S,C,rd};}
+  function draw(){const s0=ST[cur],st=state(cur);let s='';const cw=44,ch=32;
+    const grid=(x,y,M,lab,hi,cls,w=cw)=>{let q=T(x,y-8,lab,'bd xs');M.forEach((row,r)=>row.forEach((v,c)=>{const h=hi&&hi(r,c);q+=R(x+c*w,y+r*ch,w-3,ch-3,h?'cu':cls,h?'':'')+T(x+c*w+(w-3)/2,y+r*ch+20,v===null?'·':v,'mid bd');}));return q;};
+    const tb=s0.p==='load'||s0.p==='bar1'||s0.p==='k'||s0.p==='bar2'?(s0.t!==undefined?s0.t:Math.floor(s0.k/2)):-1,kk=s0.p==='k'?s0.k:-1;
+    s+=grid(20,40,Am,'A (global, 2 × 4)',(r,c)=>s0.p==='load'&&Math.floor(c/2)===s0.t||kk>=0&&c===kk,'bx');
+    s+=grid(20,150,Bm,'B (global, 4 × 2)',(r,c)=>s0.p==='load'&&Math.floor(r/2)===s0.t||kk>=0&&r===kk,'bx');
+    s+=R(250,18,190,280,'bg2','opacity:.6')+T(345,312,'shared memory (the block)','mid xs');
+    s+=grid(300,50,st.As,'As',(r,c)=>s0.p==='load'||kk>=0&&c===kk%2,'pl',50);
+    s+=grid(300,170,st.Bs,'Bs',(r,c)=>s0.p==='load'||kk>=0&&r===kk%2,'pl',50);
+    s+=grid(520,50,st.S,"each thread's sum (registers)",()=>kk>=0,'te',56);
+    s+=T(520,128,'thread (r, c) owns C[r, c]','xs');
+    s+=grid(520,180,st.C||[[null,null],[null,null]],'C (global)',()=>s0.p==='store','bx',56);
+    if(s0.p==='load')s+=A('M200 90 C 240 90, 250 80, 296 80','wt','aht')+A('M112 230 C 200 230, 240 200, 296 200','wt','aht');
+    if(kk>=0)s+=A('M404 90 H514','wc','ahc')+A('M404 200 C 460 200, 470 110, 514 110','wc','ahc');
+    if(s0.p==='store')s+=A('M580 116 V172','wc','ahc');
+    if(s0.p==='bar1'||s0.p==='bar2'){s+=`<line x1="250" y1="300" x2="740" y2="300" style="stroke:var(--bad);stroke-width:3;stroke-dasharray:8 4"/>`+T(495,322,s0.p==='bar1'?'barrier: no thread reads the tile until all four have written it':'barrier: no thread overwrites the tile until all four have finished reading it','mid xs tbad');}
+    setVB('tlSvg',760,330,s);
+    const f=(M)=>`[[${M[0].join(', ')}], [${M[1].join(', ')}]]`;
+    const msg={start:'Four threads, one per output. Shared tiles are empty; every private sum starts at 0.',
+      load:`<b>Load tile ${s0.t}.</b> Thread (r, c) copies A[r][${s0.t*2}+c] into As[r][c] and B[${s0.t*2}+r][c] into Bs[r][c]. Eight words come from global memory; each thread loaded only two of them but will use four.`,
+      bar1:'<b>Barrier 1.</b> Every thread waits here until all four have finished writing the tile. Without it, a fast thread could read a slot its neighbour hasn\'t filled yet.',
+      k:kk>=0?`<b>k = ${kk}.</b> Each thread adds As[r][${kk%2}] × Bs[${kk%2}][c] to its private sum: thread (0, 0) adds ${st.As[0][kk%2]} × ${st.Bs[kk%2][0]}. Sums are now ${f(st.S)}.`:'',
+      bar2:'<b>Barrier 2.</b> Every thread waits until all four have finished reading this tile. Without it, a fast thread could start overwriting the tile while a slow one still needs it.',
+      store:`<b>Store.</b> Each thread writes its sum to C, once: C = ${f(st.S)}. Correct: [[50, 60], [114, 140]].`};
+    $('#tlMsg').innerHTML=msg[s0.p];$('#tlOut').innerHTML=`step ${cur} of ${ST.length-1} · global words read: <b>${st.rd}</b>`;
+    $('#tlStrip').innerHTML=LAB.map((l,i)=>`<span class="${i===cur?'h cur':i<cur?'h':'n'}">${l}</span>`).join('');
+    $('#tlBack').disabled=cur===0;$('#tlNext').disabled=cur===ST.length-1;}
+  $('#tlNext').onclick=()=>{cur++;draw();};$('#tlBack').onclick=()=>{cur--;draw();};$('#tlReset').onclick=()=>{cur=0;draw();};draw();})();
+
+/* L23 barrier hazards */
+(function(){let s='';const panel=(x,title,rows,bad,note)=>{let q=T(x+170,18,title,'mid bd');rows.forEach(([lab,ev],i)=>{const y=40+i*62;q+=T(x,y+14,lab,'bd xs');ev.forEach(([t0,t1,txt,c])=>{q+=R(x+t0,y+22,t1-t0,26,c)+T(x+(t0+t1)/2,y+39,txt,'mid xs');});});
+    q+=`<path d="${bad}" class="wb" marker-end="url(#ahb)"/>`+T(x+170,196,note[0],'mid xs tbad')+T(x+170,212,note[1],'mid xs tbad');return q;};
+  s+=panel(20,'Missing barrier 1',[['thread 0 (fast)',[[0,90,'write As, Bs','te'],[96,250,'read Bs[1][0] ✗','bad']]],['thread 2 (slow)',[[0,240,'… still loading …','bg2'],[244,330,'write Bs[1][0]','te']]]],'M200 88 C 220 110, 270 110, 286 100',['reads the slot before','it is written: stale value']);
+  s+=panel(400,'Missing barrier 2',[['thread 0 (fast)',[[0,110,'finish reading','cu'],[116,280,'write next As[0][1] ✗','bad']]],['thread 1 (slow)',[[0,200,'still reading As[0][1] …','cu'],[204,330,'…needs old value','cu']]]],'M600 88 C 620 110, 640 110, 660 100',['overwrites the slot while','another thread still needs it']);
+  s+=`<line x1="380" y1="10" x2="380" y2="230" class="w dash"/>`;setVB('brSvg',760,250,s);})();
+
+/* L24 roofline */
+(function(){const Pv=[5,10,20,50],Bv=[200,500,1000,2000],n=1024;
+  const WL={add:{n:'vector add',W:1e6,Q:12e6},m1:{n:'matmul, no reuse',W:2*n**3,Q:8*n**3+4*n*n},m16:{n:'matmul, tile 16',W:2*n**3,Q:8*n**3/16+4*n*n},m64:{n:'matmul, tile 64',W:2*n**3,Q:8*n**3/64+4*n*n}};let wk='add';
+  function draw(){const P=Pv[+$('#rfP').value],B=Bv[+$('#rfB').value],Hh=+$('#rfH').value;$('#rfPv').textContent=P+' TFLOP/s';$('#rfBv').textContent=B+' GB/s';$('#rfHv').textContent=Hh+' μs';
+    const X=I=>80+(Math.log10(I)+2)/5*640,Y=g=>270-(Math.log10(g))/5*250,ridge=P*1000/B;let s='';
+    for(let e=-2;e<=3;e++)s+=`<line x1="${X(10**e)}" y1="20" x2="${X(10**e)}" y2="270" style="stroke:var(--line)"/>`+T(X(10**e),286,10**e>=1?10**e:10**e,'mid xs');
+    for(let e=0;e<=5;e++)s+=`<line x1="80" y1="${Y(10**e)}" x2="720" y2="${Y(10**e)}" style="stroke:var(--line)"/>`+T(72,Y(10**e)+4,['1 G','10 G','100 G','1 T','10 T','100 T'][e],'end xs');
+    s+=T(400,298,'arithmetic intensity (FLOPs per byte, log)','mid xs')+T(16,145,'GFLOP/s (log)','mid xs','transform:rotate(-90deg);transform-origin:16px 145px');
+    s+=`<path d="M${X(0.01)} ${Y(B*0.01)} L${X(ridge)} ${Y(P*1000)} L${X(1000)} ${Y(P*1000)}" class="wc" style="stroke-width:3"/>`;
+    s+=`<line x1="${X(ridge)}" y1="${Y(P*1000)}" x2="${X(ridge)}" y2="270" class="w dash"/>`+T(X(ridge)+6,262,`ridge ${+ridge.toFixed(1)} FLOP/B`,'xs');
+    s+=T(X(0.3),Y(B*0.3)+18,`memory roof: ${B} GB/s × I`,'xs','transform:rotate(-26deg);transform-origin:'+X(0.3)+'px '+(Y(B*0.3)+18)+'px')+T(X(1000)-4,Y(P*1000)-8,`compute roof: ${P} TFLOP/s`,'end xs');
+    Object.entries(WL).forEach(([k,w])=>{const I=w.W/w.Q,g=Math.min(P*1000,B*I);const on=k===wk;s+=`<circle cx="${X(I)}" cy="${Y(g)}" r="${on?7:4}" class="${on?'mkc':'mk'}" style="${on?'':'opacity:.5'}"/>`+(on?T(X(I)+(I<ridge?12:-10),Y(g)+(I<ridge?20:-12),`${w.n}: I = ${I<1?I.toFixed(3):I.toFixed(1)}`,`${I<ridge?'':'end '}bd xs`):'');});
+    setVB('rfSvg',760,300,s);
+    const w=WL[wk],I=w.W/w.Q,tc=w.W/(P*1e12),tm=w.Q/(B*1e9),tb=Math.max(tc,tm),tot=Hh*1e-6+tb,g=Math.min(P*1000,B*I);
+    $('#rfStat').innerHTML=[['work W',w.W.toExponential(2)+' FLOP'],['bytes Q',(w.Q/1e6).toFixed(w.Q<1e8?0:0)+' MB'],['intensity',`${I<1?I.toFixed(3):I.toFixed(1)} FLOP/B`],['compute time',fmtT(tc)],['memory time',fmtT(tm)],['bound time'+(Hh?' + H':''),fmtT(tot)],['ceiling',g>=1000?(g/1000).toFixed(2)+' TFLOP/s':g.toFixed(1)+' GFLOP/s']].map(([k,v])=>`<div>${k}<b>${v}</b></div>`).join('');
+    $('#rfMsg').innerHTML=`<b>${tm>tc?'Memory-bound':'Compute-bound'}</b>: intensity ${I<1?I.toFixed(3):I.toFixed(1)} is ${I<ridge?'left':'right'} of the ridge (${+ridge.toFixed(1)}). ${tm>tc?`Moving the bytes takes ${fmtT(tm)}, far longer than the arithmetic (${fmtT(tc)}): a faster compute unit wouldn't help, more bandwidth or more reuse would.`:`The arithmetic (${fmtT(tc)}) outlasts the data movement (${fmtT(tm)}): only more compute throughput would raise the ceiling.`}${Hh?` With H = ${Hh} μs of fixed overhead the modelled time is ${fmtT(tot)}.`:''}`;
+    $$('[data-rw]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.rw===wk));}
+  $$('[data-rw]').forEach(b=>b.onclick=()=>{wk=b.dataset.rw;draw();});['rfP','rfB','rfH'].forEach(i=>$('#'+i).oninput=draw);draw();})();
+
+/* L24 timing intervals */
+(function(){let s='';const x=t=>96+t*6.9;
+  s+=T(86,66,'CPU (host)','end bd xs')+T(86,136,'GPU stream','end bd xs');
+  const box=(a,b,y,c,t,st='')=>R(x(a),y,x(b)-x(a),24,c,st)+T((x(a)+x(b))/2,y+16,t,'mid xs');
+  s+=box(0,9,50,'bx','copy call')+box(11,17,50,'cu','launch')+box(19,62,50,'bg2','CPU free for other work','opacity:.6')+box(64,88,50,'bx','wait for completion','opacity:.7');
+  s+=box(0,20,120,'te','copy H→D')+box(24,69,120,'cu','kernel runs')+box(72,88,120,'te','copy D→H');
+  s+=`<polygon points="${x(22)-5},104 ${x(22)+5},104 ${x(22)},114" class="mkc"/><polygon points="${x(70.5)-5},104 ${x(70.5)+5},104 ${x(70.5)},114" class="mkc"/>`+T(x(22),98,'start event','mid xs tcu')+T(x(70.5),98,'stop event','mid xs tcu');
+  const br=(a,b,y,t,c,up)=>`<path d="M${x(a)} ${up?y+6:y-6} V${y} H${x(b)} V${up?y+6:y-6}" class="${c}" style="fill:none"/>`+T((x(a)+x(b))/2,up?y-5:y+14,t,'mid xs');
+  s+=br(11,17,40,'launch call returns at once','w',1);s+=br(24,69,158,'kernel time (events in the same stream)','wc');s+=br(0,88,196,'end-to-end latency (copies + kernel + waiting for completion)','w');
+  s+=T(96,224,'time →','xs');setVB('tmSvg',760,230,s);})();
+})();
+</script>
+</body>
+</html>

@@ -12,9 +12,10 @@ Interactive study notes that build a computer from logic gates up to modern mult
 | [Unit 2 · Programs & contexts](notes/unit-02-registers-programs-contexts.html) | Registers and RISC-V, ISA vs. implementation, calls, stacks, traps and thread contexts |
 | [Unit 3 · A faster core](notes/unit-03-faster-core.html) | Pipelining, hazards, caches, virtual memory, branch prediction, superscalar, renaming and out-of-order, precise retirement |
 | [Unit 4 · Parallelism](notes/unit-04-parallelism.html) | Multicore and coherence, memory ordering, SMT, SIMD and vectors |
-| [CS149 lecture companions](notes/cs149/index.html) | Self-contained pages following Stanford CS149 *Parallel Computing* (Fall 2023); Lecture 2: *A Modern Multi-Core Processor* |
+| [Unit 5 · Understand GPUs](notes/unit-05-gpus.html) | SIMT and the thread hierarchy, occupancy, warp scheduling, divergence, coalescing and banks, tiling and barriers, Roofline and measurement |
+| [CS149 lecture companions](notes/cs149/index.html) | Self-contained pages following Stanford CS149 *Parallel Computing* (Fall 2023); Lecture 1: *Why Parallelism? Why Efficiency?*; Lecture 2: *A Modern Multi-Core Processor* |
 
-Units 5–7 (GPUs, modern systems, case studies) are planned.
+Units 6–7 (modern systems, case studies) are planned.
 
 ## Viewing locally
 
@@ -41,10 +42,10 @@ Then open <http://localhost:8000>.
 index.html             redirects the site root to notes/
 notes/                 the published site
   index.html           course map
-  unit-0N-*.html       units 1–4
+  unit-0N-*.html       units 1–5
   cs149/               Stanford CS149 lecture companions
   assets/              shared stylesheet and script
-chatgpt-reference/     ChatGPT-generated drafts (units 1–5) used as inspiration (not linked from the site)
+chatgpt-reference/     ChatGPT-generated drafts (units 1–6) used as inspiration (not linked from the site)
 Stan-CS149/            place for local copies of lecture slides (ignored by git)
 ```
 

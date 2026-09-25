@@ -384,6 +384,6 @@ Complete this one-page notebook entry before moving on:
 | What does a tile change? | Reuse, shared storage, registers, synchronization |
 | What would convince you it helped? | Correctness, a predicted metric change, and a scoped timing result |
 
-The next unit adds matrix hardware and numerical formats, then follows data through heterogeneous systems, packages, and multiple accelerators. These lessons give you the vocabulary to ask what those new mechanisms actually improve.
+[Unit 6](unit-06-modern-systems.md) adds matrix hardware and numerical formats, then follows data through heterogeneous systems, packages, and multiple accelerators. These lessons give you the vocabulary to ask what those new mechanisms actually improve.
 
 All small models and worked traces here are original teaching constructions. Vendor-specific references were checked on 25 September 2026. Eight-lane groups, eight-bank memory, synthetic resource capacities, and timing ceilings are labeled assumptions; none is presented as a complete implementation of a shipping GPU.

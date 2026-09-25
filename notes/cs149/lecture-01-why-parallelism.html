@@ -1,0 +1,841 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CS149 Lecture 1 · Why Parallelism? Why Efficiency?</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../assets/notes.css">
+<script src="../assets/notes.js"></script>
+<style>
+.calc{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;align-items:end}
+.stat{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:12px}
+.stat div{background:var(--panel2);border-radius:4px;padding:6px 10px;font:500 11px var(--mono);color:var(--mute)}
+.stat b{display:block;font-size:17px;color:var(--ink)}
+.bytes{display:grid;grid-template-columns:repeat(16,minmax(0,1fr));gap:3px;font:500 11px var(--mono)}
+.bytes div{text-align:center;padding:4px 0;border-radius:3px;background:var(--panel2)}
+.bytes div small{display:block;font-size:9px;color:var(--mute)}
+.bytes div.l0{box-shadow:inset 0 -3px 0 var(--te)} .bytes div.l1{box-shadow:inset 0 -3px 0 var(--pl)} .bytes div.l2{box-shadow:inset 0 -3px 0 var(--cu)} .bytes div.l3{box-shadow:inset 0 -3px 0 var(--warn)}
+.bytes div.cur{outline:2px solid var(--ink)}
+.bytes div.inc{background:var(--te-soft)}
+.slots{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.slots div{border:1px solid var(--line);border-radius:4px;padding:6px 12px;font:500 13px var(--mono);min-width:120px;background:var(--panel)}
+.slots div small{display:block;font-size:10px;color:var(--mute)}
+.slots div.fill{background:var(--cu-soft);border-color:var(--cu)}
+.slots div.hit{background:var(--ok-soft);border-color:var(--ok)}
+.strip{display:flex;flex-wrap:wrap;gap:3px;margin-top:10px}
+.strip span{min-width:40px;padding:3px 4px;border-radius:3px;font:600 11px var(--mono);text-align:center}
+.strip small{display:block;font-weight:500;font-size:9px}
+.strip .h{background:var(--ok-soft);color:var(--ok)} .strip .c{background:var(--bad-soft);color:var(--bad)} .strip .p{background:var(--warn-soft);color:var(--warn)} .strip .n{background:var(--panel2);color:var(--mute)} .strip .cur{outline:2px solid var(--ink)}
+.lanes{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:4px}
+.lanes button{height:54px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font:600 13px var(--mono)}
+.lanes button small{font-size:10px;font-weight:500}
+.lanes button.T{background:var(--te-soft);border-color:var(--te);color:var(--ink)}
+.lanes button.F{background:var(--pl-soft);border-color:var(--pl);color:var(--ink)}
+.cfg{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.cfg > div{display:flex;flex-direction:column;gap:4px}
+.cfg .readout{font-size:11.5px}
+.glossary{display:grid;grid-template-columns:minmax(150px,max-content) 1fr;gap:6px 18px;font-size:15px}
+.glossary dt{font:600 13px var(--mono);color:var(--te);padding-top:2px}
+.glossary dd{margin:0}
+@media (max-width:560px){.glossary{grid-template-columns:1fr}.glossary dd{margin-bottom:8px}}
+
+.pmx{display:grid;grid-template-columns:120px repeat(3,minmax(0,1fr));gap:8px;align-items:stretch}
+@media (max-width:760px){.pmx{grid-template-columns:repeat(1,minmax(0,1fr))}.pmx .rh,.pmx .ch{display:none}}
+.pmx .ch{font:600 11px var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--mute);text-align:center;align-self:end;padding-bottom:4px}
+.pmx .rh{font-size:13px;display:flex;flex-direction:column;justify-content:center;gap:2px;padding-right:6px}
+.pmx .rh b{font-family:var(--display);font-size:18px}
+.pmx .rh small{color:var(--mute);font:500 11px var(--mono)}
+.pcard{background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:8px 10px;cursor:pointer;text-align:left;font:inherit;color:var(--ink);display:flex;flex-direction:column;gap:4px}
+.pcard:hover{border-color:var(--cu)}
+.pcard[aria-pressed="true"]{border-color:var(--cu);box-shadow:0 0 0 3px var(--cu-soft);background:var(--panel)}
+.pcard svg{width:100%;height:auto;min-width:0}
+.pcard .pk{font:600 11px var(--mono);color:var(--cu)}
+.pcard .need{font-size:12.5px;line-height:1.4;color:var(--ink)}
+.pcard .need i{font-style:normal;color:var(--mute)}
+.chk{display:grid;gap:6px;margin-top:12px}
+.chk div{display:grid;grid-template-columns:26px 1fr;gap:8px;align-items:start;padding:7px 10px;border-radius:4px;font-size:14px;background:var(--panel2)}
+.chk div.ok{background:var(--ok-soft)} .chk div.no{background:var(--bad-soft)} .chk div.na{opacity:.6}
+.chk div > span:first-child{font:700 15px var(--mono)}
+.chk div.ok > span:first-child{color:var(--ok)} .chk div.no > span:first-child{color:var(--bad)}
+.recipe{counter-reset:r}
+
+/* slide-style architecture drawings */
+.sl-core{fill:var(--panel2);stroke:var(--mute);stroke-width:1.2}
+.sl-mem{fill:var(--panel);stroke:var(--ink);stroke-width:1.4}
+.sl-cache{fill:#bdbdbd;stroke:#6f6f6f;stroke-width:1.2}
+.sl-fd{fill:#d9763a;stroke:#8f4718;stroke-width:1.2}
+.sl-alu{fill:#f3c24c;stroke:#a87a12;stroke-width:1.2}
+.sl-ctx{fill:#8e9bba;stroke:#3d4a6b;stroke-width:1.4}
+.sl-reg{fill:#b9c5e2;stroke:#7d8bb0;stroke-width:.6}
+svg text.sd{fill:#1b1b1b!important}
+svg text.sw{fill:#fff!important}
+.pmx .pcard svg{background:transparent}
+.sl-pale{fill:#e6e6e6;stroke:#9a9a9a;stroke-width:1}
+.sl-row{fill:#ececec} .sl-row-on{fill:#d9763a}
+.tsrc{width:100%;min-height:190px;box-sizing:border-box;font:500 13px/1.5 var(--mono);background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:8px 10px;resize:vertical}
+.tref{font-size:13.5px;line-height:1.6;color:var(--mute)} .tref b{color:var(--ink)}
+.tedit summary{cursor:pointer;font:600 12.5px var(--mono);color:var(--cu);margin-top:12px}
+.s0a{stroke:var(--te);stroke-width:2.4;fill:none} .s0h{fill:none;stroke:var(--te);stroke-width:3} .s0dim{opacity:.35}
+.sm-ws{fill:#f1ddd0;stroke:#b98a6a;stroke-width:1} .sm-fp32{fill:#f3c24c;stroke:#a87a12;stroke-width:.8} .sm-int{fill:#ee8a60;stroke:#a8502a;stroke-width:.8} .sm-fp64{fill:#b07a86;stroke:#6e4450;stroke-width:.8} .sm-ten{fill:#bf2f1f;stroke:#7a1a10;stroke-width:.8} .sm-ls{fill:#5d9a3c;stroke:#355f1f;stroke-width:.8} .sm-reg{fill:#c9d6f2;stroke:#6c7fae;stroke-width:.8}
+
+.partbar{margin-top:90px;padding:14px 18px;border-radius:5px;background:var(--ink);color:var(--panel)}
+.partbar .kicker{color:var(--cu-soft)}
+.partbar h2{font-family:var(--display);font-size:clamp(32px,5vw,44px);line-height:1;margin:4px 0 4px;color:var(--panel)}
+.partbar p{margin:0;color:var(--panel);opacity:.8;max-width:68ch}
+.mem8{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:4px}
+.mem8 button{display:flex;flex-direction:column;align-items:center;gap:1px;padding:5px 0;font:600 13px var(--mono)}
+.mem8 button small{font-size:9.5px;font-weight:500;color:var(--mute)}
+.mem8 button.on{background:var(--te-soft);border-color:var(--te)}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar"><div class="in">
+  <a class="brand" href="../index.html">Gates <span>→</span> GPUs · Notes</a>
+  <nav class="unitnav" aria-label="Sections"><a href="../index.html">Course map</a><a href="../unit-01-build-a-computer.html">1 · Build a computer</a><a href="../unit-02-registers-programs-contexts.html">2 · Programs &amp; contexts</a><a href="../unit-03-faster-core.html">3 · A faster core</a><a href="../unit-04-parallelism.html">4 · Parallelism</a><a href="../unit-05-gpus.html">5 · GPUs</a><a href="index.html" aria-current="page">CS149 lectures</a></nav>
+  <button class="themebtn" type="button">☾ Dark</button>
+</div>
+<nav class="subnav" aria-label="CS149 lectures"><span class="sl">CS149</span><a href="index.html">All lectures</a><a href="lecture-01-why-parallelism.html" aria-current="page">L1 · Why parallelism?</a><a href="lecture-02-modern-multicore.html">L2 · A modern multi-core processor</a></nav>
+</header>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk"/></marker>
+  <marker id="ahc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkc"/></marker>
+  <marker id="aht" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkt"/></marker>
+  <marker id="ahp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkp"/></marker>
+  <marker id="ahb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkb"/></marker>
+</defs></svg>
+
+<div class="wrap">
+<nav class="toc" aria-label="On this page"></nav>
+<main id="main">
+
+<header class="hero">
+  <div class="kicker">Stanford CS149 · Lecture 1 companion</div>
+  <h1>Why <em>parallelism</em>? Why <em>efficiency</em>?</h1>
+  <p class="lede">For decades, programs got faster every year without anyone touching them. Around 2005 that stopped. This lecture explains <b>why</b> it stopped, <b>what</b> chip designers did instead, and why the result forces every performance-minded programmer to think about <b>parallelism</b> and <b>efficiency</b>. That means thinking both about how to split work, and about how data moves.</p>
+  <dl class="outcome">
+    <dt>You'll be able to</dt><dd>Define speedup and efficiency, and explain what limits them (communication, load imbalance). Describe what a processor does with a program, what instruction-level parallelism is, and why superscalar execution and clock-frequency scaling ran out. Explain the power wall. Describe memory as an address space, and explain latency, stalls, caches and the cache hierarchy.</dd>
+    <dt>Background</dt><dd>None required. This page builds everything it uses. Units 1–3 of these notes go deeper into the processor, and <a href="lecture-02-modern-multicore.html">Lecture 2</a> continues directly from here.</dd>
+    <dt>Source</dt><dd>Follows the structure and examples of Stanford CS149 <i>Parallel Computing</i>, Fall 2023, Lecture 1, "Why Parallelism? Why Efficiency?" (Kayvon Fatahalian and Kunle Olukotun). The course-logistics slides are left out. The explanations, diagrams and explorers here are original study material, not a copy of the slides.</dd>
+  </dl>
+  <div class="insight">The lecture's argument in one breath. Single-thread performance used to double every ~18 months, thanks to <b>higher clock frequencies</b> and <b>instruction-level parallelism</b>. Both hit walls: ILP ran out, and higher frequency costs too much <b>power</b>. So chips now grow by adding <b>more processing units</b>, and <b>specialized</b> ones. Programs only get faster if they are written to use them, and use them <b>efficiently</b>, which mostly comes down to <b>moving data efficiently</b>.</div>
+</header>
+
+<!-- ================================ PART 0 ================================ -->
+<div class="partbar" id="p0"><div class="kicker">Part 0 · The course's big ideas</div><h2>What parallel computing is about</h2><p>A definition, a measure of success, and three classroom experiments that reveal what gets in the way.</p></div>
+
+<section class="lesson" id="s1" data-toc="Parallel computers & speedup" data-n="1" style="margin-top:36px">
+  <div class="lesson-h"><div class="kicker">Section 1</div><h2>A parallel computer, and how to measure it</h2></div>
+  <p>A common definition: <b>a parallel computer is a collection of processing elements that cooperate to solve problems quickly</b>. Every word matters. <i>Collection</i>: there is more than one of them. <i>Cooperate</i>: they work on one problem together, which means they must divide the work and exchange results. <i>Quickly</i>: the whole point is performance. We use several processors because we want the answer sooner, and, as the course keeps stressing, because we want to get it <b>efficiently</b>, without wasting hardware or energy.</p>
+  <p>The basic measure of success is <b>speedup</b>:</p>
+  <div class="insight" style="font-family:var(--mono);font-size:15px">speedup(P processors) = execution time using 1 processor ÷ execution time using P processors</div>
+  <p>If a job takes 60 seconds on one processor and 20 seconds on four, the speedup is 60 / 20 = <b>3×</b>. The ideal is P× (four processors, four times faster), and real programs almost always fall short. A second measure tells you by how much:</p>
+  <div class="insight" style="font-family:var(--mono);font-size:15px">efficiency = speedup ÷ P</div>
+  <p>Three times faster on four processors is 75% efficient: a quarter of the hardware's potential was lost somewhere. The rest of the course is about where it goes, and how to get it back. The lecture's three demos show the main culprits.</p>
+  <div class="pitfall"><b>Measure against the best sequential program</b>, not a parallel program run on one processor. The parallel version usually does extra work (splitting, combining, synchronizing), so its one-processor time is slower than a good sequential program's, and it would flatter the speedup.</div>
+</section>
+
+<section class="lesson" id="s2" data-toc="Demos: what limits speedup" data-n="2">
+  <div class="lesson-h"><div class="kicker">Section 2</div><h2>Three experiments: what limits speedup</h2></div>
+  <p>The lecture opens with students acting as processors, cooperating to compute a sum. You don't need a classroom to see the same effects: the explorer below models it. A pile of <b>N numbers</b> is split between <b>P processors</b>. Each adds up its share (one time unit per addition), then the partial sums are combined. Combining means <b>communicating</b>: a partial sum has to be passed to someone else, which takes <b>c time units per message</b>, and then added in.</p>
+  <p>The class observed three things, and each has a preset below:</p>
+  <ol>
+    <li><b>Demo 1: communication limits speedup.</b> Two "processors" split the work, but telling each other their partial sums took time. Sitting closer together (or letting them shout) made communication cheaper and improved the speedup.</li>
+    <li><b>Demo 2: imbalance limits speedup.</b> With four processors, some ran out of work and sat idle while others were still busy. The job isn't done until the <i>last</i> processor finishes. Distributing the work more evenly improved the speedup.</li>
+    <li><b>Demo 3: communication can dominate.</b> With the whole room helping on a problem with lots of communication relative to computation, most of the time went into passing values around. Adding processors can then make things <i>slower</i>.</li>
+  </ol>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 8px"><span class="readout">Preset:</span><div class="seg" role="group" aria-label="Demo presets"><button data-dp="d1" aria-pressed="true">Demo 1: two, far apart</button><button data-dp="d1b">…moved closer</button><button data-dp="d2">Demo 2: four, uneven</button><button data-dp="d2b">…balanced</button><button data-dp="d3">Demo 3: whole room</button><button data-dp="d3b">…combine as a tree</button></div></div>
+    <div class="cfg">
+      <div><span class="readout">Processors P</span><div class="seg" role="group" aria-label="Processors"><button data-dpp="1">1</button><button data-dpp="2">2</button><button data-dpp="4">4</button><button data-dpp="8">8</button><button data-dpp="16">16</button><button data-dpp="32">32</button></div></div>
+      <div><span class="readout">Numbers to add N = <b id="dmNv"></b></span><input type="range" id="dmN" min="32" max="512" step="32" aria-label="Numbers to add"></div>
+      <div><span class="readout">Cost per message c = <b id="dmCv"></b> time units</span><input type="range" id="dmC" min="0" max="20" step="1" aria-label="Communication cost"></div>
+      <div><span class="readout">Work split</span><div class="seg" role="group" aria-label="Work split"><button data-dps="even">even</button><button data-dps="uneven">uneven</button></div></div>
+      <div><span class="readout">Combine partial sums</span><div class="seg" role="group" aria-label="Combining strategy"><button data-dpc="col">all send to P0</button><button data-dpc="tree">tree (pairs)</button></div></div>
+    </div>
+    <div class="sc" style="padding:10px 0 0"><svg id="dmGantt" viewBox="0 0 760 200" role="img" aria-label="Timeline for each processor: adding its share, communicating, combining, and idle time" style="min-width:560px"></svg></div>
+    <div class="stat" id="dmStat"></div>
+    <p class="msg" id="dmMsg"></p>
+    <div class="sc" style="padding:6px 0 0"><svg id="dmCurve" viewBox="0 0 760 220" role="img" aria-label="Speedup versus number of processors, with the ideal line" style="min-width:560px"></svg></div>
+  </div><figcaption><b>Where the time goes.</b> Each row is one processor over time. <b>Yellow</b>: adding up its own share. <b>Teal</b>: passing a partial sum (sender and receiver are both busy). <b>Orange</b>: adding a received partial sum. <b>Hatched</b>: idle. The lower chart repeats the whole experiment for P = 1 to 32 with the current settings. The dashed line is ideal speedup (P×). Try Demo 3 and watch the curve peak and then fall as more processors are added.</figcaption></figure>
+  <p>Two structural lessons are visible in the explorer. First, the job's time is set by the <b>slowest path</b>, not the average: in Demo 2, three processors finish early and wait for the fourth. Second, <b>how</b> you combine results matters as much as how you split the work. If everyone reports to one processor, it receives P − 1 messages one after another. Combining in pairs, as a tree, needs only log₂ P rounds, because many pairs communicate at the same time. With 32 processors that's 5 rounds instead of 31 messages.</p>
+  <div class="predict"><div class="ph"><b>Predict</b><span>Answer before opening, then check with the explorer.</span></div><ol>
+    <li>With N = 32, c = 8 and the even split, is 2 processors faster than 1? By how much?
+      <details><summary>Show answer</summary><div class="ans"><p>One processor needs 31 additions: 31 time units. Two processors each add 16 numbers (15 additions), then one message (8) and one final addition (1): 15 + 8 + 1 = 24 time units. The speedup is 31 / 24 ≈ <b>1.29×</b>, far from 2×. Communication cost 8 of those 24 units. With c = 1 it becomes 31 / 17 ≈ 1.82×.</p></div></details></li>
+    <li>Why does adding processors eventually make Demo 3 <i>slower</i>?
+      <details><summary>Show answer</summary><div class="ans"><p>Doubling P halves each processor's share of the additions, but the combining work grows: more messages, each costing c. Once each share is tiny, nearly all the time is communication, and more processors add more of it. The best P balances the two costs.</p></div></details></li>
+  </ol></div>
+</section>
+
+<section class="lesson" id="s3" data-toc="Three course themes" data-n="3">
+  <div class="lesson-h"><div class="kicker">Section 3</div><h2>The course's three themes</h2></div>
+  <div class="card4">
+    <div class="c1"><span class="l">Theme 1 · Parallel thinking</span>Designing programs that <b>scale</b>: decompose the work into pieces that can safely run in parallel, assign the pieces to processors, and manage communication and synchronization so they don't limit speedup.</div>
+    <div class="c2"><span class="l">Theme 2 · How the hardware works</span>How parallel computers implement the abstractions you program against, what each mechanism costs, and the design trade-offs: performance versus convenience versus cost.</div>
+    <div class="c3"><span class="l">Theme 3 · Efficiency</span><b>Fast ≠ efficient.</b> A program can run faster on a parallel machine while using that machine poorly. Is a 2× speedup on 10 processors good? That's 20% efficiency.</div>
+    <div class="c4"><span class="l">Why hardware matters</span>The demos showed it: the machine's characteristics, such as the cost of communication, decide how fast a parallel program can go. You can't write fast parallel code while treating the hardware as a black box.</div>
+  </div>
+  <figure class="fig"><div class="sc"><svg id="thinkSvg" viewBox="0 0 760 210" role="img" aria-label="Parallel thinking: a job is decomposed into pieces, the pieces are assigned to processors, and the processors coordinate by communicating" style="min-width:560px"></svg></div>
+    <figcaption><b>Parallel thinking, in three steps.</b> <b>Decompose</b> the job into pieces that can safely run at the same time. <b>Assign</b> the pieces to processors, keeping the load balanced. <b>Orchestrate</b>: arrange the communication and synchronization the pieces need, keeping it small and cheap. Each step corresponds to a demo lesson: balance (Demo 2) and communication (Demos 1 and 3).</figcaption></figure>
+  <p>Theme 3 has two sides. The <b>programmer's</b> question is: am I using the capabilities this machine gives me? The <b>hardware designer's</b> question is: which capabilities should the chip have, given limits on silicon area, power and cost? A good speedup number alone answers neither. The lecture's example, a 2× speedup on a 10-processor computer, is a faster program that leaves 80% of the machine idle.</p>
+</section>
+
+<!-- ================================ PART 1 ================================ -->
+<div class="partbar" id="p1"><div class="kicker">Part 1 · Why parallelism?</div><h2>The free lunch, and why it ended</h2><p>Why programmers could ignore parallelism for decades, and why they no longer can.</p></div>
+
+<section class="lesson" id="s4" data-toc="The free lunch" data-n="4" style="margin-top:36px">
+  <div class="lesson-h"><div class="kicker">Section 4</div><h2>Historical context: why avoid parallel processing?</h2></div>
+  <p>From the mid-1980s to the early 2000s, the performance of a single processor running a single thread <b>doubled roughly every 18 months</b>. Over that period, one-thread performance improved by more than a thousandfold.</p>
+  <figure class="fig"><div class="sc"><svg id="lunchSvg" viewBox="0 0 760 260" role="img" aria-label="Relative single-thread CPU performance, log scale, rising about a thousandfold from 1985 to 2003" style="min-width:560px"></svg></div>
+    <figcaption><b>A thousandfold in under twenty years.</b> A logarithmic axis turns steady doubling into a straight line: each grid line is 10× the one below. The line is a trend (doubling about every 18 months), not measured data. The lecture's chart plots individual processors (Olukotun and Hammond, ACM Queue 2005), and they follow the same slope.</figcaption></figure>
+  <p>That had a surprising consequence: <b>parallelizing your code was usually not worth the effort</b>. Rewriting a program to use two processors was hard and might give you 1.8×. Doing nothing gave you the same speedup about a year later, when a faster chip arrived. Software got faster for free.</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0"><span class="readout">Wait this many years for a new CPU: <b id="waitV"></b></span><input type="range" id="waitY" min="0" max="10" step="0.5" value="3" aria-label="Years to wait"></div>
+    <p class="msg" id="waitMsg"></p>
+  </div><figcaption><b>The "free lunch" calculator.</b> At a doubling every 1.5 years, waiting y years gives a speedup of 2<sup>y/1.5</sup>, with no programmer effort. Compare that with the result from the demo explorer above.</figcaption></figure>
+  <p>Where did those gains come from? Until about fifteen years before this lecture, there were <b>two main sources</b> of single-thread speedup:</p>
+  <ol>
+    <li><b>Instruction-level parallelism (ILP)</b>: the processor finds instructions in the program that don't depend on each other and runs them at the same time (<i>superscalar</i> execution).</li>
+    <li><b>Higher clock frequency</b>: the processor does its steps more times per second.</li>
+  </ol>
+  <p>To see why both ran out, we first need a precise picture of what a processor does.</p>
+</section>
+
+<section class="lesson" id="s5" data-toc="What is a program?" data-n="5">
+  <div class="lesson-h"><div class="kicker">Section 5</div><h2>What is a program, to a processor?</h2></div>
+  <p>Here is a small C program: start with x = 1, and ten times replace x with x + x. It prints 1024. A <b>compiler</b> translates it into the language the processor understands: a list of <b>machine instructions</b>, each a simple operation such as "move this value", "add these two", "compare", "jump".</p>
+  <figure class="fig"><div class="sc"><svg id="asmSvg" viewBox="0 0 760 364" role="img" aria-label="The C loop and its compiled x86 instructions, with brackets showing which instructions implement each part of the loop" style="min-width:560px"></svg></div>
+    <figcaption><b>A program is just a list of processor instructions.</b> The loop portion of the compiled output, x86-64 as shown in the lecture. Each C statement becomes a few instructions. The loop test <code>i &lt; 10</code> becomes a compare and a conditional jump. <code>x = x + x</code> becomes load, add and store, because this unoptimized build keeps x in memory at <code>-20(%rbp)</code>. The loop ends with an unconditional jump back to the test. The number on the left of each instruction is its address in memory.</figcaption></figure>
+  <p>The lecture's analogy: a program is like a <b>recipe</b>. Each step is simple, the steps are carried out in order, and the result is only correct if they're followed as written. The processor is the cook. Unlike a cook, it follows a billion or so steps per second, without ever understanding what the dish is.</p>
+  <p>Notice how much of the compiled program is bookkeeping: moving values between memory and registers, counting the loop, jumping. The actual work, <code>addl</code>, is one instruction in nine inside the loop. An optimizing compiler would do much better, but the point stands: to a processor, a program is only a sequence of instructions, and speed means getting through that sequence faster.</p>
+</section>
+
+<section class="lesson" id="s6" data-toc="What a processor does" data-n="6">
+  <div class="lesson-h"><div class="kicker">Section 6</div><h2>What does a processor do? It executes instructions</h2></div>
+  <p>The lecture introduces a <b>very simple processor</b> with three parts. They are drawn the same way in every diagram in these notes:</p>
+  <ul>
+    <li><b style="color:#d9763a">Fetch/decode</b> determines which instruction runs next and what it asks for.</li>
+    <li>The <b style="color:#b8860b">ALU</b> (the execution unit) performs the operation an instruction describes. That may change values in the processor's registers or in the computer's memory.</li>
+    <li>The <b style="color:#5b6a8e">execution context</b> holds the <b>registers</b>, which maintain the program's state: the values of the variables used as the inputs and outputs of operations.</li>
+  </ul>
+  <p>Step through one instruction, <code>add R0 ← R0, R1</code>: "add the contents of register R0 to the contents of register R1, and put the result into R0".</p>
+  <figure class="fig"><div class="widget">
+    <div class="sc" style="padding:0"><svg id="addSvg" viewBox="0 0 760 260" role="img" aria-label="The very simple processor executing add R0 ← R0, R1 in four steps" style="min-width:560px"></svg></div>
+    <div class="ctrl"><button id="addBack">◀ Back</button><button id="addNext" class="pri">Next step ▶</button><button id="addReset">Reset</button><span class="readout" id="addOut"></span></div>
+  </div><figcaption><b>Four steps.</b> (1) Get the next instruction from memory. (2) Read its inputs from the registers: 32 and 64. (3) The execution unit adds them: 96. (4) Store the result back into R0. Only the last step changes the program's state. R2 and R3 hold other values that this instruction doesn't touch.</figcaption></figure>
+  <p>A program runs by repeating this over and over, one instruction after another. The lecture's very simple processor <b>executes one instruction per clock</b>. <a href="lecture-02-modern-multicore.html#s0">Lecture 2's Section 0</a> has two simulators that run whole programs on this kind of processor, phase by phase.</p>
+  <div class="checkpoint"><b>Review: what is "state"?</b> A <b>program</b> is a list of instructions. An <b>instruction</b> describes an operation for the processor to perform, and executing it usually <b>modifies the computer's state</b>. The <b>state</b> is the values of the program's data, stored in the processor's registers or in memory.</div>
+</section>
+
+<section class="lesson" id="s7" data-toc="Instruction-level parallelism" data-n="7">
+  <div class="lesson-h"><div class="kicker">Section 7</div><h2>Instruction-level parallelism: more than one instruction per clock</h2></div>
+  <p>Take a tiny computation, <code>a = x*x + y*y + z*z</code>, with x, y and z in registers R0, R1 and R2. It compiles to five instructions:</p>
+  <div class="asm" style="max-width:420px"><div class="r"><span class="a">1</span><span class="i">mul R0, R0, R0</span><span class="c">// x*x</span></div><div class="r"><span class="a">2</span><span class="i">mul R1, R1, R1</span><span class="c">// y*y</span></div><div class="r"><span class="a">3</span><span class="i">mul R2, R2, R2</span><span class="c">// z*z</span></div><div class="r"><span class="a">4</span><span class="i">add R0, R0, R1</span><span class="c">// x*x + y*y</span></div><div class="r"><span class="a">5</span><span class="i">add R3, R0, R2</span><span class="c">// … + z*z → a</span></div></div>
+  <p>Five instructions at one per clock take five clocks. Can we do better? The three multiplies don't depend on each other: none uses another's result. If the processor could perform <b>two or three instructions at once</b>, they could run together. The adds can't join them: instruction 4 needs the results of 1 and 2, and instruction 5 needs 3 and 4.</p>
+  <p>The number of instructions that can run at the same time is the program's <b>instruction-level parallelism (ILP)</b>. Here it is 3 in the first step, then 1, then 1. However many instructions a processor can perform per clock, this program needs at least three clocks.</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 8px"><span class="readout">Instructions per clock:</span><div class="seg" role="group" aria-label="Issue width"><button data-iw="1" aria-pressed="true">1</button><button data-iw="2">2</button><button data-iw="3">3</button></div>
+      <span class="readout" style="margin-left:8px">Hardware:</span><div class="seg" role="group" aria-label="Dependency checking"><button data-ck="1" aria-pressed="true">checks dependencies</button><button data-ck="0">just takes the next few (wrong!)</button></div></div>
+    <svg id="ilpDag" class="fit" viewBox="0 0 400 260" role="img" aria-label="Dependency graph of the five instructions with ILP 3, 1, 1" style="width:100%;max-width:440px;min-width:0;height:auto;display:block;margin:0 auto"></svg>
+    <div class="sc" style="padding:6px 0 0"><svg id="ilpSch" viewBox="0 0 760 260" role="img" aria-label="Schedule: which instruction runs in which clock, and the registers after each clock" style="min-width:560px"></svg></div>
+    <p class="msg" id="ilpMsg"></p>
+  </div><figcaption><b>Parallel, but still correct.</b> With x = 1, y = 2, z = 3 the right answer is a = 1 + 4 + 9 = <b>14</b>. The node numbers in the graph show the clock in which each instruction runs. With dependency checking, 2 or 3 per clock both finish in 3 clocks: the dependency chain 1 → 4 → 5 (or 3 → 5) sets the limit. The naive processor issues instructions 4 and 5 in the same clock, so instruction 5 reads the <i>old</i> R0 and gets the wrong answer.</figcaption></figure>
+  <p>What does it mean for a parallel schedule to <b>respect program order</b>? Not that instructions run strictly one after another: then there would be no parallelism. It means the program's <b>results must be exactly what sequential execution would produce</b>. Every instruction must see the values that the instructions before it would have left. The naive setting in the explorer breaks this rule, and the answer is wrong.</p>
+</section>
+
+<section class="lesson" id="s8" data-toc="Superscalar & its limits" data-n="8">
+  <div class="lesson-h"><div class="kicker">Section 8</div><h2>Superscalar execution, and its diminishing returns</h2></div>
+  <p><b>Idea #1 of processor speedup: superscalar execution.</b> The processor automatically finds independent instructions in the instruction sequence and executes them in parallel on multiple execution units. (Alternatively the compiler finds them at compile time and encodes the dependencies in the binary.) The programmer writes an ordinary sequential program, and the hardware finds the parallelism.</p>
+  <figure class="fig"><div class="sc"><svg id="ssSvg" viewBox="0 0 760 250" role="img" aria-label="Superscalar processor: two fetch/decode units, out-of-order control logic, two execution units, and one execution context" style="min-width:560px"></svg></div>
+    <figcaption><b>A two-wide superscalar core.</b> Two fetch/decode units and two execution units, so it can decode and execute up to two instructions per clock. The <b>out-of-order control logic</b> tracks dependencies to decide which instructions can safely go together. There is still <b>one execution context</b>: this is parallelism <i>within</i> one instruction stream. The lecture's aside, the Pentium 4, is a chip where a large fraction of the silicon was this kind of control logic.</figcaption></figure>
+  <p>So why not build a 16-wide processor? Because ordinary programs don't contain that much ILP. Dependencies chain instructions together, branches make it hard to look far ahead, and the independent instructions near any point in the program run out quickly.</p>
+  <figure class="fig"><div class="sc"><svg id="drSvg" viewBox="0 0 760 270" role="img" aria-label="Speedup versus instruction issue width: 1 at width 1, about 1.8 at 2, about 2.6 at 4, then nearly flat to 16" style="min-width:560px"></svg></div>
+    <figcaption><b>Diminishing returns of superscalar execution.</b> Speedup of typical programs as the processor can issue more instructions per clock (Culler and Singh, data from Johnson 1991). Going from 1 to 4 gains about 2.6×. Going from 4 to 16 gains almost nothing, because the programs simply don't have more independent instructions to offer. Most available ILP is exploited by a processor that issues about four instructions per clock.</figcaption></figure>
+  <p>That's the first wall. Building wider processors costs more silicon and more power for almost no gain. For a deeper look at how a superscalar core finds ILP, including a larger dependency-graph example, see <a href="lecture-02-modern-multicore.html#s2">Lecture 2, Section 2</a> and Unit 3 of these notes.</p>
+</section>
+
+<section class="lesson" id="s9" data-toc="The power wall" data-n="9">
+  <div class="lesson-h"><div class="kicker">Section 9</div><h2>The power wall: why clocks stopped getting faster</h2></div>
+  <p>The second source of speedup was clock frequency: more clock ticks per second means more instructions per second. Frequency rose steadily for decades and then, in the mid-2000s, stopped at around 3–4 GHz, even though chips kept getting more transistors. The reason is <b>power</b>.</p>
+  <p>A transistor consumes power in two ways:</p>
+  <ul>
+    <li><b>Dynamic power</b>, spent every time transistors switch: <b>dynamic power ∝ capacitive load × voltage² × frequency</b>. Raising the frequency raises power proportionally, but that's the mild part.</li>
+    <li><b>Static power</b>, lost to <b>leakage</b>: transistors burn power even when they aren't switching.</li>
+  </ul>
+  <p>The catch is that a transistor can only switch faster if it is driven at a <b>higher voltage</b>. The maximum frequency is determined by the core voltage. So pushing frequency up also pushes voltage up, and voltage enters squared. Together, power grows much faster than frequency: in the measurements the lecture shows, doubling the clock from 2.4 to 4.8 GHz multiplies power by roughly <b>four</b>. And power becomes <b>heat</b>, which has to be removed from a chip the size of a fingernail.</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0"><span class="readout">Clock frequency: <b id="pwFv"></b></span><input type="range" id="pwF" min="1" max="5" step="0.1" value="3.5" aria-label="Clock frequency in GHz"></div>
+    <div class="sc" style="padding:8px 0 0"><svg id="pwSvg" viewBox="0 0 760 270" role="img" aria-label="Power versus clock frequency: dynamic and static power, rising steeply" style="min-width:560px"></svg></div>
+    <div class="stat" id="pwStat"></div>
+    <p class="msg" id="pwMsg"></p>
+  </div><figcaption><b>Doubling the clock can cost several times the power.</b> An illustrative model of one desktop core: voltage rises linearly with frequency, dynamic power = k × V² × f, static power grows with V. It is calibrated to the shape of the lecture's measurements (Intel i7-2600K and i7-3770K), where total power climbs from about 20 W at 1.6 GHz to over 200 W near 5 GHz. The exact numbers vary by chip; the shape doesn't.</figcaption></figure>
+  <p>How much power is too much? The lecture lists typical thermal design power (TDP), the heat a cooling system must remove:</p>
+  <div class="tbl"><table>
+    <tr><th>Device</th><th>Power</th></tr>
+    <tr><td>Mobile phone processor</td><td class="m">½–2 W</td></tr>
+    <tr><td>Apple M1 laptop chip</td><td class="m">13 W</td></tr>
+    <tr><td>Intel Core i9 10900K (desktop CPU)</td><td class="m">95 W</td></tr>
+    <tr><td>NVIDIA RTX 4090 GPU</td><td class="m">450 W</td></tr>
+    <tr><td>Standard microwave oven (for scale)</td><td class="m">900 W</td></tr>
+    <tr><td>World's fastest supercomputer</td><td class="m">megawatts</td></tr>
+  </table></div>
+  <p>A desktop chip is already dissipating a sizeable fraction of a microwave oven's power. A phone has a budget a hundred times smaller. Power is a <b>critical design constraint</b> in every modern processor. So what should a designer do with a fixed power budget?</p>
+  <h3>Spend the power budget on more, slower cores</h3>
+  <p>Because power rises so steeply with frequency, running <b>two cores at a lower frequency</b> can deliver more total work than one core at a high frequency, for the same power. Try it: fix a power budget and see how fast each core can run as the core count grows.</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0"><span class="readout">Chip power budget: <b id="pbV"></b></span><input type="range" id="pbB" min="60" max="220" step="10" value="130" aria-label="Chip power budget in watts"></div>
+    <div class="sc" style="padding:8px 0 0"><svg id="pbSvg" viewBox="0 0 760 260" role="img" aria-label="For 1 to 8 cores within the budget: the frequency each core can run at, and the chip's total throughput" style="min-width:560px"></svg></div>
+    <p class="msg" id="pbMsg"></p>
+  </div><figcaption><b>More cores, lower clocks, more total work, if the program is parallel.</b> Each bar is the chip's total throughput (cores × frequency, assuming the work splits perfectly). The line is the speed of each individual core, which is what a single-threaded program gets. Throughput rises quickly at first, then flattens as static power, which doesn't shrink with frequency, eats a growing share of the budget. Same illustrative power model as above.</figcaption></figure>
+  <p>That trade-off is the heart of the lecture: with power as the limit, the way to more performance is <b>more processing units running in parallel</b>, not faster ones. But a single-threaded program sees only the line, not the bars. It gets <i>slower</i> as the cores multiply.</p>
+</section>
+<section class="lesson" id="s10" data-toc="No more free lunch" data-n="10">
+  <div class="lesson-h"><div class="kicker">Section 10</div><h2>ILP tapped out, frequency stopped: no more free lunch</h2></div>
+  <p>Put the two walls together and you get the picture in the lecture's chart of Intel CPU trends (after Herb Sutter's 2005 article "The Free Lunch Is Over"):</p>
+  <figure class="fig"><div class="sc"><svg id="trendSvg" viewBox="0 0 760 300" role="img" aria-label="Stylized CPU trends 1970 to 2010: transistor count keeps rising; clock frequency, power and ILP rise and then flatten around 2005" style="min-width:560px"></svg></div>
+    <figcaption><b>Transistors kept coming, and the other curves stopped.</b> A stylized version of the trend chart, showing the shapes rather than the data (log scale). <b>Transistor density</b> kept doubling (Moore's law). <b>Clock frequency</b> flattened around 2005, when power hit what could be cooled. <b>ILP</b> flattened too: wider issue brought no further benefit. Power flattened with the clock because designers stopped raising it.</figcaption></figure>
+  <p>The consequence is the lecture's central claim:</p>
+  <ul>
+    <li>The rate of <b>single-instruction-stream performance</b> scaling has fallen almost to zero. Frequency scaling is limited by power, and ILP scaling is tapped out.</li>
+    <li>Architects still get more transistors every generation, and now use them to build <b>more execution units that run in parallel</b>: more cores, wider vector units. They also build <b>units specialized for a specific task</b>, such as graphics, audio and video, or neural networks.</li>
+    <li><b>Software must be written to be parallel to see performance gains.</b> No more free lunch for software developers.</li>
+  </ul>
+  <div class="pitfall"><b>Moore's law did not end in 2005.</b> Transistor counts kept growing. What ended was the easy conversion of those transistors into single-thread speed. The transistors went into parallel hardware instead, so the performance is still there, but only for programs that ask for it in parallel.</div>
+</section>
+
+<section class="lesson" id="s11" data-toc="Parallel machines everywhere" data-n="11">
+  <div class="lesson-h"><div class="kicker">Section 11</div><h2>Parallel machines are everywhere</h2></div>
+  <p>Every kind of computer, from a Raspberry Pi to the world's largest supercomputer, is now a parallel machine. The lecture's examples span five orders of magnitude:</p>
+  <figure class="fig"><div class="sc"><svg id="ladSvg" viewBox="0 0 760 300" role="img" aria-label="Log-scale bars: Raspberry Pi 3 has 4 cores, Apple A15 6 CPU cores, Intel Comet Lake i9 10 cores, AMD Threadripper 3990X 64 cores, NVIDIA AD102 18,432 fp32 multipliers, Frontier 606,208 CPU cores plus 37,888 GPUs" style="min-width:560px"></svg></div>
+    <figcaption><b>Parallel units in the lecture's example machines</b> (log scale: each grid line is 10×). CPU cores for the CPUs; 32-bit floating-point multipliers for the GPU, which counts its parallelism very differently (Lecture 2 explains why). Frontier, at Oak Ridge National Laboratory, was the world's fastest supercomputer in Fall 2022: 9,472 64-core AMD CPUs plus 37,888 Radeon GPUs, drawing about 21 megawatts.</figcaption></figure>
+  <div class="tbl"><table>
+    <tr><th>Machine</th><th>Parallel hardware</th><th>Notes</th></tr>
+    <tr><td>Raspberry Pi 3</td><td>4 Arm A53 cores</td><td>A $35 board is a quad-core parallel computer</td></tr>
+    <tr><td>Apple A15 Bionic (iPhone 13, 14)</td><td>2 "big" + 4 "small" CPU cores, multi-core GPU</td><td>15 billion transistors; power-limited, so small cores do light work efficiently</td></tr>
+    <tr><td>Intel "Comet Lake" Core i9 (2020)</td><td>10 CPU cores</td><td>A typical desktop CPU</td></tr>
+    <tr><td>AMD Ryzen Threadripper 3990X</td><td>64 CPU cores, 4.3 GHz</td><td>Built from several multi-core chiplets in one package</td></tr>
+    <tr><td>NVIDIA AD102 GPU (GeForce RTX 4090, 2022)</td><td>18,432 fp32 multipliers in 144 SMs</td><td>76 billion transistors</td></tr>
+    <tr><td>Frontier supercomputer</td><td>606,208 CPU cores + 37,888 GPUs</td><td>21 MW</td></tr>
+  </table></div>
+  <h3>What using it all is worth</h3>
+  <p>The first programming assignment makes this concrete. A single-threaded C program, compiled with full optimization (<code>-O3</code>), runs on a quad-core Intel CPU. A version rewritten to use <b>all</b> the chip's parallel resources runs about <b>32–40× faster</b> on the same chip.</p>
+  <figure class="fig"><div class="sc"><svg id="a1Svg" viewBox="0 0 760 200" role="img" aria-label="How 32 to 40 times comes from 4 cores times 8-wide SIMD times a bonus from hyper-threading" style="min-width:560px"></svg></div>
+    <figcaption><b>Where 32–40× comes from.</b> Four cores, each running its own thread (4×). Within each core, AVX vector instructions process 8 values at once (8×). Hyper-threading, two threads per core, fills some of each core's idle cycles and adds a bit more. The sequential program uses one lane of one core: a small fraction of the chip. Lecture 2 explains each of these mechanisms.</figcaption></figure>
+</section>
+
+<!-- ================================ PART 2 ================================ -->
+<div class="partbar" id="p2"><div class="kicker">Part 2 · Why efficiency?</div><h2>Parallel is not enough</h2><p>With power as the limit, the winning designs are the ones that get the most work per joule.</p></div>
+
+<section class="lesson" id="s12" data-toc="Efficiency & specialization" data-n="12" style="margin-top:36px">
+  <div class="lesson-h"><div class="kicker">Section 12</div><h2>Software must be efficient too: specialization</h2></div>
+  <p>In modern computing, software must be more than parallel: <b>it must also be efficient</b>. Power is the binding constraint, from phones to datacenters, so the question is not only "how fast?" but "how much work per watt?". Modern systems answer it in two ways: many processing units, and <b>specialized</b> processing units. A unit built for one kind of task does that task with far less energy than a general-purpose core, because it skips the general machinery (fetching and decoding instructions, scheduling, large caches) and spends its energy on the arithmetic itself.</p>
+  <figure class="fig"><div class="sc"><svg id="socSvg" viewBox="0 0 760 290" role="img" aria-label="Stylized block diagram of the Apple A15 system on chip: two big CPU cores, four small CPU cores, a multi-core GPU, a neural engine, image and video processors, a motion processor, and shared cache" style="min-width:560px"></svg></div>
+    <figcaption><b>A phone chip is a collection of specialists.</b> A stylized, not-to-scale view of the Apple A15 (iPhone 13 and 14), after the lecture's annotated die photo. <b>Big</b> CPU cores for fast single-thread work, <b>small</b> cores that do light work at a fraction of the power, a multi-core <b>GPU</b>, a <b>Neural Engine</b> (NPU) for deep-network inference, <b>image and video</b> encode/decode, and a <b>motion</b> coprocessor for the sensors. Each job runs on the unit that does it most efficiently.</figcaption></figure>
+  <p>The same logic reaches datacenter scale. Google's <b>TPU</b> (Tensor Processing Unit) is a processor specialized for machine-learning computation, deployed in "pods" of many chips. The lecture shows a gallery of accelerators for deep neural networks: Google TPU, Huawei's Kirin NPU, Apple's Neural Engine, Graphcore's IPU, NVIDIA GPUs with Tensor Cores, Intel's inference accelerator, Cerebras's wafer-scale engine and SambaNova's chips. They were all designed for efficiency at one important workload.</p>
+  <div class="insight">The lecture's pivot: <b>achieving efficient processing almost always comes down to accessing data efficiently</b>. Arithmetic is cheap. Getting the operands to the arithmetic units, from memory, through caches, across chips, is where time and energy go. That is why Part 3 is about memory.</div>
+</section>
+
+<!-- ================================ PART 3 ================================ -->
+<div class="partbar" id="p3"><div class="kicker">Part 3 · Memory</div><h2>Accessing data efficiently</h2><p>What memory is, why reaching it is slow, and how caches make it faster.</p></div>
+
+<section class="lesson" id="s13" data-toc="What is memory?" data-n="13" style="margin-top:36px">
+  <div class="lesson-h"><div class="kicker">Section 13</div><h2>What is memory? An array of bytes</h2></div>
+  <p>A program's memory <b>address space</b> is simple to describe: memory is organized as an <b>array of bytes</b>, and each byte is identified by its <b>address</b>, its position in that array. (We assume memory is <i>byte-addressable</i>: every byte has its own address.) "The byte stored at address 0x10 has the value 128." "The byte stored at address 0x8 has the value 32."</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 8px"><span class="readout">Read:</span><div class="seg" role="group" aria-label="Read size"><button data-mw="1" aria-pressed="true">one byte</button><button data-mw="4">a four-byte value</button></div><span class="readout">Click any address.</span></div>
+    <div class="mem8" id="memGrid"></div>
+    <p class="msg" id="memMsg"></p>
+  </div><figcaption><b>A 32-byte address space</b>, so valid addresses run from 0x0 to 0x1F. Addresses are written in hexadecimal: 0x10 is 16. Most values in real programs span several bytes: an <code>int</code> is 4. A four-byte load reads four consecutive bytes. On x86 and Arm the byte at the lowest address is the least significant ("little-endian").</figcaption></figure>
+  <p>The processor moves data between memory and registers with two kinds of instruction: a <b>load</b> copies a value from memory into a register, and a <b>store</b> copies a register's value into memory. Arithmetic happens only on registers.</p>
+  <figure class="fig"><div class="sc"><svg id="ldSvg" viewBox="0 0 760 250" role="img" aria-label="The very simple processor executing ld R0 ← mem[R2]: R2 holds address 0xff681080, and the four-byte value 42 at that address is copied into R0" style="min-width:560px"></svg></div>
+    <figcaption><b>A load: <code>ld R0 ← mem[R2]</code>.</b> "Load the four-byte value in memory starting at the address stored in R2, and put it into R0." R2 holds 0xff681080, a <i>pointer</i>. Memory at that address holds 42, so R0 becomes 42, replacing 96. The neighbouring four-byte values (at …7c, …84, …88) are untouched.</figcaption></figure>
+</section>
+
+<section class="lesson" id="s14" data-toc="Latency & stalls" data-n="14">
+  <div class="lesson-h"><div class="kicker">Section 14</div><h2>Memory latency, and stalls</h2></div>
+  <p><b>Memory access latency</b> is the time it takes the memory system to provide data to the processor after it asks: for example, 100 clock cycles, or 100 nanoseconds. (The lecture's human-scale version: ask someone across the room for a number, and it takes about 2 seconds to come back.)</p>
+  <p>Latency matters because of <b>stalls</b>. A processor <b>stalls</b> (can't make progress) when it can't run the next instruction in its instruction stream because that instruction depends on a previous one that isn't complete. Accessing memory is a major source of stalls, because memory access times are hundreds of cycles:</p>
+  <div class="asm" style="max-width:520px"><div class="r"><span class="a">1</span><span class="i">ld  r0, mem[r2]</span><span class="c">// load a</span></div><div class="r"><span class="a">2</span><span class="i">ld  r1, mem[r3]</span><span class="c">// load b</span></div><div class="r"><span class="a">3</span><span class="i">add r0, r0, r1</span><span class="c">// needs both loads</span></div></div>
+  <p>The add can't execute until the data from both loads has arrived. Everything that happens before then is waiting.</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 8px"><span class="readout">Where the data is:</span><div class="seg" role="group" aria-label="Latency"><button data-sl="4" aria-pressed="true">L1 (4)</button><button data-sl="12">L2 (12)</button><button data-sl="38">L3 (38)</button><button data-sl="248">DRAM (~248)</button></div>
+      <span class="readout" style="margin-left:8px">Processor:</span><div class="seg" role="group" aria-label="Stall policy"><button data-sp="block" aria-pressed="true">waits after every load</button><button data-sp="use">waits only when a value is used</button></div></div>
+    <div class="sc" style="padding:0"><svg id="stSvg" viewBox="0 0 760 190" role="img" aria-label="Timeline of the three instructions showing load latency and stall cycles" style="min-width:560px"></svg></div>
+    <div class="stat" id="stStat"></div>
+    <p class="msg" id="stMsg"></p>
+  </div><figcaption><b>Three instructions, hundreds of clocks.</b> Latency in cycles at 4 GHz, for a Kaby Lake CPU. The simplest processor waits for each load to finish before doing anything else. A smarter one keeps issuing until an instruction actually <i>needs</i> a value that hasn't arrived, so the two loads overlap and the program waits for one latency instead of two. Either way, the add sits idle behind memory.</figcaption></figure>
+</section>
+
+<section class="lesson" id="s15" data-toc="Caches" data-n="15">
+  <div class="lesson-h"><div class="kicker">Section 15</div><h2>Caches: a faster implementation of the same abstraction</h2></div>
+  <p>Memory is "just an array of values", and that abstraction never changes. But its <b>implementation</b> can be made faster. A <b>cache</b> is on-chip storage that keeps a <b>copy of a subset of the values in memory</b>. If an address is "in the cache", the processor can load or store it much more quickly than if the data resides only in DRAM.</p>
+  <p>A cache is a hardware implementation detail. It <b>does not affect a program's output, only its performance</b>. The program still sees one array of bytes.</p>
+  <p>Caches work at the granularity of <b>cache lines</b>: fixed-size, aligned chunks of memory. A miss brings in the whole line that contains the address. The lecture's example cache is tiny so you can watch it: <b>2 lines of 4 bytes each</b> (8 bytes in total), with <b>least recently used (LRU)</b> replacement, which means that when the cache is full, the line that has gone unused longest is evicted.</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 8px"><span class="readout">Access sequence:</span><div class="seg" role="group" aria-label="Example sequence"><button data-cq="e1" aria-pressed="true">Example 1</button><button data-cq="e2">Example 2</button><button data-cq="own">your own</button></div>
+      <span class="readout" style="margin-left:8px">Cache size:</span><div class="seg" role="group" aria-label="Cache lines"><button data-cc="2" aria-pressed="true">2 lines</button><button data-cc="4">4 lines</button></div></div>
+    <div class="ctrl" id="cqOwn" style="margin:0 0 8px;display:none"><input type="text" id="cqIn" value="0x0, 0x4, 0x8, 0x0, 0xC, 0x4" aria-label="Your addresses, 0x0 to 0xF, separated by commas" style="flex:1;min-width:220px;font:500 13px var(--mono);padding:5px 8px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:4px"><button id="cqGo">Use these addresses</button></div>
+    <div class="bytes" id="cqBytes"></div>
+    <div class="tbl" style="margin-top:10px"><table id="cqTbl"></table></div>
+    <div class="ctrl"><button id="cqBack">◀ Back</button><button id="cqNext" class="pri">Next access ▶</button><button id="cqAll">Run all</button><button id="cqReset">Reset</button><span class="readout" id="cqOut"></span></div>
+    <p class="msg" id="cqMsg"></p>
+  </div><figcaption><b>Reading the table like the lecture's.</b> Each row is one access: the address, what the cache did, and which lines it holds afterwards (least recently used first). The coloured underline in the memory row marks each 4-byte line. Example 1 is the lecture's first sequence; Example 2 reads the whole 16-byte array and then address 0x0 again.</figcaption></figure>
+  <p>The two examples show the two kinds of <b>locality</b> that make caches work:</p>
+  <ul>
+    <li><b>Spatial locality.</b> Loading one byte brings its whole line, which "preloads" the neighbouring addresses. In Example 1, the access to 0x0 misses, but 0x1, 0x2 and 0x3 then hit.</li>
+    <li><b>Temporal locality.</b> Accessing the same address again soon hits, because it's still cached. In Example 1, the repeated accesses to 0x2 and 0x1 hit.</li>
+  </ul>
+  <p>Misses come in kinds too. A <b>cold miss</b> is the first access to a line: nothing could have cached it yet. A <b>capacity miss</b> happens when the line <i>was</i> cached but had to be evicted because the cache is too small for everything the program is using. At the end of Example 2, 0x0 misses again even though it was read moments ago: the whole array is 4 lines, and the cache holds 2. Switch to 4 lines and that miss becomes a hit.</p>
+  <p>Caches <b>reduce the length of stalls</b>: they cut memory access latency whenever the processor accesses data it, or a neighbour, used recently. Processors run efficiently when their data is resident in caches. (Caches also provide much higher bandwidth than DRAM, a topic for later lectures.)</p>
+</section>
+
+<section class="lesson" id="s16" data-toc="The cache hierarchy" data-n="16">
+  <div class="lesson-h"><div class="kicker">Section 16</div><h2>The hierarchy: a complex implementation of a simple abstraction</h2></div>
+  <p>On a modern computer, the implementation of the linear memory address space is complex. The instruction "load the value stored at address X into register R0" might involve a sequence of operations across several caches and DRAM. The common organization is a <b>hierarchy of caches</b>: level 1 (L1), level 2 (L2) and level 3 (L3). Small caches sit near the processor and have <b>low latency</b>; larger ones sit farther away and have <b>higher latency</b>.</p>
+  <figure class="fig"><div class="sc"><svg id="hierSvg" viewBox="0 0 760 220" role="img" aria-label="Processor, then L1 cache 32 KB 4 cycles, L2 256 KB 12 cycles, L3 20 MB 38 cycles, DRAM 64 GB about 248 cycles" style="min-width:560px"></svg></div>
+    <figcaption><b>Bigger means farther means slower.</b> Capacities as in the lecture's example machine; latencies in cycles at 4 GHz for a Kaby Lake CPU: L1 4, L2 12, L3 38, DRAM about 248 (best case). From L1 to DRAM, capacity grows by a factor of about two million and latency by about 60.</figcaption></figure>
+  <p>Where a program's data lives decides how long its loads take. The explorer computes the <b>average</b> load latency from how often loads are found at each level:</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 8px"><span class="readout">Program:</span><div class="seg" role="group" aria-label="Program presets"><button data-hp="good" aria-pressed="true">small working set</button><button data-hp="mid">medium working set</button><button data-hp="bad">random access, huge data</button></div></div>
+    <div class="cfg">
+      <div><span class="readout">Found in L1: <b id="h1v"></b></span><input type="range" id="h1" min="0" max="100" step="1" aria-label="L1 hit rate"></div>
+      <div><span class="readout">Of the rest, found in L2: <b id="h2v"></b></span><input type="range" id="h2" min="0" max="100" step="1" aria-label="L2 hit rate"></div>
+      <div><span class="readout">Of the rest, found in L3: <b id="h3v"></b></span><input type="range" id="h3" min="0" max="100" step="1" aria-label="L3 hit rate"></div>
+    </div>
+    <div class="sc" style="padding:10px 0 0"><svg id="amSvg" viewBox="0 0 760 150" role="img" aria-label="Average load latency and how much each level contributes" style="min-width:560px"></svg></div>
+    <p class="msg" id="amMsg"></p>
+  </div><figcaption><b>Average latency = Σ (fraction of loads served by a level × that level's latency).</b> Even a few percent of loads going to DRAM dominate the average, because DRAM is 60× slower than L1. The coloured segments show each level's share of the average.</figcaption></figure>
+  <div class="predict"><div class="ph"><b>Predict</b><span>Answer before opening.</span></div><ol>
+    <li>A loop's loads hit L1 99% of the time and otherwise go to DRAM. What is the average load latency?
+      <details><summary>Show answer</summary><div class="ans"><p>0.99 × 4 + 0.01 × 248 = 3.96 + 2.48 = <b>6.44 cycles</b>. One load in a hundred missing to DRAM increases the average by about 60%.</p></div></details></li>
+    <li>Does a cache ever change what a correct program computes?
+      <details><summary>Show answer</summary><div class="ans"><p><b>No.</b> A cache is an implementation detail of the memory abstraction: loads always return the value the array-of-bytes model says they should. Caches change only how long that takes. (Multiple processors add subtleties here, called coherence and consistency, covered in later lectures.)</p></div></details></li>
+  </ol></div>
+</section>
+
+<section class="lesson" id="s17" data-toc="Summary" data-n="17">
+  <div class="lesson-h"><div class="kicker">Summary</div><h2>What to take away</h2></div>
+  <ul>
+    <li><b>Single-thread performance now improves very slowly.</b> To run significantly faster, programs must use multiple processing elements or specialized hardware. That means knowing how to reason about, and write, parallel and efficient code.</li>
+    <li><b>Writing parallel programs is challenging.</b> It needs problem partitioning, communication and synchronization, and knowledge of the machine's characteristics. Above all, you need to understand <b>data movement</b>.</li>
+    <li><b>Modern computers have tremendously more processing power than most programs use.</b> A quad-core laptop CPU can run 30–40× faster than an optimized single-threaded program, if you use it efficiently.</li>
+  </ul>
+  <figure class="fig"><div class="sc"><svg id="chainSvg" viewBox="0 0 760 170" role="img" aria-label="Chain of reasoning: power wall and ILP wall lead to parallel and specialized hardware, which requires parallel, efficient software, which depends on efficient data movement" style="min-width:560px"></svg></div>
+    <figcaption><b>The lecture as a chain of cause and effect.</b> Lecture 2 picks up from the middle box: how a modern multi-core processor is built, and what each of its forms of parallelism demands from a program.</figcaption></figure>
+</section>
+
+<section class="lesson" id="gloss" data-toc="Glossary & review" data-n="✓">
+  <div class="lesson-h"><div class="kicker">Review</div><h2>Terms to know, and questions to test yourself</h2></div>
+  <dl class="glossary">
+    <dt>Speedup</dt><dd>Time on 1 processor ÷ time on P processors. Ideal: P.</dd>
+    <dt>Efficiency</dt><dd>Speedup ÷ P: the fraction of the machine's potential actually used.</dd>
+    <dt>Load imbalance</dt><dd>Some processors have more work than others; the rest sit idle waiting for them.</dd>
+    <dt>Communication</dt><dd>Moving data (such as partial results) between processors. It costs time, and can dominate a parallel computation.</dd>
+    <dt>Instruction</dt><dd>One simple operation for the processor to perform. A program is a list of them.</dd>
+    <dt>State</dt><dd>The values of a program's data, held in registers and memory.</dd>
+    <dt>ILP</dt><dd>Instruction-level parallelism: the number of instructions that can run at the same time without changing the program's result.</dd>
+    <dt>Superscalar</dt><dd>A processor that finds independent instructions in one stream automatically and executes several per clock.</dd>
+    <dt>Power wall</dt><dd>Dynamic power ∝ C × V² × f, and higher f needs higher V, so faster clocks cost disproportionate power and heat.</dd>
+    <dt>Specialization</dt><dd>Hardware built for one kind of task (graphics, video, neural networks) to do it with much less energy.</dd>
+    <dt>Address space</dt><dd>Memory as an array of bytes, each identified by its address.</dd>
+    <dt>Latency</dt><dd>Time for the memory system to deliver requested data.</dd>
+    <dt>Stall</dt><dd>The processor can't run the next instruction because it depends on one that isn't complete, often a load.</dd>
+    <dt>Cache, cache line</dt><dd>On-chip storage holding copies of recently used memory, managed in fixed-size lines.</dd>
+    <dt>Spatial / temporal locality</dt><dd>Accessing addresses near recent ones / accessing the same addresses again soon. Both make caches effective.</dd>
+    <dt>Cold / capacity miss</dt><dd>A first access to a line / a line evicted because the cache was too small.</dd>
+  </dl>
+  <div class="predict"><div class="ph"><b>Test yourself</b><span>The lecture's questions, plus a few more.</span></div><ol>
+    <li>Is a 2× speedup on a computer with 10 processors a good result?
+      <details><summary>Show answer</summary><div class="ans"><p>It's a faster program, but a poor use of the machine: <b>20% efficiency</b>. Whether it's "good" depends on the goal. If the machine was otherwise idle and the answer was urgent, maybe. If you care about cost or energy, 80% of the hardware was wasted. Fast ≠ efficient.</p></div></details></li>
+    <li>The program <code>a = x*x + y*y + z*z</code> has five instructions. Why can't any processor run it in fewer than three clocks?
+      <details><summary>Show answer</summary><div class="ans"><p>The dependency chain. The final add needs the first add's result, which needs a multiply's result: three steps that must happen in sequence, however many execution units there are.</p></div></details></li>
+    <li>Why did processor clock frequencies stop increasing around 2005, even though transistors kept getting smaller?
+      <details><summary>Show answer</summary><div class="ans"><p>Power. Dynamic power scales with V² × f, and higher frequencies need higher voltage, so power, and heat, rise steeply with frequency. Chips hit the limit of what could be cooled. Leakage (static power) made it worse.</p></div></details></li>
+    <li>Two loads followed by an add that uses both. The data is in DRAM (~248 cycles). Roughly how long does a processor that waits after every load take, compared with one that waits only when a value is used?
+      <details><summary>Show answer</summary><div class="ans"><p>Waiting after every load: 248 + 248 + 1 ≈ <b>497 cycles</b>. Waiting only on use lets the loads overlap: 1 + 248 + 1 ≈ <b>250 cycles</b>. Either way, the processor does 3 instructions' worth of work.</p></div></details></li>
+    <li>In the 2-line cache, what sequence of addresses would miss on <i>every</i> access?
+      <details><summary>Show answer</summary><div class="ans"><p>Cycle through three or more lines, one byte each: 0x0, 0x4, 0x8, 0x0, 0x4, 0x8, … With LRU, each new line evicts exactly the line that's needed next. Try it with "your own".</p></div></details></li>
+  </ol></div>
+  <p class="credit">Based on Stanford CS149 (Fall 2023), Lecture 1, "Why Parallelism? Why Efficiency?", by Kayvon Fatahalian and Kunle Olukotun. The explanations, diagrams and interactive models on this page are original study material. Chart data (CPU trends, superscalar speedups, power, latencies and machine specifications) are as cited in the lecture. Charts are redrawn or stylized where noted. For the course's own slides and videos, see the <a href="https://gfxcourses.stanford.edu/cs149/fall23">CS149 course site</a>.</p>
+  <div class="nextunit"><a href="index.html"><small>← Back to</small>All CS149 lectures</a><a href="lecture-02-modern-multicore.html"><small>Next lecture</small>Lecture 2 · A modern multi-core processor →</a></div>
+</section>
+
+</main>
+</div>
+<script>
+(function(){
+const {$,$$,RM}=NOTES;
+document.querySelector('svg defs').insertAdjacentHTML('beforeend','<pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--panel2)"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--mute);stroke-width:1.2;opacity:.45"/></pattern>');
+const B=(x,y,w,h,c,t1,t2,o={})=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="${c}" ${o.rx?`rx="${o.rx}"`:''}/>`+(t1?`<text x="${x+w/2}" y="${y+h/2+(t2?-3:4)}" class="mid ${o.big?'hd':'bd'}" style="${o.fs?`font-size:${o.fs}px`:''}">${t1}</text>`:'')+(t2?`<text x="${x+w/2}" y="${y+h/2+12}" class="mid xs">${t2}</text>`:'');
+const A=(d,c='w',m='ah')=>`<path d="${d}" class="${c}" marker-end="url(#${m})"/>`;
+const set=(id,h)=>{const e=document.getElementById(id);if(e)e.innerHTML=h;};
+
+/* ---- slide-style primitives ---- */
+const tS=(x,y,t,fs=11,w=600,anch='mid',cls='sd')=>`<text x="${x}" y="${y}" class="${anch} ${cls}" style="font-size:${fs}px;font-weight:${w}">${t}</text>`;
+const tT=(x,y,t,fs=11,w=600,anch='mid')=>`<text x="${x}" y="${y}" class="${anch}" style="font-size:${fs}px;font-weight:${w}">${t}</text>`;
+const slFD=(x,y,w=64,h=40,fs=11)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-fd"/>`+(h>=26?tS(x+w/2,y+h/2-2,'Fetch/',fs)+tS(x+w/2,y+h/2+fs,'Decode',fs):tS(x+w/2,y+h/2+3.5,'Fetch/Decode',Math.min(fs,9)));
+const slALU=(x,y,w,h,l1='ALU',l2,fs=11)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-alu"/>`+(l1?tS(x+w/2,y+h/2+(l2?-2:fs/3),l1,fs):'')+(l2?tS(x+w/2,y+h/2+11,l2,Math.min(9,fs)):'');
+const slVec=(x,y,cw=30,ch=20,num=false,fs)=>{let v='';for(let k=0;k<8;k++){const ax=x+(k%4)*cw,ay=y+Math.floor(k/4)*ch;v+=`<rect x="${ax}" y="${ay}" width="${cw}" height="${ch}" class="sl-alu"/>`;if(ch>=12)v+=tS(ax+cw/2,ay+ch/2+3.5,num?`ALU ${k}`:'ALU',fs||(num?10:8.5));}return v;};
+const slCtx=(x,y,w,h,title,regs,fs=10.5)=>{let s=`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-ctx"/>`+(title?tS(x+w/2,y+Math.min(14,h/2+4),title,fs):'');
+  if(regs&&regs.length){const rw=(w-12)/2,n=Math.ceil(regs.length/2),top=y+(title?33:8),rh=Math.min(10,(y+h-4-top)/n);s+=`<rect x="${x+w/2-18}" y="${top-12}" width="36" height="9" class="sl-reg"/>`+tS(x+w/2,top-4.5,'PC',7);
+    regs.forEach((r,i)=>{const c=i<n?0:1,row=i%n,rx=x+6+c*rw,ry=top+row*rh;s+=`<rect x="${rx}" y="${ry}" width="${rw}" height="${rh}" class="sl-reg"/>`+(rh>=7?tS(rx+rw/2,ry+rh-2,r,Math.min(7.5,rh-1.5)):'');});}
+  return s;};
+const slCache=(x,y,w,h,t1,t2,fs=11)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-cache"/>`+tS(x+w/2,y+h/2+(t2?-2:4),t1,fs)+(t2?tS(x+w/2,y+h/2+11,t2,Math.min(10,fs),500):'');
+const slMem=(x,y,w,h,t='Memory',t2)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-mem"/>`+tT(x+w/2,y+h/2+(t2?-3:5),t,13)+(t2?`<text x="${x+w/2}" y="${y+h/2+12}" class="mid sm">${t2}</text>`:'');
+const slCore=(x,y,w,h,label,fs=12)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-core"/>`+(label?tT(x+8,y+15,label,fs,700,'start'):'');
+const slBar=(x,y,w,h,t='instruction selection',fs=9.5)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-fd"/>`+tS(x+w/2,y+h/2+3.5,t,fs);
+const slPale=(x,y,w,h,t,fs=10.5)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-pale"/>`+tS(x+w/2,y+h/2+4,t,fs);
+const slStream=(x,y,w,lines,cur,title)=>{let s=title?tT(x+w/2,y-8,title,13,700):'';lines.forEach((l,i)=>{s+=`<rect x="${x}" y="${y+i*22}" width="${w}" height="20" class="${i===cur?'sl-row-on':'sl-row'}"/><text x="${x+8}" y="${y+i*22+14}" class="${i===cur?'sw':'sd'}" style="font-size:11px">${l}</text>`;});
+  if(cur>=0)s+=`<polygon points="${x-24},${y+cur*22} ${x-4},${y+cur*22+10} ${x-24},${y+cur*22+20}" style="fill:#d9763a"/>`;return s;};
+const setVB=(id,w,h,html)=>{const e=document.getElementById(id);if(!e)return;e.setAttribute('viewBox',`0 0 ${w} ${h}`);e.innerHTML=html;};
+/* a small generic core: F/D, execution (scalar ALU or 8-wide grid), contexts */
+const fitL=(lab,wd,maxfs,alt)=>{let fs=Math.min(maxfs,wd/(lab.length*0.64));if(fs<7&&alt){lab=alt;fs=Math.min(maxfs,wd/(lab.length*0.64));}return fs<5.5?null:[lab,fs];};
+function miniCore(x,y,w,h,o={}){const p=Math.max(3,w*0.05);let s=slCore(x,y,w,h,o.label,o.lfs||10);const top=y+(o.label?20:p);
+  const fdH=h*0.2,exH=h*0.3,cxH=h-(top-y)-fdH-exH-p*3;
+  s+=`<rect x="${x+p}" y="${top}" width="${w-2*p}" height="${fdH}" class="sl-fd"/>`+((f=>f&&fdH>=11?tS(x+w/2,top+fdH/2+f[1]*0.35,f[0],f[1]):'')(fitL('Fetch/Decode',w-2*p-4,Math.min(10,fdH*0.6),'F/D')));
+  const ey=top+fdH+p;
+  if(o.simd){const cw=(w-2*p)/4,ch=exH/2;s+=slVec(x+p,ey,cw,ch,false,Math.min(8.5,ch*0.55));}
+  else s+=`<rect x="${x+p}" y="${ey}" width="${w-2*p}" height="${exH}" class="sl-alu"/>`+((f=>f&&exH>=11?tS(x+w/2,ey+exH/2+f[1]*0.35,f[0],f[1]):'')(fitL(o.alu||'ALU',w-2*p-4,Math.min(11,exH*0.5))));
+  const cy=ey+exH+p,nc=o.ctx||1,cw2=(w-2*p-(nc-1)*2)/nc;
+  for(let i=0;i<nc;i++)s+=`<rect x="${x+p+i*(cw2+2)}" y="${cy}" width="${cw2}" height="${cxH}" class="sl-ctx"/>`+((f=>nc===1&&f&&cxH>=11?tS(x+w/2,cy+cxH/2+f[1]*0.35,f[0],f[1]):'')(fitL(o.ctxLabel||'Execution Context',w-2*p-4,Math.min(10,cxH*0.45),'Exec. ctx')));
+  return s;}
+/* ---- slide-style chip drawing (CS149 lecture 2 conventions) ---- */
+const SD={A:{W:1,alu:'S',reg:'R'},B:{W:2,alu:'SS',reg:'R'},C:{W:1,alu:'V',reg:'V'},D:{W:2,alu:'SV',reg:'RV'}};
+function slideCore(x,y,d,T,label,ctx0){const D=SD[d],cw=96,g=8,ctot=T*cw+(T-1)*g,w=Math.max(ctot+24,280),cx=x+w/2;let s='',cy=y+10;
+  const tx=(X,Y,t,cls,fs)=>`<text x="${X}" y="${Y}" class="mid ${cls||'sd'}" style="font-size:${fs||11}px;font-weight:600">${t}</text>`;
+  if(label)s+=`<text x="${x+10}" y="${y+22}" class="bd" style="font-size:14px">${label}</text>`;
+  s+=`<rect x="${cx-70}" y="${cy}" width="140" height="38" class="sl-cache"/>`+tx(cx,cy+16,'Data')+tx(cx,cy+30,'Cache');cy+=46;
+  if(D.W>1){s+=`<rect x="${cx-70}" y="${cy}" width="140" height="16" class="sl-fd"/>`+tx(cx,cy+12,'instruction selection','sd',9.5);cy+=22;}
+  const fw=64,ft=D.W*fw+(D.W-1)*8;for(let i=0;i<D.W;i++){const fx=cx-ft/2+i*(fw+8);s+=`<rect x="${fx}" y="${cy}" width="${fw}" height="40" class="sl-fd"/>`+tx(fx+fw/2,cy+17,'Fetch/')+tx(fx+fw/2,cy+31,'Decode');}cy+=50;
+  const vec=(vx,vy)=>{let v='';for(let k=0;k<8;k++){const ax=vx+(k%4)*30,ay=vy+Math.floor(k/4)*20;v+=`<rect x="${ax}" y="${ay}" width="30" height="20" class="sl-alu"/>`+tx(ax+15,ay+14,'ALU','sd',8.5);}return v;};
+  if(D.alu==='S'){s+=`<rect x="${cx-50}" y="${cy}" width="100" height="42" class="sl-alu"/>`+tx(cx,cy+18,'ALU')+tx(cx,cy+32,'(Execution unit)','sd',9);cy+=50;}
+  else if(D.alu==='SS'){[-1,1].forEach(k=>{const ax=cx+(k<0?-68:4);s+=`<rect x="${ax}" y="${cy}" width="64" height="42" class="sl-alu"/>`+tx(ax+32,cy+26,'ALU');});cy+=50;}
+  else if(D.alu==='V'){s+=vec(cx-60,cy)+tx(cx,cy+52,'(8-wide vector ALU)','',9);cy+=60;}
+  else{s+=`<rect x="${cx-100}" y="${cy}" width="50" height="40" class="sl-alu"/>`+tx(cx-75,cy+25,'ALU')+tx(cx-75,cy+52,'(scalar ALU)','',9)+vec(cx-36,cy)+tx(cx+24,cy+52,'(8-wide vector ALU)','',9);cy+=60;}
+  for(let t=0;t<T;t++){const bx=cx-ctot/2+t*(cw+g);s+=`<rect x="${bx}" y="${cy}" width="${cw}" height="84" class="sl-ctx"/>`+tx(bx+cw/2,cy+13,'Execution','sd',10)+tx(bx+cw/2,cy+25,`Context ${(ctx0||0)+t}`,'sd',10)+
+      `<rect x="${bx+cw/2-18}" y="${cy+30}" width="36" height="9" class="sl-reg"/>`+tx(bx+cw/2,cy+37.5,'PC','sd',7);
+    for(let r=0;r<8;r++){const col=r<4?0:1,row=r%4,rx=bx+6+col*((cw-12)/2),ry=cy+43+row*9.5,nm=D.reg==='RV'?(col?'V':'R')+(row+ (col?0:0)):D.reg+r;
+      s+=`<rect x="${rx}" y="${ry}" width="${(cw-12)/2}" height="9.5" class="sl-reg"/>`+tx(rx+(cw-12)/4,ry+7.5,D.reg==='RV'?(col?'V'+row:'R'+row):D.reg+r,'sd',6.5);}}
+  cy+=92;return {svg:`<rect x="${x}" y="${y}" width="${w}" height="${cy-y}" class="sl-core"/>`+s,w,h:cy-y};}
+function slideChip(d,T,C){const probe=slideCore(0,0,d,T,'',0),cw=probe.w,ch=probe.h;let s='',W,H;const mw=200,mh=36;
+  const tx=(X,Y,t,fs,cls)=>`<text x="${X}" y="${Y}" class="mid ${cls||''}" style="font-size:${fs||13}px;font-weight:600">${t}</text>`;
+  if(C===1){W=cw+20;const mx=W/2;s+=`<rect x="${mx-mw/2}" y="6" width="${mw}" height="${mh}" class="sl-mem"/>`+tx(mx,29,'Memory')+`<path d="M${mx} ${6+mh+2} V${6+mh+18}" class="w" marker-start="url(#ah)" marker-end="url(#ah)"/>`;
+    s+=slideCore(10,6+mh+22,d,T,'',0).svg;H=6+mh+22+ch+8;}
+  else if(C===2){W=2*cw+34;const mx=W/2;s+=`<rect x="${mx-mw/2}" y="6" width="${mw}" height="${mh}" class="sl-mem"/>`+tx(mx,29,'Memory')+`<path d="M${mx} ${44} V${60}" class="w" marker-start="url(#ah)" marker-end="url(#ah)"/>`;
+    s+=`<rect x="${mx-cw*0.8}" y="64" width="${cw*1.6}" height="24" class="sl-cache"/>`+tx(mx,81,'Shared Data Cache',12,'sd');
+    s+=slideCore(10,96,d,T,'Core 0',0).svg+slideCore(24+cw,96,d,T,'Core 1',T).svg;H=96+ch+8;}
+  else{W=cw+44;const mx=(cw+20)/2;s+=`<rect x="${mx-mw/2}" y="6" width="${mw}" height="${mh}" class="sl-mem"/>`+tx(mx,29,'Memory')+`<path d="M${mx} 44 V60" class="w" marker-start="url(#ah)" marker-end="url(#ah)"/>`;
+    s+=`<rect x="10" y="64" width="${cw+24}" height="24" class="sl-cache"/>`+tx(10+(cw+24)/2,81,'Shared Data Cache',12,'sd');
+    for(let k=2;k>=1;k--)s+=`<rect x="${10+k*12}" y="${96+k*8}" width="${cw}" height="${ch}" class="sl-core" style="opacity:.8"/>`;
+    s+=slideCore(10,96,d,T,`Core 0 of ${C}`,0).svg;H=96+ch+30;s+=`<text x="${10+cw/2}" y="${H-6}" class="mid sm">+ ${C-1} more identical cores (${C*T} contexts in total)</text>`;}
+  return {svg:s,W,H};}
+
+
+const pct=v=>(100*v).toFixed(0)+'%';
+const nice=m=>{const p=Math.pow(10,Math.floor(Math.log10(m))),r=m/p;return (r<=1?1:r<=2?2:r<=5?5:10)*p;};
+const hatchR=(x,y,w,h)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" style="fill:url(#hatch);stroke:var(--mute);stroke-width:.5"/>`;
+
+/* 2 demo explorer: summing numbers with P processors */
+(function(){
+  const PRE={d1:{P:2,N:32,c:8,split:'even',comb:'col'},d1b:{P:2,N:32,c:1,split:'even',comb:'col'},d2:{P:4,N:32,c:1,split:'uneven',comb:'col'},d2b:{P:4,N:32,c:1,split:'even',comb:'col'},d3:{P:32,N:64,c:4,split:'even',comb:'col'},d3b:{P:32,N:64,c:4,split:'even',comb:'tree'}};
+  let st={...PRE.d1};
+  function shares(N,P,split){const w=[...Array(P)].map((_,i)=>split==='even'?1:P-i),W=w.reduce((a,b)=>a+b,0);const n=w.map(x=>Math.floor(N*x/W));let r=N-n.reduce((a,b)=>a+b,0);for(let i=0;r>0;i=(i+1)%P){n[i]++;r--;}return n;}
+  function sim({P,N,c,split,comb}){const n=shares(N,P,split),t=n.map(k=>Math.max(0,k-1)),seg=[...Array(P)].map(()=>[]);
+    n.forEach((k,i)=>{if(t[i]>0)seg[i].push([0,t[i],'w']);});
+    const xfer=(s,r)=>{const b=Math.max(t[s],t[r]);if(b>t[s])seg[s].push([t[s],b,'i']);if(b>t[r])seg[r].push([t[r],b,'i']);
+      if(c>0){seg[s].push([b,b+c,'c']);seg[r].push([b,b+c,'c']);}seg[r].push([b+c,b+c+1,'a']);t[s]=b+c;t[r]=b+c+1;};
+    if(P>1){if(comb==='col')[...Array(P).keys()].slice(1).sort((a,b)=>t[a]-t[b]||a-b).forEach(j=>xfer(j,0));
+      else for(let d=1;d<P;d*=2)for(let i=0;i+d<P;i+=2*d)xfer(i+d,i);}
+    const TP=t[0];seg.forEach(s=>{const e=s.length?Math.max(...s.map(x=>x[1])):0;if(e<TP)s.push([e,TP,'i']);});
+    const tot={w:0,c:0,a:0,i:0};seg.forEach(s=>s.forEach(([a,b,k])=>tot[k]+=b-a));
+    return {n,seg,TP,T1:N-1,tot,sp:(N-1)/TP};}
+  function draw(){const r=sim(st),{P}=st,x0=60,W=680,sc=W/r.TP,rh=Math.max(5,Math.min(20,250/P)),gap=rh>10?4:1,top=24;let s='';
+    const H=top+P*(rh+gap)+62;
+    const step=nice(r.TP/7);for(let v=0;v<=r.TP+1e-9;v+=step){const x=x0+v*sc;s+=`<line x1="${x}" y1="${top-4}" x2="${x}" y2="${top+P*(rh+gap)}" style="stroke:var(--line);stroke-width:1"/><text x="${x}" y="${top+P*(rh+gap)+14}" class="mid xs">${v}</text>`;}
+    s+=`<text x="${x0+W}" y="${top+P*(rh+gap)+28}" class="end xs">time units (one addition = 1)</text><text x="${x0}" y="14" class="xs">processor</text>`;
+    r.seg.forEach((sg,i)=>{const y=top+i*(rh+gap);if(P<=16||i%4===0)s+=`<text x="${x0-6}" y="${y+rh/2+4}" class="end xs">P${i}${P<=8?` (${r.n[i]})`:''}</text>`;
+      sg.forEach(([a,b,k])=>{const x=x0+a*sc,w=Math.max(0.6,(b-a)*sc);s+=k==='i'?hatchR(x,y,w,rh):`<rect x="${x}" y="${y}" width="${w}" height="${rh}" class="${k==='w'?'sl-alu':k==='c'?'te':'sl-fd'}"/>`;});});
+    let lx=x0;const ly=H-12;[['sl-alu','adding its share'],['te','communicating'],['sl-fd','adding a received sum'],['h','idle']].forEach(([c,t])=>{s+=(c==='h'?hatchR(lx,ly-10,14,12):`<rect x="${lx}" y="${ly-10}" width="14" height="12" class="${c}"/>`)+`<text x="${lx+19}" y="${ly}" class="xs">${t}</text>`;lx+=38+t.length*6.6;});
+    setVB('dmGantt',760,H,s);
+    const T=P*r.TP,tt=r.tot;
+    $('#dmStat').innerHTML=[['1 processor',`${r.T1}`],[`${P} processors`,`${r.TP}`],['speedup',`${r.sp.toFixed(2)}×`],['efficiency',pct(r.sp/P)],['adding',pct((tt.w+tt.a)/T)],['communicating',pct(tt.c/T)],['idle',pct(tt.i/T)]].map(([k,v])=>`<div>${k}<b>${v}</b></div>`).join('');
+    let m;if(P===1)m=`One processor adds all ${st.N} numbers: ${r.T1} additions, ${r.T1} time units. This is the baseline every speedup is measured against.`;
+    else{const mx=Math.max(...r.n),mn=Math.min(...r.n),parts=[r.sp>=1?`<b>${r.sp.toFixed(2)}× faster</b> on ${P} processors, so ${pct(r.sp/P)} efficient.`:`Only <b>${r.sp.toFixed(2)}×</b> the speed of one processor: <b>slower</b> than not parallelizing at all.`];
+      if(mx>mn*1.25)parts.push(`<b>Imbalance:</b> P0 has ${mx} numbers but P${P-1} has only ${mn}, so the others finish early and sit idle waiting.`);
+      if(tt.c/T>0.25)parts.push(`<b>Communication dominates:</b> ${pct(tt.c/T)} of all processor time goes to passing partial sums. Cheaper messages (smaller c) or more numbers per processor would help.`);
+      const p0c=r.seg[0].filter(x=>x[2]!=='w').reduce((a,x)=>a+x[1]-x[0],0);if(st.comb==='col'&&P>=4&&p0c/r.TP>0.4)parts.push(`<b>A communication bottleneck:</b> P0 spends ${pct(p0c/r.TP)} of the run receiving and adding ${P-1} partial sums one after another, while the others wait their turn. A tree combines in log₂ ${P} = ${Math.log2(P)} rounds.`);
+      if(parts.length===1)parts.push('No single problem dominates. What remains is the cost of the combining step.');m=parts.join(' ');}
+    $('#dmMsg').innerHTML=m;
+    /* speedup curve */
+    const Ps=[1,2,4,8,16,32],sp=Ps.map(p=>sim({...st,P:p}).sp),ym=Math.max(2,Math.ceil(Math.max(...sp)*1.3)),cx=v=>90+Math.log2(v)*120,cy=v=>190-Math.min(v,ym)/ym*155;let c='';
+    for(let k=0;k<=4;k++){const v=ym*k/4;c+=`<line x1="90" y1="${cy(v)}" x2="690" y2="${cy(v)}" style="stroke:var(--line)"/><text x="82" y="${cy(v)+4}" class="end xs">${+v.toFixed(1)}×</text>`;}
+    Ps.forEach(p=>c+=`<text x="${cx(p)}" y="208" class="mid xs">P = ${p}</text>`);
+    const Pi=Ps.filter(p=>p<=ym),pl=Pi[Pi.length-1];c+=`<path d="M${Pi.map(p=>`${cx(p)} ${cy(p)}`).join(' L')}" class="w dash"/>${pl<32?`<text x="${cx(pl)+8}" y="${cy(pl)+4}" class="xs">ideal keeps rising: 32× at P = 32</text>`:''}<path d="M520 10 H548" class="w dash"/><text x="554" y="14" class="xs">ideal (P×)</text><path d="M630 10 H658" class="wc"/><text x="664" y="14" class="xs">this setup</text>`;
+    c+=`<path d="M${Ps.map((p,i)=>`${cx(p)} ${cy(sp[i])}`).join(' L')}" class="wc"/>`+Ps.map((p,i)=>`<circle cx="${cx(p)}" cy="${cy(sp[i])}" r="${p===P?6:4}" class="${p===P?'mkc':'mk'}"/><text x="${cx(p)}" y="${cy(sp[i])-10}" class="mid xs">${sp[i].toFixed(1)}</text>`).join('');
+    c+=`<text x="90" y="14" class="bd">Speedup vs number of processors</text>`;
+    setVB('dmCurve',760,220,c);
+    $$('[data-dpp]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.dpp===P));$$('[data-dps]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.dps===st.split));$$('[data-dpc]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.dpc===st.comb));
+    $('#dmN').value=st.N;$('#dmNv').textContent=st.N;$('#dmC').value=st.c;$('#dmCv').textContent=st.c;}
+  const unp=()=>$$('[data-dp]').forEach(b=>b.setAttribute('aria-pressed',false));
+  $$('[data-dp]').forEach(b=>b.onclick=()=>{st={...PRE[b.dataset.dp]};$$('[data-dp]').forEach(x=>x.setAttribute('aria-pressed',x===b));draw();});
+  $$('[data-dpp]').forEach(b=>b.onclick=()=>{st.P=+b.dataset.dpp;unp();draw();});
+  $$('[data-dps]').forEach(b=>b.onclick=()=>{st.split=b.dataset.dps;unp();draw();});
+  $$('[data-dpc]').forEach(b=>b.onclick=()=>{st.comb=b.dataset.dpc;unp();draw();});
+  $('#dmN').oninput=e=>{st.N=+e.target.value;unp();draw();};$('#dmC').oninput=e=>{st.c=+e.target.value;unp();draw();};
+  draw();
+})();
+
+/* 3 parallel thinking */
+(function(){let s='';const pan=[[20,'1 · Decompose'],[275,'2 · Assign'],[530,'3 · Orchestrate']];
+  pan.forEach(([x,t])=>s+=tT(x+105,18,t,13,700));
+  for(let k=0;k<12;k++){const cx=40+(k%4)*43,cy=36+Math.floor(k/4)*40;s+=`<rect x="${cx}" y="${cy}" width="39" height="36" class="cu"/>`;}
+  s+=`<text x="125" y="176" class="mid xs">split the job into pieces</text><text x="125" y="190" class="mid xs">that can safely run in parallel</text>`;
+  const pc=['sl-alu','te','pl','cu'];
+  for(let r=0;r<4;r++){const y=36+r*30;s+=`<text x="300" y="${y+18}" class="end xs">P${r}</text>`;for(let k=0;k<3;k++)s+=`<rect x="${308+k*40}" y="${y}" width="36" height="24" class="${pc[r]}"/>`;}
+  s+=`<text x="380" y="176" class="mid xs">give each processor</text><text x="380" y="190" class="mid xs">a fair share of the pieces</text>`;
+  const bx=[[560,40],[660,40],[560,110],[660,110]];bx.forEach(([x,y],i)=>s+=`<rect x="${x}" y="${y}" width="70" height="44" class="sl-core"/>`+tT(x+35,y+27,`P${i}`,13,700));
+  s+=A('M660 62 H632','wc','ahc')+A('M660 132 H632','wc','ahc')+A('M595 110 V86','wc','ahc');
+  s+=`<text x="635" y="176" class="mid xs">combine results and synchronize,</text><text x="635" y="190" class="mid xs">keeping communication cheap</text>`;
+  s+=A('M222 96 H262')+A('M476 96 H548');set('thinkSvg',s);})();
+
+/* 4 free lunch */
+(function(){let s='';const x=y=>80+(y-1985)/18*620,y=v=>220-(Math.log10(v)+1)*40;
+  [0.1,1,10,100,1000,10000].forEach(v=>s+=`<line x1="80" y1="${y(v)}" x2="700" y2="${y(v)}" style="stroke:var(--line)"/><text x="72" y="${y(v)+4}" class="end xs">${v>=1?v.toLocaleString():v}</text>`);
+  for(let yr=1985;yr<=2003;yr+=2)s+=`<text x="${x(yr)}" y="238" class="mid xs">${yr}</text>`;
+  s+=`<text x="16" y="120" class="mid xs" transform="rotate(-90 16 120)">relative performance (log)</text>`;
+  s+=`<path d="M${x(1985)} ${y(0.5)} L${x(2003)} ${y(0.5*Math.pow(2,12))}" class="wc" style="stroke-width:3"/>`;
+  for(let k=0;k<=12;k+=2){const yr=1985+k*1.5;s+=`<circle cx="${x(yr)}" cy="${y(0.5*Math.pow(2,k))}" r="4" class="mkc"/>`;}
+  s+=`<text x="${x(1986)}" y="${y(2500)}" class="bd">×2 every ~18 months</text><text x="${x(1986)}" y="${y(2500)+16}" class="xs">12 doublings in 18 years ≈ ×4,000</text>`;
+  s+=`<text x="${x(2003)}" y="252" class="end xs">year</text>`;set('lunchSvg',s);
+  const w=()=>{const v=+$('#waitY').value,g=Math.pow(2,v/1.5);$('#waitV').textContent=`${v} year${v===1?'':'s'}`;
+    $('#waitMsg').innerHTML=v===0?'Buy today\'s CPU: 1×.':`Waiting ${v} year${v===1?'':'s'} gives about <b>${g<10?g.toFixed(1):Math.round(g)}× faster</b> single-thread performance, for zero programming effort. ${g>=2?'Hand-parallelizing for two processors would rarely do better, and would take real work.':''}`;};
+  $('#waitY').oninput=w;w();})();
+
+/* 5 C to assembly */
+(function(){let s='';const G={init:'bg2',test:'pl',body:'cu',inc:'te',jmp:'pl'};
+  s+=tT(160,18,'C source',13,700)+tT(535,18,'compiled instructions (loop part)',13,700);
+  const C=[['int x = 1;','init'],['for (int i = 0;','init'],['     i < 10;','test'],['     i++) {','inc'],['  x = x + x;','body'],['}','jmp']];
+  const cy=[];C.forEach(([t,g],i)=>{const y=40+i*44;cy.push(y+15);s+=`<rect x="20" y="${y}" width="250" height="30" class="${G[g]}"/><text x="30" y="${y+20}" class="bd" style="white-space:pre">${t.replace(/ /g,' ')}</text>`;});
+  const L=[['…f26','movl $1, -20(%rbp)','x = 1','init'],['…f2d','movl $0, -24(%rbp)','i = 0','init'],['…f34','cmpl $10, -24(%rbp)','compare i with 10','test'],['…f38','jge  <exit loop>','done? leave the loop','test'],['…f3e','movl -20(%rbp), %eax','load x','body'],['…f41','addl -20(%rbp), %eax','add x to it','body'],['…f44','movl %eax, -20(%rbp)','store x','body'],['…f47','movl -24(%rbp), %eax','load i','inc'],['…f4a','addl $1, %eax','add 1','inc'],['…f4d','movl %eax, -24(%rbp)','store i','inc'],['…f50','jmp  <loop test>','back to the test','jmp']];
+  const ay={};L.forEach(([a,i,c,g],k)=>{const y=34+k*26;(ay[g]=ay[g]||[]).push(y+10);s+=`<rect x="330" y="${y}" width="410" height="22" class="${G[g]}"/><text x="338" y="${y+15}" class="xs">${a}</text><text x="380" y="${y+15}" class="bd" style="font-size:11.5px">${i}</text><text x="734" y="${y+15}" class="end xs">${c}</text>`;});
+  const link=(ci,g)=>{const ys=ay[g],m=(Math.min(...ys)+Math.max(...ys))/2;s+=`<path d="M272 ${cy[ci]} C 300 ${cy[ci]}, 300 ${m}, 326 ${m}" class="w" marker-end="url(#ah)"/>`;};
+  link(1,'init');link(2,'test');link(3,'inc');link(4,'body');link(5,'jmp');
+  s+=`<text x="20" y="340" class="xs">x lives in memory at -20(%rbp) and i at -24(%rbp). This is unoptimized code,</text><text x="20" y="354" class="xs">so every use of a variable loads it from memory and every change stores it back.</text>`;
+  set('asmSvg',s);})();
+
+/* 6 add stepper */
+(function(){let k=0;const ST=['','Step 1: get the next instruction from memory','Step 2: read the inputs from registers','Step 3: the execution unit adds','Step 4: store the result back to R0'];
+  function draw(){let s='';const on='s0h';
+    s+=`<rect x="30" y="16" width="290" height="52" class="sl-fd"/>`+tS(175,36,'Fetch/Decode',12)+tS(175,56,k>=1?'add R0 ← R0, R1':'(waiting for an instruction)',k>=1?13:10,k>=1?700:500);
+    s+=`<rect x="30" y="84" width="290" height="56" class="sl-alu"/>`+tS(175,104,'ALU (Execution Unit)',12)+tS(175,126,k===2?'inputs: 32 and 64':k>=3?'32 + 64 = 96':'idle',k>=2?13:10,k>=2?700:500);
+    s+=`<rect x="30" y="160" width="290" height="92" class="sl-ctx"/>`+tS(175,176,'Execution Context',11);
+    const R=[['R0',k>=4?'96':'32'],['R1','64'],['R2','0xff681080'],['R3','0x80486412']];
+    R.forEach(([n,v],i)=>{const x=40+(i%2)*140,y=186+Math.floor(i/2)*30;s+=`<rect x="${x}" y="${y}" width="130" height="24" class="sl-reg"/>`+tS(x+65,y+16,`${n}: ${v}`,11.5);
+      if((k===2&&i<2)||(k===4&&i===0))s+=`<rect x="${x-3}" y="${y-3}" width="136" height="30" rx="3" class="${on}"/>`;});
+    if(k===2)s+=`<path d="M105 184 V144" class="s0a" marker-end="url(#aht)"/><path d="M245 184 V144" class="s0a" marker-end="url(#aht)"/>`;
+    if(k===4)s+=`<path d="M200 142 C 200 165, 110 160, 105 182" class="s0a" marker-end="url(#aht)"/>`;
+    if(k===1)s+=`<rect x="27" y="13" width="296" height="58" rx="3" class="${on}"/>`;if(k===3)s+=`<rect x="27" y="81" width="296" height="62" rx="3" class="${on}"/>`;
+    s+=`<text x="360" y="30" class="bd">add R0 ← R0, R1</text><text x="360" y="48" class="xs">"Add the contents of R0 to the contents of R1</text><text x="360" y="62" class="xs">and put the result into R0."</text>`;
+    ST.slice(1).forEach((t,i)=>{const y=100+i*34,a=i+1===k,d=i+1<k;s+=`<rect x="354" y="${y-18}" width="390" height="28" rx="3" style="fill:${a?'var(--te-soft)':'transparent'}"/><text x="364" y="${y}" class="${a?'bd':d?'sm':'xs'}">${d?'✓ ':''}${t}</text>`;});
+    setVB('addSvg',760,260,s);
+    $('#addOut').textContent=k===0?'Press Next step':k===4?'Done: R0 = 96':`Step ${k} of 4`;$('#addBack').disabled=k===0;$('#addNext').disabled=k===4;}
+  $('#addNext').onclick=()=>{if(k<4)k++;draw();};$('#addBack').onclick=()=>{if(k>0)k--;draw();};$('#addReset').onclick=()=>{k=0;draw();};draw();})();
+
+/* 7 ILP explorer */
+(function(){const I=[{t:'mul R0, R0, R0',d:0,s:[0,0],op:'*',dep:[]},{t:'mul R1, R1, R1',d:1,s:[1,1],op:'*',dep:[]},{t:'mul R2, R2, R2',d:2,s:[2,2],op:'*',dep:[]},{t:'add R0, R0, R1',d:0,s:[0,1],op:'+',dep:[0,1]},{t:'add R3, R0, R2',d:3,s:[0,2],op:'+',dep:[2,3]}];
+  let W=1,chk=1;
+  function sched(){const C=[];if(!chk){for(let i=0;i<5;i+=W)C.push([...Array(Math.min(W,5-i)).keys()].map(k=>i+k));return C;}
+    const done=[];while(done.length<5){const cyc=[];for(let i=0;i<5&&cyc.length<W;i++){if(done.includes(i))continue;if(I[i].dep.every(d=>done.includes(d)))cyc.push(i);}C.push(cyc);done.push(...cyc);}return C;}
+  function draw(){const C=sched(),R=[1,2,3,0],clk={},regs=[],stale={};
+    C.forEach((cyc,c)=>{cyc.forEach(i=>clk[i]=c+1);const out=cyc.map(i=>{const a=R[I[i].s[0]],b=R[I[i].s[1]];
+        if(!chk)stale[i]=I[i].s.some(r=>I.some((J,j)=>j<i&&J.d===r&&(C.findIndex(q=>q.includes(j))>=c)));
+        return [I[i].d,I[i].op==='*'?a*b:a+b];});out.forEach(([d,v])=>R[d]=v);regs.push([...R]);});
+    /* graph */
+    const P=[[50,40],[150,40],[250,40],[100,130],[175,220]],lab=['x*x','y*y','z*z','+','+ → a'];let g='';
+    [[0,3],[1,3],[3,4],[2,4]].forEach(([a,b])=>g+=A(`M${P[a][0]} ${P[a][1]+18} L${P[b][0]} ${P[b][1]-20}`));
+    P.forEach(([x,y],i)=>{g+=`<rect x="${x-34}" y="${y-18}" width="68" height="36" rx="4" class="${stale[i]?'bad':'te'}"/><text x="${x}" y="${y+5}" class="mid bd">${lab[i]}</text><circle cx="${x+34}" cy="${y-18}" r="10" class="mkc"/><text x="${x+34}" y="${y-14}" class="mid" style="font-size:10px;fill:var(--panel);font-weight:700">${clk[i]}</text><text x="${x-30}" y="${y-22}" class="xs">${i+1}</text>`;});
+    [['ILP = 3',40],['ILP = 1',130],['ILP = 1',220]].forEach(([t,y])=>g+=`<line x1="300" y1="${y}" x2="320" y2="${y}" class="w dash"/><text x="396" y="${y+5}" class="end bd">${t}</text>`);
+    set('ilpDag',g);
+    /* schedule */
+    let s='';const rh=46,sw=150;s+=`<text x="12" y="16" class="xs">clock</text>`;for(let k=0;k<W;k++)s+=`<text x="${70+k*sw+72}" y="16" class="mid xs">slot ${k+1}</text>`;s+=`<text x="540" y="16" class="xs">registers after this clock</text>`;
+    C.forEach((cyc,c)=>{const y=24+c*rh;s+=`<text x="12" y="${y+24}" class="bd">${c+1}</text>`;
+      for(let k=0;k<W;k++){const i=cyc[k];s+=`<rect x="${70+k*sw}" y="${y}" width="${sw-6}" height="38" class="${i===undefined?'bg2':stale[i]?'bad':'cu'}" style="${i===undefined?'opacity:.4':''}"/>`+(i!==undefined?`<text x="${70+k*sw+72}" y="${y+16}" class="mid bd">${i+1}</text><text x="${70+k*sw+72}" y="${y+31}" class="mid" style="font-size:11.5px">${I[i].t}</text>`:'');}
+      const r=regs[c];s+=`<text x="540" y="${y+16}" style="font-size:12px">R0 = ${r[0]}   R1 = ${r[1]}</text><text x="540" y="${y+32}" style="font-size:12px">R2 = ${r[2]}   R3 = ${r[3]}</text>`;});
+    const H=30+C.length*rh;$('#ilpSch').setAttribute('viewBox',`0 0 760 ${H}`);set('ilpSch',s);
+    const a=R[3],ok=a===14;
+    $('#ilpMsg').innerHTML=`<b>${C.length} clock${C.length>1?'s':''}</b> for 5 instructions. Result: a = R3 = <b>${a}</b> ${ok?'✓ correct.':'✗ <b>wrong</b>: should be 14.'} ${!chk&&!ok?'Instruction 5 ran in the same clock as instruction 4, so it read R0 before 4 had written x*x + y*y into it. It used x*x = 1 instead of 5.':W===1?'One per clock: the very simple processor.':chk?(W===2?'Two multiplies go in clock 1. The third multiply shares clock 2 with the first add, and the last add runs alone in clock 3.':'All three multiplies go in clock 1, but each add must wait for its inputs, so clocks 2 and 3 run one instruction each and the extra slots sit empty.')+' No processor can beat 3 clocks here: that is the length of the dependency chain.':'Here the naive schedule happens to be safe, because each instruction\'s inputs were written in an earlier clock.'}`;
+    $$('[data-iw]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.iw===W));$$('[data-ck]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.ck===chk));}
+  $$('[data-iw]').forEach(b=>b.onclick=()=>{W=+b.dataset.iw;draw();});$$('[data-ck]').forEach(b=>b.onclick=()=>{chk=+b.dataset.ck;draw();});draw();})();
+
+/* 8 superscalar core + diminishing returns */
+(function(){let s=slStream(40,56,240,['mul R0, R0, R0','mul R1, R1, R1','mul R2, R2, R2','add R0, R0, R1','add R3, R0, R2'],-1,'Instruction stream');
+  s+=slCore(340,14,390,228);
+  s+=`<rect x="370" y="28" width="150" height="42" class="sl-fd"/>`+tS(445,46,'Fetch/Decode',11)+tS(445,61,'1',11);
+  s+=`<rect x="550" y="28" width="150" height="42" class="sl-fd"/>`+tS(625,46,'Fetch/Decode',11)+tS(625,61,'2',11);
+  s+=slBar(370,80,330,20,'out-of-order control logic',10);
+  s+=`<rect x="370" y="110" width="150" height="40" class="sl-alu"/>`+tS(445,134,'Exec 1',12)+`<rect x="550" y="110" width="150" height="40" class="sl-alu"/>`+tS(625,134,'Exec 2',12);
+  s+=slCtx(370,160,330,74,'Execution Context',['R0','R1','R2','R3']);
+  s+='<path d="M284 67 C 320 67, 330 49, 366 49" class="wc" marker-end="url(#ahc)"/><path d="M284 89 C 318 89, 318 6, 400 6 H 600 C 620 6, 625 10, 625 24" class="wc" marker-end="url(#ahc)"/>';
+  s+=`<text x="160" y="190" class="mid sm">up to two instructions</text><text x="160" y="206" class="mid sm">decoded and executed per clock</text>`;
+  set('ssSvg',s);
+  const D=[[1,1],[2,1.8],[4,2.6],[8,2.7],[16,2.75]],x=v=>100+v/16*580,y=v=>230-v/3*190;let d='';
+  for(let v=0;v<=3;v++)d+=`<line x1="100" y1="${y(v)}" x2="690" y2="${y(v)}" style="stroke:var(--line)"/><text x="92" y="${y(v)+4}" class="end xs">${v}×</text>`;
+  [0,4,8,12,16].forEach(v=>d+=`<text x="${x(v)}" y="248" class="mid xs">${v}</text>`);
+  d+=`<text x="395" y="266" class="mid xs">instruction issue capability (instructions per clock)</text><text x="24" y="130" class="mid xs" transform="rotate(-90 24 130)">speedup</text>`;
+  d+=`<path d="M${D.map(([a,b])=>`${x(a)} ${y(b)}`).join(' L')}" class="wc" style="stroke-width:3"/>`+D.map(([a,b])=>`<circle cx="${x(a)}" cy="${y(b)}" r="5" class="mkc"/><text x="${x(a)}" y="${y(b)-12}" class="mid xs">${b}×</text>`).join('');
+  d+=`<rect x="${x(4)}" y="30" width="${x(16)-x(4)}" height="200" style="fill:var(--bad-soft);opacity:.45"/><text x="${(x(4)+x(16))/2}" y="${y(1.6)}" class="mid sm">4× the width, almost no gain</text>`;
+  set('drSvg',d);})();
+
+/* 9 power wall */
+(function(){const V=f=>0.55+0.16*f,Pd=f=>19.75*V(f)*V(f)*f,Ps=f=>12*V(f),Pt=f=>Pd(f)+Ps(f);
+  const x=f=>80+(f-1)/4*620,y=p=>230-p/220*200;
+  function draw(){const f=+$('#pwF').value;let s='';
+    for(let p=0;p<=200;p+=50)s+=`<line x1="80" y1="${y(p)}" x2="700" y2="${y(p)}" style="stroke:var(--line)"/><text x="72" y="${y(p)+4}" class="end xs">${p} W</text>`;
+    for(let g=1;g<=5;g++)s+=`<text x="${x(g)}" y="248" class="mid xs">${g} GHz</text>`;
+    const pts=fn=>{let d='';for(let g=1;g<=5.001;g+=0.05)d+=`${d?'L':'M'}${x(g).toFixed(1)} ${y(fn(g)).toFixed(1)} `;return d;};
+    s+=`<path d="${pts(Ps)} L${x(5)} ${y(0)} L${x(1)} ${y(0)} Z" style="fill:var(--warn-soft)"/>`;
+    s+=`<path d="${pts(Pt)}" class="wc" style="stroke-width:3"/><path d="${pts(Pd)}" class="w dash"/>`;
+    s+=`<text x="${x(4.55)}" y="${y(Pt(4.55))-8}" class="end sm">total</text><text x="${x(4.7)}" y="${y(Pd(4.7))+16}" class="sm">dynamic</text><text x="${x(4.6)}" y="${y(4)}" class="xs">static (leakage)</text>`;
+    s+=`<line x1="${x(f)}" y1="30" x2="${x(f)}" y2="230" class="w dash"/><circle cx="${x(f)}" cy="${y(Pt(f))}" r="6" class="mkc"/><text x="${x(f)+(f>4?-10:10)}" y="${y(Pt(f))-10}" class="${f>4?'end':''} bd">${Pt(f).toFixed(0)} W</text>`;
+    s+=`<text x="390" y="266" class="mid xs">clock frequency</text>`;setVB('pwSvg',760,270,s);
+    $('#pwFv').textContent=`${f.toFixed(1)} GHz`;
+    $('#pwStat').innerHTML=[['voltage',`${V(f).toFixed(2)} V`],['dynamic',`${Pd(f).toFixed(0)} W`],['static',`${Ps(f).toFixed(0)} W`],['total',`${Pt(f).toFixed(0)} W`],['power per GHz',`${(Pt(f)/f).toFixed(0)} W`]].map(([k,v])=>`<div>${k}<b>${v}</b></div>`).join('');
+    const h=f/2;$('#pwMsg').innerHTML=f>=2?`Compared with half the clock (${h.toFixed(2)} GHz): <b>2×</b> the speed costs <b>${(Pt(f)/Pt(h)).toFixed(1)}×</b> the power. Dynamic power alone grows ${(Pd(f)/Pd(h)).toFixed(1)}×: 2× from frequency and ${(V(f)*V(f)/(V(h)*V(h))).toFixed(1)}× from the higher voltage squared.`:'Move the slider up to see how quickly power climbs.';}
+  $('#pwF').oninput=draw;draw();
+  function fFor(b){if(Pt(5)<=b)return 5;if(Pt(0.2)>b)return 0;let lo=0.2,hi=5;for(let k=0;k<40;k++){const m=(lo+hi)/2;Pt(m)<=b?lo=m:hi=m;}return lo;}
+  function budget(){const B=+$('#pbB').value;$('#pbV').textContent=`${B} W`;const R=[];for(let n=1;n<=8;n++){const f=fFor(B/n);R.push([n,f,n*f]);}
+    const tmax=Math.max(...R.map(r=>r[2]),5),yT=v=>220-v/Math.ceil(tmax)*180,yF=v=>220-v/5*180;let s='';
+    for(let k=0;k<=4;k++){const v=Math.ceil(tmax)*k/4;s+=`<line x1="80" y1="${yT(v)}" x2="660" y2="${yT(v)}" style="stroke:var(--line)"/><text x="72" y="${yT(v)+4}" class="end xs">${+v.toFixed(1)}</text>`;}
+    [0,1,2,3,4,5].forEach(g=>s+=`<text x="668" y="${yF(g)+4}" class="xs">${g} GHz</text>`);
+    s+=`<text x="16" y="120" class="mid xs" transform="rotate(-90 16 120)">throughput (GHz × cores)</text>`;
+    R.forEach(([n,f,t],i)=>{const cx=110+i*70;s+=f?`<rect x="${cx-22}" y="${yT(t)}" width="44" height="${220-yT(t)}" class="cu"/><text x="${cx}" y="${yT(t)-6}" class="mid xs">${t.toFixed(1)}</text>`:`<text x="${cx}" y="210" class="mid xs tbad">won't fit</text>`;s+=`<text x="${cx}" y="238" class="mid xs">${n} core${n>1?'s':''}</text>`;});
+    const ok=R.filter(r=>r[1]);s+=`<path d="M${ok.map(([n,f])=>`${110+(n-1)*70} ${yF(f)}`).join(' L')}" class="s0a"/>`+ok.map(([n,f])=>`<circle cx="${110+(n-1)*70}" cy="${yF(f)}" r="4" class="mkt"/>`).join('');
+    s+=`<rect x="90" y="8" width="14" height="12" class="cu"/><text x="110" y="18" class="xs">bars: chip throughput (left axis)</text><path d="M390 14 H414" class="s0a"/><circle cx="402" cy="14" r="4" class="mkt"/><text x="420" y="18" class="xs">line: each core's clock (right axis)</text>`;
+    setVB('pbSvg',760,260,s);
+    const best=ok.reduce((a,b)=>b[2]>a[2]?b:a,ok[0]||[1,0,0]);
+    $('#pbMsg').innerHTML=R[0][1]?`One core can run at <b>${R[0][1].toFixed(2)} GHz</b> within ${B} W. Two cores at ${R[1][1].toFixed(2)} GHz each deliver <b>${(R[1][2]/R[0][2]).toFixed(2)}×</b> the total throughput. The best here is ${best[0]} cores (${(best[2]/R[0][2]).toFixed(2)}×), but a single-threaded program would run at only ${best[1].toFixed(2)} GHz on it: ${(best[1]/R[0][1]*100).toFixed(0)}% of the one-core speed.`:'This budget is too small even for one core in this model.';}
+  $('#pbB').oninput=budget;budget();})();
+
+/* 10 trends (stylized) */
+(function(){let s='';const x=y=>70+(y-1970)/40*490,y=v=>270-(v+1)/8*240;
+  for(let v=-1;v<=7;v++)s+=`<line x1="70" y1="${y(v)}" x2="560" y2="${y(v)}" style="stroke:var(--line)"/>`;
+  for(let yr=1970;yr<=2010;yr+=5)s+=`<text x="${x(yr)}" y="288" class="mid xs">${yr}</text>`;
+  const sp=(z,k=7)=>Math.log(1+Math.exp(k*z))/k,cap=(l,c)=>l-sp(l-c);
+  const S=[['transistors','tok',yr=>0.36+(yr-1971)*(6.1-0.36)/39,null,'var(--ok)'],['clock frequency','tte',yr=>-0.13+(yr-1971)*(3.48+0.13)/33,3.45,'var(--te)'],['power','tbad',yr=>(yr-1985)*2/19,2.0,'var(--bad)'],['ILP','tpl',yr=>-0.5+(yr-1985)*1.2/18,0.72,'var(--pl)']];
+  S.forEach(([n,c,fn,cp,col],k)=>{let d='';const y0=n==='power'||n.startsWith('ILP')?1985:1971;for(let yr=y0;yr<=2010;yr+=0.5){const l=cp==null?fn(yr):cap(fn(yr),cp);d+=`${d?'L':'M'}${x(yr).toFixed(1)} ${y(l).toFixed(1)} `;}
+    s+=`<path d="${d}" style="fill:none;stroke:${col};stroke-width:3"/>`;s+=`<rect x="590" y="${60+k*34}" width="16" height="16" style="fill:${col}"/><text x="614" y="${73+k*34}" class="bd">${n}</text>`;});
+  s+=`<line x1="${x(2005)}" y1="20" x2="${x(2005)}" y2="270" class="w dash"/><text x="${x(2005)-6}" y="30" class="end sm">~2005</text>`;
+  s+=`<text x="590" y="220" class="xs">log scale; each series</text><text x="590" y="234" class="xs">in its own units.</text><text x="590" y="248" class="xs">Shapes only, not data.</text>`;
+  set('trendSvg',s);})();
+
+/* 11 machines ladder + assignment 1 */
+(function(){const M=[['Raspberry Pi 3',4,'CPU cores'],['Apple A15 (CPU)',6,'CPU cores'],['Intel Comet Lake i9',10,'CPU cores'],['AMD Threadripper 3990X',64,'CPU cores'],['NVIDIA AD102 GPU',18432,'fp32 multipliers'],['Frontier (+ 37,888 GPUs)',606208,'CPU cores']];
+  const x=v=>220+Math.log10(v)/6*470;let s='';
+  for(let k=0;k<=6;k++){s+=`<line x1="${x(Math.pow(10,k))}" y1="10" x2="${x(Math.pow(10,k))}" y2="262" style="stroke:var(--line)"/><text x="${x(Math.pow(10,k))}" y="280" class="mid xs">${['1','10','100','1k','10k','100k','1M'][k]}</text>`;}
+  M.forEach(([n,v,u],i)=>{const y=18+i*42;const lab=`${v.toLocaleString()} ${u}`,inside=x(v)+8+lab.length*6.8>752;s+=`<text x="210" y="${y+19}" class="end bd">${n}</text><rect x="220" y="${y}" width="${x(v)-220}" height="28" class="${i<4?'sl-fd':i===4?'sl-alu':'sl-ctx'}"/><text x="${inside?x(v)-8:x(v)+8}" y="${y+19}" class="${inside?'end sd':''} bd" style="font-size:11px">${lab}</text>`;});
+  set('ladSvg',s);
+  let a='';const core=(cx,cy,filled,label)=>{let q=`<rect x="${cx}" y="${cy}" width="136" height="60" class="sl-core"/><text x="${cx+6}" y="${cy+13}" class="xs">${label}</text>`;for(let l=0;l<8;l++){const lx=cx+6+(l%4)*32,ly=cy+18+Math.floor(l/4)*20;q+=`<rect x="${lx}" y="${ly}" width="28" height="16" class="sl-alu" style="${filled(l)?'':'opacity:.18'}"/>`;}return q;};
+  a+=tT(160,16,'Sequential program: 1 lane of 1 core',12,700)+tT(590,16,'Parallel program: every lane of every core',12,700);
+  for(let c=0;c<4;c++){a+=core(20+(c%2)*146,26+Math.floor(c/2)*70,l=>c===0&&l===0,`core ${c}`);a+=core(450+(c%2)*146,26+Math.floor(c/2)*70,()=>true,`core ${c} · 2 threads`);}
+  a+=A('M320 96 H440','wc','ahc')+`<text x="380" y="86" class="mid bd">~32–40×</text><text x="380" y="118" class="mid xs">4 cores × 8 lanes</text><text x="380" y="132" class="mid xs">= 32, plus</text><text x="380" y="146" class="mid xs">hyper-threading</text>`;
+  set('a1Svg',a);})();
+
+/* 12 A15-style SoC (stylized) */
+(function(){let s=`<rect x="40" y="14" width="680" height="262" class="sl-core"/>`+tT(52,32,'System on chip (stylized, not to scale)',11,600,'start');
+  const blk=(x,y,w,h,c,t1,t2,st='')=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="${c}" style="${st}"/>`+tS(x+w/2,y+h/2+(t2?-3:4),t1,11)+(t2?tS(x+w/2,y+h/2+12,t2,9.5,500):'');
+  s+=blk(60,44,110,96,'sl-fd','big CPU','core 0')+blk(180,44,110,96,'sl-fd','big CPU','core 1');
+  for(let k=0;k<4;k++)s+=blk(60+k*57.5,150,52,52,'sl-fd','small','core '+k,'opacity:.75');
+  s+=`<rect x="310" y="44" width="220" height="158" class="sl-alu"/>`+tS(420,62,'GPU (multi-core)',11);for(let k=0;k<5;k++)s+=`<rect x="${322+k*41}" y="76" width="35" height="112" class="sl-alu" style="stroke-width:1.5"/>`;
+  s+=blk(548,44,156,70,'sl-ctx','Neural Engine','(NPU) for deep networks');
+  s+=blk(548,124,156,40,'sl-pale','image / video','encode & decode');
+  s+=blk(548,172,156,30,'sl-pale','motion processor');
+  s+=blk(60,214,470,48,'sl-cache','shared system cache','and memory interface');
+  s+=blk(548,214,156,48,'sl-pale','other units','(display, security, …)');
+  set('socSvg',s);})();
+
+/* 13 memory explorer + load figure */
+(function(){const M=[16,255,14,0,0,0,0,6,32,48,255,255,255,0,0,0,128,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];let sel=8,w=1;const hx=a=>'0x'+a.toString(16).toUpperCase();
+  function draw(){const hi=a=>a>=sel&&a<sel+w;
+    $('#memGrid').innerHTML=M.map((v,a)=>`<button data-ma="${a}" class="${hi(a)?'on':''}"><small>${hx(a)}</small>${v}</button>`).join('');
+    $$('#memGrid button').forEach(b=>b.onclick=()=>{sel=Math.min(+b.dataset.ma,32-w);draw();});
+    if(w===1)$('#memMsg').innerHTML=`"The byte stored at address <b>${hx(sel)}</b> (${sel}) has the value <b>${M[sel]}</b>." In binary: ${M[sel].toString(2).padStart(8,'0')}. A byte holds 8 bits, so values from 0 to 255.`;
+    else{const b=M.slice(sel,sel+4),v=b[0]+b[1]*256+b[2]*65536+b[3]*16777216;$('#memMsg').innerHTML=`A four-byte load from address <b>${hx(sel)}</b> reads bytes ${hx(sel)}–${hx(sel+3)}: [${b.join(', ')}]. Little-endian, the first byte is the lowest-order one: ${b[0]} + ${b[1]}×256 + ${b[2]}×256² + ${b[3]}×256³ = <b>${v.toLocaleString()}</b>.`;}
+    $$('[data-mw]').forEach(x=>x.setAttribute('aria-pressed',+x.dataset.mw===w));}
+  $$('[data-mw]').forEach(b=>b.onclick=()=>{w=+b.dataset.mw;sel=Math.min(sel,32-w);draw();});draw();
+  let s=`<rect x="30" y="20" width="290" height="52" class="sl-fd"/>`+tS(175,40,'Fetch/Decode',12)+tS(175,60,'ld R0 ← mem[R2]',13,700);
+  s+=`<rect x="30" y="84" width="290" height="40" class="sl-alu"/>`+tS(175,108,'ALU (Execution Unit)',11);
+  s+=`<rect x="30" y="136" width="290" height="104" class="sl-ctx"/>`+tS(175,152,'Execution Context',11);
+  [['R0: 42  (was 96)',1],['R1: 64',0],['R2: 0xff681080',2],['R3: 0x80486412',0]].forEach(([t,h],i)=>{const y=160+i*19;s+=`<rect x="40" y="${y}" width="270" height="17" class="sl-reg"/>`+tS(175,y+13,t,11,h?700:600)+(h?`<rect x="38" y="${y-2}" width="274" height="21" rx="3" class="${h===1?'s0h':'s0h'}"/>`:'');});
+  s+=`<rect x="470" y="20" width="260" height="220" class="sl-mem"/>`+tT(600,40,'Memory',13,700);
+  [['…',0],['0xff68107c:  1024',0],['0xff681080:  42',1],['0xff681084:  32',0],['0xff681088:  0',0],['…',0]].forEach(([t,h],i)=>{const y=52+i*30;s+=`<rect x="486" y="${y}" width="228" height="24" class="${h?'te':'bg2'}"/><text x="600" y="${y+16}" class="mid ${h?'bd':''}">${t}</text>`;});
+  s+=`<path d="M314 207 C 400 207, 400 124, 484 124" class="s0a" marker-end="url(#aht)"/><text x="330" y="234" class="xs tte">address from R2</text>`;
+  s+=`<path d="M486 118 C 400 118, 400 169, 316 169" class="wc" marker-end="url(#ahc)"/><text x="462" y="108" class="end xs tcu">value 42</text>`;
+  set('ldSvg',s);})();
+
+/* 14 stalls */
+(function(){let L=4,pol='block';
+  function draw(){const blk=pol==='block',is=blk?[1,1+L,1+2*L]:[1,2,L+2],tot=is[2],sc=620/Math.max(tot,12);let s='';
+    const X=c=>110+c*sc,rows=[['ld  r0, mem[r2]',0],['ld  r1, mem[r3]',1],['add r0, r0, r1',2]];
+    const step=nice(tot/8);for(let v=0;v<=tot;v+=step)s+=`<line x1="${X(v)}" y1="18" x2="${X(v)}" y2="140" style="stroke:var(--line)"/><text x="${X(v)}" y="154" class="mid xs">${v}</text>`;
+    s+=`<text x="${X(tot)}" y="170" class="end xs">clock</text>`;
+    rows.forEach(([t,k])=>{const y=24+k*40,c=is[k];s+=`<text x="102" y="${y+17}" class="end bd" style="font-size:11px">${t}</text>`;
+      if(k<2){s+=`<rect x="${X(c)}" y="${y+6}" width="${Math.max(0,X(c+L-1)-X(c))}" height="14" class="te" style="opacity:.55"/>`;}
+      else{const ready=Math.max(is[0],is[1])+L-1,idle0=blk?is[1]+L-1:2;if(c-1>idle0)s+=hatchR(X(idle0),y+4,X(c-1)-X(idle0),18);}
+      s+=`<rect x="${X(c-1)}" y="${y+2}" width="${Math.max(3,sc)}" height="22" class="${k<2?'sl-cache':'sl-alu'}"/>`;});
+    let lx=110;[['sl-cache','load issues'],['te','waiting for memory'],['sl-alu','add executes'],['h','stalled']].forEach(([c,t])=>{s+=(c==='h'?hatchR(lx,172,14,12):`<rect x="${lx}" y="172" width="14" height="12" class="${c}" style="${c==='te'?'opacity:.55':''}"/>`)+`<text x="${lx+19}" y="182" class="xs">${t}</text>`;lx+=36+t.length*6.6;});
+    setVB('stSvg',760,190,s);
+    $('#stStat').innerHTML=[['total clocks',tot],['clocks doing work',3],['stall clocks',tot-3],['utilization',pct(3/tot)],['time at 4 GHz',`${(tot/4).toFixed(tot<40?1:0)} ns`]].map(([k,v])=>`<div>${k}<b>${v}</b></div>`).join('');
+    $('#stMsg').innerHTML=blk?`Each load takes ${L} clocks, and this processor waits for it before issuing anything else: ${L} + ${L} + 1 = <b>${tot} clocks</b> for 3 instructions.`:`The second load issues right behind the first, so their waits overlap. Only the add has to wait: 1 + ${L} + 1 = <b>${tot} clocks</b>. Better, but ${L===4?'even an L1 hit leaves':'the processor still spends'} ${tot-3} clock${tot-3===1?'':'s'} doing nothing.`;
+    $$('[data-sl]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.sl===L));$$('[data-sp]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.sp===pol));}
+  $$('[data-sl]').forEach(b=>b.onclick=()=>{L=+b.dataset.sl;draw();});$$('[data-sp]').forEach(b=>b.onclick=()=>{pol=b.dataset.sp;draw();});draw();})();
+
+/* 15 cache trace */
+(function(){const V=[16,255,14,0,0,0,0,6,32,48,255,255,255,0,0,0],hx=a=>'0x'+a.toString(16).toUpperCase();
+  const SEQ={e1:[0,1,2,3,2,1,4,1],e2:[...Array(16).keys(),0],own:[0,4,8,0,12,4]};let q='e1',cap=2,k=0;
+  function run(n){const lines=[],seen=[],rows=[];for(let i=0;i<n;i++){const a=SEQ[q][i],L=a&~3,j=lines.indexOf(L);let act,ev=null;
+      if(j>=0){lines.splice(j,1);lines.push(L);act='hit';}else{const cold=!seen.includes(L);if(lines.length>=cap)ev=lines.shift();lines.push(L);seen.push(L);act=cold?'cold':'capacity';}
+      rows.push({a,L,act,ev,st:[...lines]});}return {rows,lines};}
+  function draw(){const {rows,lines}=run(k),cur=rows[k-1];
+    $('#cqBytes').innerHTML=V.map((v,a)=>`<div class="l${(a>>2)%4} ${lines.includes(a&~3)?'inc':''} ${cur&&cur.a===a?'cur':''}">${v}<small>${hx(a)}</small></div>`).join('');
+    $('#cqTbl').innerHTML=`<tr><th>#</th><th>address accessed</th><th>cache action</th><th>cache state after (LRU first)</th></tr>`+rows.map((r,i)=>`<tr style="${i===k-1?'background:var(--cu-soft)':''}"><td class="m">${i+1}</td><td class="m">${hx(r.a)}</td><td>${r.act==='hit'?'<span style="color:var(--ok)">hit</span>':`<b style="color:var(--bad)">${r.act} miss</b>, load line ${hx(r.L)}${r.ev!==null?` (evict ${hx(r.ev)})`:''}`}</td><td class="m">${r.st.map(hx).join(', ')}</td></tr>`).join('');
+    const h=rows.filter(r=>r.act==='hit').length;$('#cqOut').innerHTML=`${k} of ${SEQ[q].length} · hits <b>${h}</b> · misses <b>${k-h}</b>`;
+    $('#cqMsg').innerHTML=!cur?'The cache starts empty. Press <b>Next access</b>.':cur.act==='hit'?`Address ${hx(cur.a)} is in line ${hx(cur.L)}, which is cached: <b>hit</b>. ${rows.slice(0,k-1).some(r=>r.a===cur.a)?'This exact address was used before: <b>temporal locality</b>.':'This address itself is new, but its line was loaded by a neighbour: <b>spatial locality</b>.'}`:cur.act==='cold'?`First access to line ${hx(cur.L)}: a <b>cold miss</b>. The whole 4-byte line (${hx(cur.L)}–${hx(cur.L+3)}) comes from DRAM${cur.ev!==null?`, evicting line ${hx(cur.ev)}, the least recently used`:''}.`:`Line ${hx(cur.L)} was cached earlier but was evicted to make room: a <b>capacity miss</b>. The cache (${cap} lines) is smaller than the data being used.`;
+    $('#cqBack').disabled=k===0;$('#cqNext').disabled=$('#cqAll').disabled=k>=SEQ[q].length;
+    $$('[data-cq]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.cq===q));$$('[data-cc]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.cc===cap));$('#cqOwn').style.display=q==='own'?'flex':'none';}
+  $$('[data-cq]').forEach(b=>b.onclick=()=>{q=b.dataset.cq;k=0;draw();});$$('[data-cc]').forEach(b=>b.onclick=()=>{cap=+b.dataset.cc;draw();});
+  $('#cqNext').onclick=()=>{k++;draw();};$('#cqBack').onclick=()=>{k--;draw();};$('#cqAll').onclick=()=>{k=SEQ[q].length;draw();};$('#cqReset').onclick=()=>{k=0;draw();};
+  $('#cqGo').onclick=()=>{const a=$('#cqIn').value.split(/[\s,]+/).filter(Boolean).map(t=>parseInt(t,/^0x/i.test(t)?16:10)).filter(v=>v>=0&&v<16).slice(0,24);if(a.length){SEQ.own=a;k=0;draw();}else $('#cqMsg').innerHTML='<span style="color:var(--bad)">Enter addresses from 0x0 to 0xF, separated by commas.</span>';};
+  draw();})();
+
+/* 16 hierarchy + average latency */
+(function(){let s=`<rect x="14" y="54" width="110" height="112" class="sl-core"/>`+tT(69,72,'Processor',12,700)+`<rect x="24" y="80" width="90" height="18" class="sl-fd"/><rect x="24" y="102" width="90" height="22" class="sl-alu"/><rect x="24" y="128" width="90" height="30" class="sl-ctx"/>`;
+  const Lv=[['L1 cache','32 KB','4 cycles',60,60,'sl-cache'],['L2 cache','256 KB','12 cycles',80,90,'sl-cache'],['L3 cache','20 MB','38 cycles',120,130,'sl-cache'],['DRAM','64 GB','~248 cycles',170,170,'sl-mem']];
+  let x=150;Lv.forEach(([n,c,l,w,h,cl],i)=>{const y=110-h/2;s+=A(`M${x-22} 110 H${x-4}`)+`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="${cl}"/>`+tS(x+w/2,106,n,i===3?13:11,700,'mid',i===3?'':'sd')+tS(x+w/2,122,c,10.5,500,'mid',i===3?'':'sd')+`<text x="${x+w/2}" y="${y+h+18}" class="mid bd">${l}</text>`;x+=w+30;});
+  s+=`<text x="150" y="212" class="xs">smaller, closer, faster  →→→  larger, farther, slower</text>`;set('hierSvg',s);
+  const PR={good:[97,80,60],mid:[85,60,50],bad:[10,5,5]};const LAT=[4,12,38,248],col=['te','pl','cu','bad'],nm=['L1','L2','L3','DRAM'];
+  function draw(){const h=['h1','h2','h3'].map(i=>+$('#'+i).value/100);['h1','h2','h3'].forEach((i,j)=>$('#'+i+'v').textContent=Math.round(h[j]*100)+'%');
+    const f=[h[0],(1-h[0])*h[1],(1-h[0])*(1-h[1])*h[2],(1-h[0])*(1-h[1])*(1-h[2])],c=f.map((v,i)=>v*LAT[i]),avg=c.reduce((a,b)=>a+b,0),mx=Math.max(10,avg*1.1),sc=600/mx;let s='',xx=110;
+    s+=`<text x="100" y="42" class="end bd">average</text>`;c.forEach((v,i)=>{const w=v*sc;if(w>0.3)s+=`<rect x="${xx}" y="26" width="${w}" height="26" class="${col[i]}"/>`;xx+=w;});
+    s+=`<text x="${xx+8}" y="44" class="bd">${avg.toFixed(1)} cycles</text>`;
+    s+=`<text x="100" y="86" class="end xs">all-L1 ideal</text><rect x="110" y="74" width="${4*sc}" height="16" class="te" style="opacity:.5"/><text x="${118+4*sc}" y="87" class="xs">4 cycles</text>`;
+    f.forEach((v,i)=>s+=`<rect x="${110+i*160}" y="112" width="12" height="12" class="${col[i]}"/><text x="${128+i*160}" y="122" class="xs">${nm[i]}: ${(v*100).toFixed(v<0.01&&v>0?2:1)}% × ${LAT[i]} = ${c[i].toFixed(1)}</text>`);
+    set('amSvg',s);
+    const dr=c[3]/avg;$('#amMsg').innerHTML=`Average load latency: <b>${avg.toFixed(1)} cycles</b>, ${(avg/4).toFixed(1)}× the all-L1 ideal. ${f[3]>0?(f[3]<0.2?`Only ${(f[3]*100).toFixed(f[3]<0.01?2:1)}% of loads go to DRAM, yet they account for <b>${pct(dr)}</b> of the average.`:`${(f[3]*100).toFixed(1)}% of loads go all the way to DRAM, and they account for <b>${pct(dr)}</b> of the average.`):'No loads reach DRAM.'} ${avg>50?'A processor running this program spends most of its time stalled: this is why memory, not arithmetic, usually decides performance.':''}`;}
+  ['h1','h2','h3'].forEach(i=>$('#'+i).oninput=()=>{$$('[data-hp]').forEach(b=>b.setAttribute('aria-pressed',false));draw();});
+  $$('[data-hp]').forEach(b=>b.onclick=()=>{PR[b.dataset.hp].forEach((v,j)=>$('#h'+(j+1)).value=v);$$('[data-hp]').forEach(x=>x.setAttribute('aria-pressed',x===b));draw();});
+  PR.good.forEach((v,j)=>$('#h'+(j+1)).value=v);draw();})();
+
+/* 17 summary chain */
+(function(){let s='';const bx=(x,y,w,h,c,t1,l)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" class="${c}"/><text x="${x+w/2}" y="${y+22}" class="mid bd">${t1}</text>`+l.map((t,i)=>`<text x="${x+w/2}" y="${y+38+i*13}" class="mid xs">${t}</text>`).join('');
+  s+=bx(10,8,150,64,'bad','ILP tapped out',['wider issue gives','almost no gain'])+bx(10,96,150,64,'bad','Power wall',['higher clocks cost','too much power'])+bx(196,52,170,64,'cu','Parallel + specialized',['more cores, vector','units, accelerators'])+bx(402,52,160,64,'pl','Software must be',['parallel and','efficient'])+bx(598,52,154,64,'te','Efficiency means',['moving data','efficiently']);
+  s+=A('M162 40 C 180 40, 176 76, 192 76')+A('M162 128 C 180 128, 176 92, 192 92')+A('M368 84 H398')+A('M564 84 H594');
+  set('chainSvg',s);})();
+})();
+</script>
+</body>
+</html>

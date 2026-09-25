@@ -12,6 +12,8 @@ Then study [Unit 4: Add parallelism](unit-04-parallelism.md), with its [worked a
 
 Continue into [Unit 5: Understand GPUs](unit-05-gpus.md), with its [worked answers](unit-05-answers.md).
 
+Continue with [Unit 6: Connect the modern system](unit-06-modern-systems.md), with its [worked answers](unit-06-answers.md).
+
 ## What this course is trying to achieve
 
 You should eventually be able to look at an unfamiliar CPU or GPU diagram, explain why its major components exist, trace how a program uses them, and make a defensible prediction about what limits performance.
@@ -22,7 +24,7 @@ Working assumption: you are comfortable with basic programming, but no electroni
 
 This is a teaching sequence, not a historical timeline. Modern processors combine ideas introduced in different lessons. Some ideas are alternatives rather than successive upgrades, and adding a feature always has costs in area, energy, complexity, or predictability.
 
-**Ready now:** the complete course outline and twenty-four written lessons across Units 1–5, with worked exercises, separate answer keys, and interactive HTML explorations. **To develop in later units:** Lessons 25–30 covering modern systems and architecture case studies. Those are planned lessons, not already-written chapters.
+**Ready now:** the complete course outline and twenty-eight written lessons across Units 1–6, with worked exercises, separate answer keys, and interactive HTML explorations. **To develop in later units:** Lessons 29–30 covering architecture case studies and a measured capstone. Those are planned lessons, not already-written chapters.
 
 ## The recurring questions
 
@@ -115,6 +117,8 @@ Lessons 20–24 are ready in [Unit 5: Understand GPUs](unit-05-gpus.md), with ei
 Use the [CUDA programming guide](https://docs.nvidia.com/cuda/cuda-programming-guide/) to establish NVIDIA terminology, then compare with [AMD's architecture documentation](https://rocmdocs.amd.com/en/develop/reference/gpu-arch/index.html). NVIDIA vocabulary is an example, not a universal GPU specification. Wave width and scheduling details are architecture-specific. CUDA “local memory” is thread-private addressable storage, commonly backed by device memory; it is not a synonym for on-chip shared memory.
 
 ## Unit F — From processors to modern systems
+
+**Ready to study:** [Unit 6 — Connect the modern system](unit-06-modern-systems.md) · [Worked answers](unit-06-answers.md)
 
 | Lesson | New idea and reason for it | Evidence that you understand it |
 |---|---|---|

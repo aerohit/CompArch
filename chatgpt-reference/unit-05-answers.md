@@ -90,4 +90,4 @@ At N = one million, the traffic-based Roofline model is more informative than at
 
 You are ready when you can trace one logical thread without assigning it a dedicated core, compute residency from explicit resources, identify why an eligible warp might still wait to issue, count sectors and banks, protect a shared tile through both barriers, and define a performance experiment with a named byte boundary.
 
-Return to the relevant exploration if one of those steps depends on memorizing a slogan. The next unit introduces matrix execution hardware, numerical formats, heterogeneous systems, and communication beyond one accelerator.
+Return to the relevant exploration if one of those steps depends on memorizing a slogan. [Continue to Unit 6](unit-06-modern-systems.md) for matrix execution hardware, numerical formats, heterogeneous systems, and communication beyond one accelerator.
