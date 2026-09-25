@@ -38,6 +38,7 @@
 .evlog{font:500 12.5px var(--mono);max-height:180px;overflow-y:auto;background:var(--panel2);border-radius:4px;padding:8px 12px;margin-top:10px}
 .evlog div{padding:1px 0}
 .evlog .k{color:var(--cu)}
+.srcnote::before{content:"Sources and model assumptions"}
 </style>
 </head>
 <body>
@@ -102,7 +103,7 @@
   <p>That's seven instructions with <b>five data reads and two data writes</b>. Three of those accesses (STORE t, the re-read of a, and ADD t) exist only because there was nowhere else to keep a value. A clever programmer could reorder this particular sum as a + b + a − c and avoid the temporary. We keep the expression's structure fixed so the storage difference is visible. For most real calculations, such rearranging isn't possible.</p>
 
   <h3 class="part">A register file</h3>
-  <p>A <b>register file</b> is a small array of registers selected by number, built for speed. The common arrangement has <b>two read ports and one write port</b>, so one instruction can read two operands and write one result in the same cycle. An instruction like <code>add x28, x5, x6</code> means "read registers 5 and 6, add them, write register 28". Every operand and the destination are named explicitly.</p>
+  <p>A <b>register file</b> is a small array of registers selected by number, built for speed. The one drawn here has <b>two read ports and one write port</b>, so one instruction can read two operands and write one result in the same cycle. (Real register files vary: wide cores have many more ports.) An instruction like <code>add x28, x5, x6</code> means "read registers 5 and 6, add them, write register 28". Every operand and the destination are named explicitly.</p>
   <figure class="fig"><div class="sc">
     <svg viewBox="0 0 760 250" role="img" aria-label="Register file with two read ports feeding the ALU and one write port for the result">
       <rect x="250" y="20" width="200" height="210" class="te"/><text x="350" y="42" class="mid hd">Register file</text>
@@ -117,7 +118,7 @@
       <path d="M640 110 H700 V244 H20 V210 H40" class="wc"/><text x="690" y="236" class="end sm tcu">16 goes back to x28</text>
     </svg></div>
     <figcaption><b>Two reads and one write every cycle.</b> Selecting a register by a 5-bit number is fast because the array is tiny and sits right next to the ALU. That is why intermediate values belong here and not in memory.</figcaption></figure>
-  <p>More registers aren't free. Each one costs storage and wiring, and every instruction needs more bits to name them: 32 registers need 5 bits per register field. The register file's delay also grows with its size and port count. That's why real instruction sets settle on 16 to 32 general-purpose registers.</p>
+  <p>More registers aren't free. Each one costs storage and wiring, and every instruction needs more bits to name them: 32 registers need 5 bits per register field. The register file's delay also grows with its size and port count. That's why general-purpose register counts stay modest: x86-64 has 16, AArch64 31, and RISC-V 32 (16 in its RV32E variant).</p>
 
   <h3 class="part">Stepping onto a real instruction set: RV32I</h3>
   <p>From here on we use <b>RISC-V</b>, specifically its 32-bit base integer set, <b>RV32I</b>. It's a real, openly documented ISA, and it's clean enough to learn from. What changes from NIB-8:</p>
@@ -126,7 +127,7 @@
     <tr><td>Working registers</td><td>1 (ACC)</td><td>32, named <code>x0</code>–<code>x31</code>. <code>x0</code> always reads 0 and ignores writes.</td></tr>
     <tr><td>Register width</td><td class="m">8 bits</td><td class="m">32 bits</td></tr>
     <tr><td>An address names…</td><td>one 8-bit word</td><td>one <b>byte</b>. A 32-bit word takes 4 consecutive addresses.</td></tr>
-    <tr><td>Instruction size</td><td class="m">1 byte</td><td class="m">4 bytes (so PC advances by 4)</td></tr>
+    <tr><td>Instruction size</td><td class="m">1 byte</td><td class="m">4 bytes (so sequential fall-through advances PC by 4; a taken branch or jump sets another PC)</td></tr>
     <tr><td>Arithmetic operands</td><td>ACC and one memory word</td><td>registers only (load/store design)</td></tr>
   </table></div>
   <p>We'll use just a few instructions:</p>
@@ -155,11 +156,11 @@
       <path d="M710 220 V238 H290 V150" class="wc dash" marker-end="url(#ahc)"/><text x="300" y="252" class="sm tcu">…and the loaded value 6 goes into x6</text>
     </svg></div>
     <figcaption><b>Five numbers, five roles.</b> 6 is a register number. 4 is an immediate, a constant baked into the instruction. 0x100 is the <i>contents</i> of x10. 0x104 is the <b>effective address</b> computed from them. The loaded word is whatever sits at 0x104, here b = 6. <code>lw</code> never loads the number 4 just because "4" appears in the instruction.</figcaption></figure>
-  <p>Because addresses name bytes, that 32-bit word occupies four addresses. RISC-V is <b>little-endian</b>: the lowest address holds the least significant byte.</p>
+  <p>Because addresses name bytes, that 32-bit word occupies four addresses. These examples use a <b>little-endian</b> RISC-V memory system: the byte at the lowest address supplies the least significant eight bits. (Instruction fetch in RISC-V is always little-endian; the execution environment may choose big-endian for data memory, though little-endian is by far the most common.)</p>
   <figure class="fig narrow"><div class="sc">
     <svg viewBox="0 0 560 130" role="img" aria-label="The word 6 stored little-endian at addresses 0x104 to 0x107">
       <g id="leBytes"></g>
-    </svg></div><figcaption><b>Little-endian layout</b> of the word 0x00000004 at 0x104. Read the bytes from the highest address down to recover the value.</figcaption></figure>
+    </svg></div><figcaption><b>Little-endian layout</b> of the word 0x00000006 at 0x104: bytes 06 00 00 00. The byte at the lowest address is the least significant; read from the highest address down to recover the value.</figcaption></figure>
 
   <h3 class="part">Try it: the same calculation, two machines</h3>
   <p>Step through both versions and watch the memory-traffic counters. The register version keeps a in x5 the whole time, so it's never re-read, and both partial results stay in registers.</p>
@@ -175,7 +176,7 @@
   </div><figcaption><b>Same answer, less memory traffic:</b> 3 reads and 1 write instead of 5 and 2. That shows one benefit of registers. It doesn't prove a particular speedup, because the two machines differ in instruction width, clock and memory system, and a "memory access" later won't even mean "a trip to DRAM" (Unit 3's caches).</figcaption></figure>
 
   <h3 class="part">Registers are not variables</h3>
-  <p>The ISA knows nothing about the names in your source code. The <b>compiler</b> decides where each value lives at each moment. A variable might sit in a register for a while, be stored to memory, be kept in two places, or vanish entirely if it's optimized away. One register holds many different variables over a program's life. When a program needs more live values than there are registers, the compiler must <b>spill</b> some to memory and reload them later.</p>
+  <p>The ISA knows nothing about the names in your source code. The <b>compiler</b> decides where each value lives at each moment. A variable might sit in a register for a while, be stored to memory, be kept in two places, or vanish entirely if it's optimized away. One register holds many different variables over a program's life. When a program needs more live values than there are registers, the compiler must <b>spill</b> some to memory and reload them later. (Real compilers first try to avoid this, for example by reordering computations so fewer values are live at once, or by recomputing a cheap value instead of saving it. The lesson stands: register pressure can create memory traffic.)</p>
   <figure class="fig"><div class="sc"><svg id="spillSvg" viewBox="0 0 760 170" role="img" aria-label="Ten live values competing for four registers: six must spill to memory"></svg></div>
     <figcaption><b>Register pressure.</b> Ten values are needed at once, but only four registers are free, so six live in memory and cost loads and stores. More registers relieve this. So does restructuring code so fewer values are live at the same time. GPUs face the same problem, and it's severe there (a later unit).</figcaption></figure>
 
@@ -205,7 +206,7 @@
   </div>
 
   <h3 class="part">What the ISA promises, and what it doesn't</h3>
-  <p>An <b>instruction set architecture</b> is a contract. It specifies the instructions, the registers, and the precise effect of each instruction on that visible state. It deliberately says nothing about <i>how</i> or <i>how fast</i>. A <b>microarchitecture</b> is one particular hardware design that honours the contract.</p>
+  <p>An <b>instruction set architecture</b> is a contract. It specifies the instructions, the registers, and the precise effect of each instruction on that visible state: register results, memory effects, and which exceptions it can raise. It deliberately says nothing about <i>how</i> or <i>how fast</i>. A <b>microarchitecture</b> is one particular hardware design that honours the contract.</p>
   <figure class="fig"><div class="sc">
     <svg viewBox="0 0 760 200" role="img" aria-label="One ISA contract implemented by three different microarchitectures">
       <rect x="200" y="14" width="360" height="56" class="te"/><text x="380" y="38" class="mid hd">RV32I contract</text><text x="380" y="56" class="mid sm">"add x28, x5, x6 sets x28 to x5 + x6, then PC += 4"</text>
@@ -214,7 +215,7 @@
       <rect x="275" y="120" width="210" height="64" class="bx"/><text x="380" y="144" class="mid bd">multicycle</text><text x="380" y="162" class="mid sm">3–5 short cycles, reused parts</text>
       <rect x="520" y="120" width="210" height="64" class="bx"/><text x="625" y="144" class="mid bd">pipelined / out-of-order</text><text x="625" y="162" class="mid sm">Unit 3: many in flight at once</text>
     </svg></div>
-    <figcaption><b>Same contract, different machines.</b> A tiny microcontroller and a high-end core can run the <i>same binary</i> and agree on every visible result. They differ in cycles, internal state and cost. Only the visible results at defined points (after each instruction, for now) must match.</figcaption></figure>
+    <figcaption><b>Same contract, different machines.</b> A tiny microcontroller and a high-end core can run the <i>same binary</i> and agree on every visible result, provided both support the ISA extensions, ABI and execution environment the binary needs. They differ in cycles, internal state and cost. Only the visible results at defined points must match; for the simplified machines in this unit, that means after each instruction.</figcaption></figure>
 
   <h3 class="part">Design 1: single-cycle</h3>
   <p>Do everything for an instruction in one clock cycle: fetch it, decode it, read registers, use the ALU, access data memory and write a register. The trouble is that the clock period must fit the <b>longest</b> chain, which is a load. An add finishes its real work sooner, but it still waits for the next clock edge.</p>
@@ -227,7 +228,7 @@
     <svg viewBox="0 0 760 210" role="img" aria-label="Multicycle phases F, D, E, M, W with internal latches between them">
       <g id="mcPhases"></g>
     </svg></div>
-    <figcaption><b>Five phases, four internal latches.</b> IR, A/B, ALUout and MDR are microarchitectural state. No RISC-V instruction can read them, and a different implementation might not have them at all. The one memory can serve fetch in F and data in M, because they happen in different cycles.</figcaption></figure>
+    <figcaption><b>Five phases, four internal latches.</b> The blocks are successive clock cycles of <i>one</i> instruction, not a pipeline: the next instruction doesn't start until this one finishes. IR, A/B, ALUout and MDR are microarchitectural state. No RISC-V instruction can read them, and a different implementation might not have them at all. The one memory can serve fetch in F and data in M, because they happen in different cycles.</figcaption></figure>
   <div class="tbl"><table>
     <tr><th>Instruction</th><th>Phases used</th><th>Cycles</th><th>Why it skips some</th></tr>
     <tr><td class="m">lw</td><td class="m">F D E M W</td><td>5</td><td>Uses everything: address in E, read in M, write register in W</td></tr>
@@ -338,9 +339,9 @@
     <li><b>Interrupt</b>: asynchronous, caused by something outside the instruction stream, such as a timer tick or a network packet.</li>
     <li><b>System call</b>: an intentional request for OS service. On RISC-V that's the <code>ecall</code> instruction.</li>
   </ul>
-  <p>All of these cause a <b>trap</b>. The hardware records a small amount of control information (on RISC-V, the interrupted PC goes into a special register and the cause into another), switches to a privileged mode (from user code, a higher <b>privilege level</b>), and jumps to a handler. The hardware does <i>not</i> automatically save all 31 registers. The handler's software must save any registers it will use and restore them before returning, so the interrupted code never notices.</p>
+  <p>All of these cause a <b>trap</b>. The hardware records a small amount of control information (on RISC-V, the interrupted PC goes into a special register and the cause into another), switches to a privileged mode (from user code, a higher <b>privilege level</b>), and jumps to a handler. The hardware does <i>not</i> automatically save all 31 registers. The handler's software must save any registers it will use and restore them before returning. What happens next depends on the trap: after an <b>interrupt</b>, the handler returns to the saved PC and the interrupted code never notices. After an <b>ecall</b>, it returns to the instruction <i>after</i> the ecall, usually with a result in a register. After a <b>fault</b>, it may fix the problem and retry the instruction, or terminate the thread. The exact control state saved and the privilege levels involved depend on how the trap is configured (see the RISC-V privileged specification).</p>
   <figure class="fig"><div class="sc"><svg id="xferSvg" viewBox="0 0 760 230" role="img" aria-label="Three kinds of control transfer: function call, trap handled and returned, and trap leading to a switch to another thread"></svg></div>
-    <figcaption><b>Three transfers that are easy to confuse.</b> Entering the kernel does <i>not</i> mean switching threads. Often the handler just deals with the event and returns to the same thread. A context switch happens only when the OS scheduler decides that a different thread should run.</figcaption></figure>
+    <figcaption><b>Three transfers that are easy to confuse.</b> Entering the kernel does <i>not</i> mean switching threads. Often the handler just deals with the event and returns to the same thread: to the saved PC after an interrupt, or past the <code>ecall</code> after a system call. A context switch happens only when the OS scheduler decides that a different thread should run.</figcaption></figure>
 
   <h3 class="part">Program, process, thread, hardware context</h3>
   <figure class="fig"><div class="sc">
@@ -351,9 +352,9 @@
       <rect x="248" y="118" width="196" height="118" class="pl"/><text x="346" y="140" class="mid bd">Thread B</text><text x="346" y="162" class="mid sm">own PC + registers</text><text x="346" y="180" class="mid sm">own stack</text><text x="346" y="204" class="mid sm">continuation</text>
       <rect x="520" y="60" width="220" height="130" class="te" style="stroke-width:2"/><text x="630" y="84" class="mid hd">Physical core</text>
       <rect x="540" y="98" width="180" height="74" class="bx"/><text x="630" y="120" class="mid bd">hardware context</text><text x="630" y="138" class="mid sm">live PC + x1…x31</text><text x="630" y="156" class="mid sm">(+ privilege, CSRs)</text>
-      <path d="M460 136 H538" class="wc dash" marker-end="url(#ahc)"/><text x="499" y="126" class="mid xs tcu">loads A or B</text><text x="380" y="264" class="mid sm">The OS loads one thread's saved context into the hardware context. The other thread waits as saved data in OS memory.</text>
+      <path d="M460 136 H538" class="wc dash" marker-end="url(#ahc)"/><text x="499" y="126" class="mid xs tcu">loads A or B</text><text x="380" y="264" class="mid sm">The OS loads one thread's saved context into the hardware context. The other thread is ready but not running.</text>
     </svg></div>
-    <figcaption><b>Layers of "who is running".</b> A core with SMT (a later unit) provides <i>several</i> hardware contexts. Without it, as here, one core runs exactly one thread at a time. The others exist only as saved register values.</figcaption></figure>
+    <figcaption><b>Layers of "who is running".</b> A core with SMT (a later unit) provides <i>several</i> hardware contexts. Without it, as here, one core has one live hardware context, so it runs exactly one thread at a time. The others are <b>ready</b> (runnable but not running) or <b>blocked</b> (waiting for an event). Their register context is saved in OS memory, while their stacks, other memory and scheduler records continue to exist.</figcaption></figure>
   <div class="tbl"><table>
     <tr><th>Term</th><th>What it is in our model</th></tr>
     <tr><td><b>Program</b></td><td>Code and data definitions: a description of work, e.g. a file on disk.</td></tr>
@@ -365,7 +366,7 @@
   <div class="pitfall">Two threads in one process have separate stacks, but <b>the hardware doesn't protect one thread's stack from the other</b>. They share the address space, so a thread with a valid pointer into another's stack can read or write it. Separate stacks are a software discipline, not isolation.</div>
 
   <h3 class="part">Try it: two threads, one hardware context</h3>
-  <p>Thread A counts up by 2 and thread B counts down by 1. <b>Both use register x5.</b> There's only one real x5, so every switch must save the running thread's value and restore the other's. The switch below is summarized as one action. A real one executes hundreds to thousands of kernel instructions, plus indirect costs such as cold caches.</p>
+  <p>Thread A counts up by 2 and thread B counts down by 1. <b>Both use register x5.</b> There's only one real x5, so every switch must save the running thread's value and restore the other's. The switch below is summarized as one action. A real one takes additional kernel work (entering the kernel, running the scheduler, saving and restoring state) and can leave caches holding the other thread's data. Exactly which registers are saved depends on where and how the switch happens; floating-point and vector state, for instance, is often saved only when needed. And a switch never copies the process's address space.</p>
   <figure class="fig"><div class="widget">
     <div class="grid2">
       <div><div class="asm" id="t7asm" style="margin:0"></div></div>
@@ -375,14 +376,22 @@
       </div>
     </div>
     <div class="ctrl"><button id="t7step" class="pri">Run 1 instruction ▶</button><button id="t7int">Interrupt, same thread resumes</button><button id="t7sw">Timer interrupt → switch threads ⇄</button><button id="t7reset">Reset</button></div>
-    <div class="evlog" id="t7log"></div>
-  </div><figcaption><b>Watch x5.</b> After a switch, the same hardware register holds the other thread's value. Switch back and the first thread's value reappears, restored from its saved context, and it continues <i>exactly</i> where it stopped, even between two instructions of its loop. A real switch saves more (all integer registers, floating-point and vector state, privilege state) and may change address spaces between processes. It never copies the process's memory.</figcaption></figure>
+    <p class="msg" id="t7status"></p>
+    <div class="evlog" id="t7log" aria-label="Event history"></div>
+  </div><figcaption><b>Watch x5.</b> After a switch, the same hardware register holds the other thread's value. Switch back and the first thread's value reappears, restored from its saved context, and it continues <i>exactly</i> where it stopped, even between two instructions of its loop. A real switch saves more (all integer registers and privilege state, plus floating-point or vector state when the thread has used it) and may change address spaces between processes. It never copies the process's memory.</figcaption></figure>
 
   <div class="tbl"><table>
     <tr><th>Event</th><th>Why control moves</th><th>Does the running thread change?</th></tr>
     <tr><td>Function call / return</td><td>Run another routine, then come back</td><td><b>No</b></td></tr>
-    <tr><td>Trap: syscall, exception, interrupt</td><td>Request a service or handle an event, at a higher privilege level</td><td><b>Not necessarily</b>: usually returns to the same thread</td></tr>
+    <tr><td>Trap: syscall, exception, interrupt</td><td>Request a service or handle an event, at a higher privilege level</td><td><b>Not necessarily</b>: often returns to the same thread</td></tr>
     <tr><td>Context switch</td><td>The scheduler gives the hardware context to a different thread</td><td><b>Yes</b></td></tr>
+  </table></div>
+  <p>Each of these saves a different set of state, for a different reason:</p>
+  <div class="tbl"><table>
+    <tr><th>Event</th><th>What gets saved</th><th>Why that set</th></tr>
+    <tr><td>Function call</td><td><code>ra</code> and whichever registers the calling convention says must survive (callee-saved registers the callee uses)</td><td>Both sides agreed on the convention in advance, so only those need saving</td></tr>
+    <tr><td>Interrupt handler</td><td>The interrupted PC and cause (by hardware), plus every register the handler will change (by software)</td><td>The interrupted code agreed to nothing, so anything disturbed must be put back</td></tr>
+    <tr><td>Thread switch</td><td>The running thread's whole continuation: PC, registers and sp, into its saved context</td><td>Another thread will use all the registers; this one must resume later exactly where it stopped</td></tr>
   </table></div>
 
   <div class="predict"><div class="ph"><b>Predict</b><span>Trace addresses, not intentions.</span></div><ol>
@@ -393,9 +402,11 @@
     <li>With the save and restore removed, where does f's final <code>jalr</code> jump, and why?
       <details><summary>Show answer</summary><div class="ans"><p>To <b>0x90</b>. The second <code>jal ra, double</code> (at 0x8C) set ra = 0x90, and nothing restored main's 0x48. At 0x90 it adds 1 again, bumps sp by another 16, returns to 0x90 again, and loops forever.</p></div></details></li>
     <li>Does every interrupt cause a thread switch? How can the same thread resume?
-      <details><summary>Show answer</summary><div class="ans"><p><b>No.</b> The handler saves the registers it will use, handles the event (say, a key press), restores them, and returns to the saved PC with a trap-return instruction. The same thread continues, unaware anything happened. A switch occurs only if the OS decides another thread should run. Try "Interrupt, same thread resumes" in the explorer.</p></div></details></li>
+      <details><summary>Show answer</summary><div class="ans"><p><b>No.</b> The handler saves the registers it will use, handles the event (say, a key press), restores them, and returns to the saved PC with a trap-return instruction. The same thread continues, unaware anything happened. (That's for an interrupt; a system call instead resumes after the <code>ecall</code>, with its result.) A switch occurs only if the OS decides another thread should run. Try "Interrupt, same thread resumes" in the explorer.</p></div></details></li>
     <li>In the two-thread explorer: run one instruction of A, switch, run one of B, switch back. What are the live PC and x5, and what does A execute next?
-      <details><summary>Show answer</summary><div class="ans"><p>After A's <code>addi</code>, A has x5 = 2 and PC = 0x44. After the switch, B runs one <code>addi</code> (x5 50 → 49). Switching back restores <b>PC = 0x44, x5 = 2</b>, so A executes its <code>jal x0, 0x40</code> next. Its pending instruction is neither skipped nor replaced.</p></div></details></li>
+      <details><summary>Show answer</summary><div class="ans"><p>After A's <code>addi</code>, A has x5 = 2 and PC = 0x44. After the switch, B runs one <code>addi</code> (x5 50 → 49). Switching back restores <b>PC = 0x44, x5 = 2</b>, so A executes its <code>jal x0, loop_A</code> next. Its pending instruction is neither skipped nor replaced.</p></div></details></li>
+    <li>In thread A's listing, <code>jal x0, loop_A</code> sits at 0x44 and <code>loop_A</code> is at 0x40. What target does it jump to, and what displacement does the instruction actually encode? Why do assembly listings use labels rather than a bare number?
+      <details><summary>Show answer</summary><div class="ans"><p>Target <b>0x40</b>; encoded displacement 0x40 − 0x44 = <b>−4 bytes</b>, because <code>jal</code> is PC-relative. The instruction never contains the address 0x40, so the same bytes placed elsewhere would jump somewhere else. A bare number is ambiguous (target or offset?), and assemblers differ in how they read it; a label lets the assembler compute the correct displacement.</p></div></details></li>
     <li>Two threads in one process have different sp values. Does that mean two cores, two protected address spaces, or two isolated stacks?
       <details><summary>Show answer</summary><div class="ans"><p><b>None of these.</b> They may share one core by taking turns, they share one address space, and their stacks are just different regions of it that either thread could access. What's truly distinct is each thread's <b>register state and continuation</b>.</p></div></details></li>
   </ol></div>
@@ -411,6 +422,7 @@
     <tr><td>7</td><td>Calls, stacks, traps, context switches</td><td>ra/sp, frames, saved contexts, privilege</td><td>ABI and OS conventions + ISA trap rules</td><td>Switching costs time</td></tr>
   </table></div>
   <p>Closing exercise: explain (1) why a processor can run the <i>same program</i> faster without changing its ISA, and (2) why running several software threads doesn't by itself mean several instructions execute at the same moment. Unit 3 answers the first question in depth, by overlapping instructions inside one core.</p>
+  <div class="worked srcnote"><b>Sources and model assumptions.</b> The explorers on this page are small teaching models, not RISC-V or operating-system emulators. They implement a handful of RV32I instructions, use aligned little-endian 32-bit words, show each instruction only once it has completed, and summarize operating-system work (trap entry, scheduling, saving and restoring) as single steps. The real-architecture facts come from the <a href="https://docs.riscv.org/reference/isa/v20240411/unpriv/rv32.html">RV32I base ISA specification</a> (instruction formats, PC-relative <code>jal</code>, loads and stores, endianness), the <a href="https://github.com/riscv-non-isa/riscv-elf-psabi-doc/blob/master/riscv-cc.adoc">RISC-V calling convention</a> (<code>ra</code>, <code>sp</code>, argument and saved registers), and the <a href="https://docs.riscv.org/reference/isa/_attachments/riscv-privileged.pdf">RISC-V privileged specification</a> (trap entry, saved exception PC and cause, trap return). For a concrete operating system's saved state, see xv6's <a href="https://github.com/mit-pdos/xv6-riscv/blob/riscv/kernel/proc.h">process and context definitions</a>, which distinguish RUNNABLE from RUNNING. Links checked September 2026.</div>
   <div class="nextunit"><a href="unit-01-build-a-computer.html"><small>← Unit 1</small>Build a computer</a><a href="unit-03-faster-core.html"><small>Next · Unit 3</small>Make one CPU core faster →</a></div>
 </section>
 
@@ -601,7 +613,7 @@ const H=v=>'0x'+(v>>>0).toString(16).toUpperCase();
   const lane=(y,title,segs)=>{let h=`<text x="20" y="${y-8}" class="bd">${title}</text>`;segs.forEach(([x,w,c,l,dy])=>{h+=`<rect x="${x}" y="${y+(dy||0)}" width="${w}" height="26" class="${c}"/><text x="${x+w/2}" y="${y+(dy||0)+17}" class="mid xs">${l}</text>`;});return h;};
   let h='';
   h+=lane(28,'Function call',[[20,200,'cu','thread A: main'],[220,160,'cu','thread A: f (callee)',18],[380,360,'cu','thread A: main continues']]);
-  h+=lane(104,'Trap handled, same thread resumes',[[20,240,'cu','thread A'],[260,170,'te','kernel handler (privileged)',18],[430,310,'cu','thread A resumes at saved PC']]);
+  h+=lane(104,'Trap handled, same thread resumes',[[20,240,'cu','thread A'],[260,170,'te','kernel handler (privileged)',18],[430,310,'cu','thread A resumes']]);
   h+=lane(180,'Trap → context switch',[[20,240,'cu','thread A'],[260,80,'te','handler',18],[340,180,'te','scheduler: save A, load B',18],[520,220,'pl','thread B continues']]);
   h+='<text x="740" y="226" class="end xs">time →</text>';
   $('#xferSvg').innerHTML=h;
@@ -609,18 +621,19 @@ const H=v=>'0x'+(v>>>0).toString(16).toUpperCase();
 
 /* ---------- L7 two threads ---------- */
 (function(){
-  const CODE={A:[[0x40,'addi x5, x5, 2','count up by 2'],[0x44,'jal x0, 0x40','loop']],B:[[0x80,'addi x5, x5, -1','count down by 1'],[0x84,'jal x0, 0x80','loop']]};
+  const CODE={A:[[0x40,'addi x5, x5, 2','count up by 2'],[0x44,'jal x0, loop_A','back to 0x40 (offset −4)']],B:[[0x80,'addi x5, x5, -1','count down by 1'],[0x84,'jal x0, loop_B','back to 0x80 (offset −4)']]};
   let hw,saved,run,log;
   function reset(){saved={A:{pc:0x40,x5:0,sp:0x3000},B:{pc:0x80,x5:50,sp:0x4000}};run='A';hw={...saved.A};log=['<span class="k">start</span>: hardware context loaded with thread A'];render(null);}
   function exec(){const c=CODE[run].find(x=>x[0]===hw.pc);
     if(c[1].startsWith('addi')){hw.x5+=run==='A'?2:-1;hw.pc+=4;log.push(`${run} ran <b>${c[1]}</b>: x5 = ${hw.x5}`);return ['x5','pc'];}
-    hw.pc=run==='A'?0x40:0x80;log.push(`${run} ran <b>${c[1]}</b>: PC = ${H(hw.pc)}`);return ['pc'];}
+    hw.pc=run==='A'?0x40:0x80;log.push(`${run} ran <b>${c[1]}</b>: PC = ${H(c[0])} − 4 = ${H(hw.pc)}`);return ['pc'];}
   function render(chg){
     const other=run==='A'?'B':'A';
-    $('#t7asm').innerHTML=['A','B'].map(t=>`<div class="r"><span class="lbl">thread ${t}:</span><span></span><span></span></div>`+CODE[t].map(([pc,tx,c])=>{const cur=(t===run&&hw.pc===pc)||(t!==run&&saved[t].pc===pc);return `<div class="r ${cur?'cur':''}" style="${cur&&t!==run?'background:var(--pl-soft)':''}"><span class="a">${H(pc)}</span><span class="i">${tx}</span><span class="c">${c}${cur?(t===run?' ← next':' ← will resume here'):''}</span></div>`;}).join('')).join('');
+    $('#t7asm').innerHTML=['A','B'].map(t=>`<div class="r"><span class="lbl">thread ${t}</span><span></span><span></span></div><div class="r"><span class="a"></span><span class="i">loop_${t}:</span><span></span></div>`+CODE[t].map(([pc,tx,c])=>{const cur=(t===run&&hw.pc===pc)||(t!==run&&saved[t].pc===pc);return `<div class="r ${cur?'cur':''}" style="${cur&&t!==run?'background:var(--pl-soft)':''}"><span class="a">${H(pc)}</span><span class="i">${tx}</span><span class="c">${c}${cur?(t===run?' ← next':' ← will resume here'):''}</span></div>`;}).join('')).join('');
     $('#t7hw').innerHTML=`<h6>Live hardware context — running thread <span style="color:var(--cu)">${run}</span></h6><div class="regs">`+[['PC',H(hw.pc),'pc'],['x5',hw.x5,'x5'],['sp',H(hw.sp),'sp']].map(([n,v,k])=>`<div class="reg ${chg&&chg.includes(k)?'w':''}"><small>${n}</small><b>${v}</b></div>`).join('')+'</div>';
-    $('#t7tcb').innerHTML=['A','B'].map(t=>`<div class="${t===run?'run':''}"><h6>thread ${t}${t===run?' (running: this copy is stale)':' (waiting)'}</h6>PC ${H(saved[t].pc)}<br>x5 ${saved[t].x5}<br>sp ${H(saved[t].sp)}</div>`).join('');
+    $('#t7tcb').innerHTML=['A','B'].map(t=>`<div class="${t===run?'run':''}"><h6>thread ${t}${t===run?' (running: this copy is stale)':' (ready, not running)'}</h6>PC ${H(saved[t].pc)}<br>x5 ${saved[t].x5}<br>sp ${H(saved[t].sp)}</div>`).join('');
     $('#t7log').innerHTML=log.slice(-14).map(l=>`<div>${l}</div>`).join('');$('#t7log').scrollTop=1e6;
+    $('#t7status').innerHTML=`<b>Latest:</b> ${log[log.length-1].replace(/\.?$/,'.')} Running: thread ${run}, PC ${H(hw.pc)}, x5 = ${hw.x5}.`;
   }
   $('#t7step').onclick=()=>render(exec());
   $('#t7int').onclick=()=>{log.push(`<span class="k">interrupt</span>: trap to kernel; handler saves the registers it uses, handles the event, restores them, returns to ${H(hw.pc)}. Thread ${run} continues, x5 still ${hw.x5}.`);render(null);};
