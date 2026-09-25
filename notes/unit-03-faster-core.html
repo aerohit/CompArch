@@ -48,7 +48,7 @@
 .freel span.used{background:var(--panel2);color:var(--mute);text-decoration:line-through}
 .rob{display:grid;gap:5px}
 .rob .e{display:grid;grid-template-columns:44px minmax(150px,1.4fr) 80px 110px 70px;gap:8px;align-items:center;border:1px solid var(--line);border-radius:4px;padding:6px 10px;font:500 13px var(--mono);background:var(--panel)}
-@media (max-width:620px){.rob .e{grid-template-columns:40px 1fr 90px}.rob .e .x1,.rob .e .x2{display:none}}
+@media (max-width:620px){.rob{overflow-x:auto;padding-bottom:4px}.rob .e{min-width:520px}}
 .rob .e.head{box-shadow:inset 4px 0 0 var(--cu)}
 .st-wait{color:var(--mute)} .st-exec{color:var(--warn);font-weight:600} .st-done{color:var(--te);font-weight:600} .st-ret{color:var(--ok);font-weight:600} .st-sq{color:var(--bad);font-weight:600;text-decoration:line-through} .st-flt{color:var(--bad);font-weight:600}
 .rob .e.retired{opacity:.55}
@@ -60,6 +60,7 @@
 .calc{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px;align-items:end}
 .bigbar{height:26px;background:var(--panel2);border-radius:3px;position:relative;margin-top:10px;overflow:hidden}
 .bigbar i{position:absolute;top:0;bottom:0;left:0;border-radius:3px}
+.srcnote::before{content:"Sources and model assumptions"}
 </style>
 </head>
 <body>
@@ -92,7 +93,7 @@
     <dt>Study plan</dt><dd>Three passes, each its own session: <b>overlap and hazards</b> (8–9), <b>memory and prediction</b> (10–12), then <b>width, scheduling and precise completion</b> (13–15).</dd>
     <dt>A note on models</dt><dd>Every explorer states its own model. The in-order five-stage pipeline of Lessons 8–9 is not the out-of-order core of 14–15. Cache sizes, latencies and widths are invented teaching numbers, not any real product's.</dd>
   </dl>
-  <div class="insight">One distinction runs through the whole unit. <b>Architectural state</b> is what the instruction contract makes visible: registers, memory, PC. <b>Microarchitectural state</b> is everything the hardware keeps to go faster: pipeline registers, cache contents, predictor tables, rename maps, queues. It can change <i>timing</i>, but it must never change the program's <i>results</i>.</div>
+  <div class="insight">One distinction runs through the whole unit. <b>Architectural state</b> is what the instruction contract makes visible: registers, memory, PC. <b>Microarchitectural state</b> is everything the hardware keeps to go faster: pipeline registers, cache contents, predictor tables, rename maps, queues. It can change <i>timing</i>, but it must never change the program's architecturally defined <i>results</i> for the same inputs. (Timing can still matter in other ways: it can change how threads interleave and when a program interacts with the outside world.)</div>
   <div class="lessonmap">
     <a href="#l8"><b>LESSON 8</b>Overlap with a pipeline</a>
     <a href="#l9"><b>LESSON 9</b>Hazards, stalls &amp; forwarding</a>
@@ -155,7 +156,7 @@
   <p>For N independent instructions in an ideal K-stage pipeline, the total is <b>N + K − 1 cycles</b>: K − 1 cycles to fill, then one completion per cycle. That formula already includes draining, so don't add it twice. A short program never gets near the ideal K× speedup:</p>
   <figure class="fig"><div class="sc"><svg id="p8curve" viewBox="0 0 760 240" role="img" aria-label="Speedup versus number of instructions approaches an asymptote below the stage count"></svg></div>
     <figcaption><b>Speedup climbs toward a ceiling it never reaches.</b> With 5 stages and 0.1 ns overhead, the ceiling is 5 / 1.1 ≈ 4.55×, not 5×. And the slowest stage sets the clock: stretch E to 2 ns and every stage now gets 2.1 ns, and the ceiling collapses.</figcaption></figure>
-  <div class="insight">Pipelining makes the <b>machine</b> faster without making any <b>instruction</b> faster. That's worth remembering whenever someone confuses latency with throughput, which happens again with caches, GPUs and networks.</div>
+  <div class="insight">In steady state, pipelining raises the <b>machine</b>'s throughput without making any <b>instruction</b> faster. In fact each instruction takes a little longer, and a short fragment can finish later than on the unpipelined machine because of the fill time and register overhead. That's worth remembering whenever someone confuses latency with throughput, which happens again with caches, GPUs and networks.</div>
 
   <div class="predict"><div class="ph"><b>Predict</b><span>Draw the diagram on paper first.</span></div><ol>
     <li>With 4 independent instructions, which stage holds each instruction in cycle 4? How many have completed?
@@ -235,12 +236,12 @@
   <h3 class="part">Why a hierarchy</h3>
   <p>Fast memory is small and expensive per bit, and big memory is slow. No single technology is both, so machines stack several: registers, then one or more levels of cache, then DRAM, then storage. The names L1, L2 and L3 are just levels. Their sizes and policies differ between designs.</p>
   <figure class="fig"><div class="sc"><svg id="hierSvg" viewBox="0 0 760 230" role="img" aria-label="Memory hierarchy with rough sizes and latencies"></svg></div>
-    <figcaption><b>Orders of magnitude, not specifications.</b> The gap between an L1 hit and a DRAM access is roughly 100×. A cache only works if programs tend to reuse the small set of data it holds.</figcaption></figure>
+    <figcaption><b>Orders of magnitude, not specifications.</b> The gap between an L1 hit and a DRAM access is roughly 100×. A cache pays off when programs reuse what it holds: the same addresses again soon (temporal locality), or neighbouring bytes of a line it has just fetched (spatial locality). Even a single sequential pass hits on the later bytes of each line.</figcaption></figure>
 
   <h3 class="part">Locality: the bet caches make</h3>
   <p>Caches bet on two habits real programs have. <b>Temporal locality</b>: something used now will probably be used again soon. <b>Spatial locality</b>: something <i>near</i> what was just used will probably be used soon. That's why a cache moves a whole <b>line</b> (typically 64 bytes) at a time: one miss fetches the neighbours too.</p>
   <figure class="fig"><div class="sc"><svg id="locSvg" viewBox="0 0 760 210" role="img" aria-label="Address versus time plots showing spatial locality in an array scan and temporal locality in repeated variables"></svg></div>
-    <figcaption><b>Plots of address against time.</b> A scan climbs steadily (spatial). A loop's few variables form flat bands (temporal). A pointer chase scatters, so neither bet pays off.</figcaption></figure>
+    <figcaption><b>Plots of address against time.</b> A scan climbs steadily (spatial). A loop's few variables form flat bands (temporal). This pointer chase jumps to scattered, never-repeated addresses, so neither bet pays off. (Pointer chasing isn't inherently uncacheable: a chase through a small, compact set of nodes can cache well.)</figcaption></figure>
 
   <h3 class="part">How a cache finds a line</h3>
   <p>We'll use a tiny, fully traceable cache: <b>8-bit addresses, 16-byte lines, 64 bytes of data</b> (4 lines). Every address splits into three fields:</p>
@@ -255,7 +256,8 @@
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 8px"><div class="seg" role="group" aria-label="Organization"><button data-org="dm" aria-pressed="true">Direct-mapped</button><button data-org="w2">2-way</button><button data-org="fa">Fully assoc.</button></div></div>
     <div class="ctrl" style="margin:0 0 8px"><span class="readout">Trace:</span><button data-tr="pp">ping-pong</button><button data-tr="three">3 blocks, 1 set</button><button data-tr="fit">scan ×2 (fits)</button><button data-tr="big">scan ×2 (too big)</button></div>
-    <div class="ctrl" style="margin:0 0 12px"><label class="rl" for="ctrace" style="flex:1">addresses (hex), editable<input id="ctrace" type="text" style="width:100%"></label></div>
+    <div class="ctrl" style="margin:0 0 12px"><label class="rl" for="ctrace" style="flex:1">addresses (hex bytes 00–FF), editable<input id="ctrace" type="text" style="width:100%"></label></div>
+    <p class="readout" id="ctErr" style="margin:0 0 8px;min-height:1.2em"></p>
     <div class="grid2">
       <div><p class="panel-t">Current access</p><div id="caddr"></div><p class="msg" id="cmsg" style="margin-top:8px"></p></div>
       <div><p class="panel-t">Cache contents</p><table class="ctab" id="ctab"></table></div>
@@ -313,7 +315,7 @@
   </div>
 
   <h3 class="part">Every program gets its own view of memory</h3>
-  <p>With <b>virtual memory</b>, the addresses a program uses are <b>virtual</b>. Hardware translates each one to a <b>physical</b> address using a table the operating system controls. Memory is divided into fixed-size <b>pages</b> (virtual) and <b>frames</b> (physical). Two processes can use the identical virtual address and reach completely different bytes, and a process can't even <i>name</i> memory the OS hasn't mapped for it. Virtual memory is valuable even when nothing is ever swapped to disk. Isolation alone justifies it.</p>
+  <p>With <b>virtual memory</b>, the addresses a program uses are <b>virtual</b>. Hardware translates each one to a <b>physical</b> address using a table the operating system controls. Memory is divided into fixed-size <b>pages</b> (virtual) and <b>frames</b> (physical). Two processes can use the identical virtual address and reach completely different bytes, and a process has no virtual address that leads to memory the OS hasn't mapped for it. (It can form any address it likes, but accessing an unmapped one faults.) Virtual memory is valuable even when nothing is ever swapped to disk. Isolation alone justifies it.</p>
   <figure class="fig"><div class="sc"><svg id="vmTwo" viewBox="0 0 760 220" role="img" aria-label="Two processes use the same virtual address, which maps to different physical frames"></svg></div>
     <figcaption><b>Same pointer, different bytes.</b> Both processes use virtual address 0x1234. Their page tables send it to different frames. Process B has no mapping at all for A's frame, so it has no way to express an access to it.</figcaption></figure>
 
@@ -321,13 +323,13 @@
   <p>Our teaching system uses <b>16-bit virtual addresses and 256-byte pages</b>. The top 8 bits are the <b>virtual page number</b> (VPN) and the bottom 8 bits are the <b>offset</b> within the page. Translation replaces only the page number. The offset passes through unchanged.</p>
   <figure class="fig narrow"><div class="sc"><svg id="vmSplit" viewBox="0 0 560 160" role="img" aria-label="Virtual address 0x1234 splits into page 0x12 and offset 0x34; page 0x12 maps to frame 0xA0, giving physical address 0xA034" style="min-width:460px"></svg></div>
     <figcaption>Tiny 256-byte pages keep the hex arithmetic easy. Real systems typically use 4 KB pages (12 offset bits), plus larger "huge" pages.</figcaption></figure>
-  <p>Page-table entries also hold <b>permission bits</b> (readable, writable, executable, user-accessible) and a <b>present</b> bit. The page table lives in ordinary memory, so walking it on every access would double the memory traffic or worse. The <b>TLB</b> (translation lookaside buffer) is a small cache of recent translations <i>and their permissions</i>. It holds mappings, never the program's data.</p>
+  <p>Page-table entries also hold <b>permission bits</b> (readable, writable, executable, user-accessible) and a <b>present</b> bit. (In the explorer below, every mapped page is readable, and only write permission is checked.) The page table lives in ordinary memory, so walking it on every access would double the memory traffic or worse. The <b>TLB</b> (translation lookaside buffer) is a small cache of recent translations <i>and their permissions</i>. It holds mappings, never the program's data.</p>
 
   <h3 class="part">Try it: follow one access through translation</h3>
   <p>Pick a scenario, or type any virtual address and choose Read or Write. The highlighted path shows which decisions were made. The TLB fills as you go, so repeating an address that just missed now hits.</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 10px"><span class="readout">Scenarios:</span><button data-vs="0">TLB hit, cache hit</button><button data-vs="1">TLB miss, walk</button><button data-vs="2">cache miss</button><button data-vs="3">write to read-only</button><button data-vs="4">unmapped page</button><button data-vs="5">page on disk</button></div>
-    <div class="ctrl" style="margin:0 0 12px"><label class="rl" for="vmIn">virtual address (hex)<input id="vmIn" type="text" value="1234" style="width:110px"></label><button id="vmR" class="pri">Read</button><button id="vmW">Write</button><button id="vmReset">Reset TLB</button></div>
+    <div class="ctrl" style="margin:0 0 12px"><label class="rl" for="vmIn">virtual address (hex, 0000–FFFF)<input id="vmIn" type="text" value="1234" style="width:110px"></label><button id="vmR" class="pri">Read</button><button id="vmW">Write</button><button id="vmReset">Reset TLB</button></div>
     <div class="sc" style="padding:0"><svg id="vmFlow" viewBox="0 0 760 250" role="img" aria-label="Translation flow: TLB, page walk, permission check, physical address, cache" style="min-width:600px"></svg></div>
     <p class="msg" id="vmMsg"></p>
     <div class="grid2" style="margin-top:12px">
@@ -338,10 +340,10 @@
 
   <h3 class="part">Three different events, three different questions</h3>
   <div class="tbl"><table>
-    <tr><th>Event</th><th>The question that failed</th><th>Who handles it</th><th>Typical cost</th></tr>
+    <tr><th>Event</th><th>The question that failed</th><th>Who handles it</th><th>Illustrative cost</th></tr>
     <tr><td><b>TLB miss</b></td><td>"Do I have this translation cached?"</td><td>Hardware walks the page table (some ISAs trap to software)</td><td>tens of cycles</td></tr>
     <tr><td><b>Cache miss</b></td><td>"Do I have a copy of these data bytes nearby?"</td><td>Hardware fetches the line</td><td>tens to hundreds of cycles</td></tr>
-    <tr><td><b>Page fault</b></td><td>"Is this access allowed and backed by memory at all?"</td><td>An exception into the OS</td><td>microseconds to milliseconds</td></tr>
+    <tr><td><b>Page fault</b></td><td>"Is this access allowed and backed by memory at all?"</td><td>An exception into the OS</td><td>from microseconds (a minor fault, no disk I/O) to milliseconds (reading from storage)</td></tr>
   </table></div>
   <p>They're independent. An access can miss the TLB and hit the cache, hit the TLB and miss the cache, or neither or both. A page fault doesn't always mean disk I/O. The OS might allocate a fresh zero-filled page, set up a copy-on-write copy, load data from storage, or decide the access is invalid and kill the process (a "segmentation fault"). And a TLB hit is not permission: the cached entry carries permission bits that are checked on every access.</p>
   <div class="pitfall">Page tables belong to an <b>address space</b> (a process), not a thread. Threads of one process share them. When the OS switches <i>processes</i>, it points the MMU at another page table, and the TLB must not serve the old process's translations. Tagging entries with an address-space ID avoids flushing the whole TLB. And real caches often start their lookup using offset bits while translation proceeds in parallel, so the serial diagram shows <i>logic</i>, not timing.</div>
@@ -382,6 +384,7 @@
     <div class="ctrl"><span class="readout">Pattern:</span><button data-bp="TTTNTTTNTTTN">loop exits</button><button data-bp="TNTNTNTNTNTN">alternating</button><button data-bp="TTTTTTNTTTTTTTNT">mostly taken</button><button data-bp="rand">random</button>
       <label class="rl" for="bpStart">start state<select id="bpStart"><option value="0">0 strong N</option><option value="1" selected>1 weak N</option><option value="2">2 weak T</option><option value="3">3 strong T</option></select></label></div>
     <div class="ctrl"><label class="rl" for="bpIn" style="flex:1">outcomes (T/N), editable<input id="bpIn" type="text" style="width:100%" value="TTTNTTTNTTTN"></label></div>
+    <p class="readout" id="bpErr" style="margin:0 0 8px;min-height:1.2em"></p>
     <div class="pstrip" id="bpStrip"></div>
     <div class="ctrl"><button id="bpBack">◀ Back</button><button id="bpStep" class="pri">Next branch ▶</button><button id="bpAll">Run all</button><button id="bpReset">Reset</button><span class="readout" id="bpOut"></span></div>
   </div><figcaption><b>Top row:</b> what actually happened. <b>Bottom row:</b> what the counter predicted, green if right and red if wrong. On "loop exits", each exit costs one miss but the counter doesn't flip. "Alternating" defeats it completely. Real predictors add <b>history</b>: they index counters by the recent pattern of branch outcomes, which lets them learn alternation and much more.</figcaption></figure>
@@ -392,7 +395,7 @@
     <div class="calc">
       <label class="rl" for="bcB">base CPI = <b id="bcBv">1.00</b><input id="bcB" type="range" min="0.25" max="1.5" step="0.25" value="1"></label>
       <label class="rl" for="bcF">branches = <b id="bcFv">20</b> % of instructions<input id="bcF" type="range" min="5" max="35" step="1" value="20"></label>
-      <label class="rl" for="bcM">mispredicted = <b id="bcMv">10</b> %<input id="bcM" type="range" min="0" max="50" step="1" value="10"></label>
+      <label class="rl" for="bcM">branches mispredicted = <b id="bcMv">10</b> %<input id="bcM" type="range" min="0" max="50" step="1" value="10"></label>
       <label class="rl" for="bcP">penalty = <b id="bcPv">2</b> cycles<input id="bcP" type="range" min="1" max="25" step="1" value="2"></label>
     </div>
     <div class="bigbar"><i id="bcBar1" style="background:var(--te)"></i><i id="bcBar2" style="background:var(--bad)"></i></div>
@@ -422,7 +425,7 @@
     <div class="c3"><span class="l">New state</span>Wider pipeline registers, more register-file ports, and dependency checks within each group.</div>
     <div class="c4"><span class="l">Cost</span>Comparisons grow roughly with width², plus bypass wiring and energy. It only helps if the program has independent work.</div>
   </div>
-  <p><b>Superscalar</b> means one core processing several instructions per cycle from <b>one</b> thread. It doesn't mean several cores, and it doesn't mean several threads. A core actually has several different widths:</p>
+  <p><b>Superscalar</b> means one core processing several instructions per cycle. It doesn't mean several cores, and it doesn't require several threads: this lesson's explorer uses a single thread. (A core with simultaneous multithreading, Unit 4, is superscalar <i>and</i> can fill those slots with instructions from more than one hardware thread.) A core actually has several different widths:</p>
   <figure class="fig"><div class="sc"><svg id="widthSvg" viewBox="0 0 760 170" role="img" aria-label="A superscalar core has separate widths for fetch, decode, issue to ports and retirement"></svg></div>
     <figcaption><b>Width is not one number.</b> Fetch, decode, dispatch, issue and retire each have their own width, and every execution <b>port</b> only accepts certain operations. Four ALUs don't make four loads per cycle possible if there's one load port.</figcaption></figure>
 
@@ -542,9 +545,10 @@
     <div class="ctrl"><button id="robPrev">◀ Previous cycle</button><button id="robNext" class="pri">Next cycle ▶</button></div>
   </div><figcaption><b>I3 and I4 finish in cycles 2–3 but can't retire until I1, I2 ahead of them have.</b> In the fault case, cycle 5 finds the faulting load at the ROB head: all five instructions are squashed, including the finished I3 and I4, and the handler sees x1–x4 exactly as they were before I1. (The handler's own work isn't shown.)</figcaption></figure>
   <p>Notice two views of "x1". The <b>committed</b> x1 is 7 after I1 retires, then 24 after I3 retires. Meanwhile the <b>speculative map</b> already said x1 → p22 from the moment I3 was renamed, because any newly renamed instruction must read the newest version. Recovery copies the committed map back over the speculative one.</p>
+  <p>These two views are conceptual. Real out-of-order cores store and recover this state in different ways: some keep a separate retirement map, some checkpoint the rename map at branches, and none need a separate architectural register file. What every design must provide is the essential promise: <b>precise, in-order architectural effects</b>.</p>
 
   <h3 class="part">Memory dependencies: the one renaming can't see</h3>
-  <p>Register dependencies are visible in the instruction bits. Memory dependencies aren't. Whether a store and a later load touch the same bytes depends on <b>addresses computed at run time</b>. Take a single thread with M[A] = 3:</p>
+  <p>Register dependencies are visible in the instruction bits. Memory dependencies aren't. Whether a store and a later load touch the same bytes depends on <b>addresses computed at run time</b>. Take a single thread with M[A] = 3. The listing is <b>schematic</b>, not assemblable RISC-V: in real RV32I the store would be <code>sw x6, 0(x10)</code> (store x6 = 9 at the address in x10 = p) and the load <code>lw x7, 0(x11)</code>.</p>
   <div class="asm">
     <div class="r"><span class="a">S1</span><span class="i">sw  9 → [p]</span><span class="c">older store; p is computed by a slow instruction</span></div>
     <div class="r"><span class="a">L2</span><span class="i">lw  r ← [q]</span><span class="c">younger load; q = A is already known</span></div>
@@ -559,7 +563,7 @@
     </div>
     <p class="msg" id="mdMsg"></p>
     <div class="ctrl"><button id="mdBack">◀ Back</button><button id="mdStep" class="pri">Next step ▶</button><span class="readout" id="mdCount"></span></div>
-  </div><figcaption><b>The load queue remembers which loads ran early and from which addresses.</b> When an older store's address resolves, the core checks whether a younger load already read those bytes. If so, it's a <b>memory-ordering violation</b>: squash and replay. If an older store's address is known to match, and its data is ready, when the load runs, <b>store-to-load forwarding</b> hands the data over directly from the store queue. The wrong values 3 and 4 never retire.</figcaption></figure>
+  </div><figcaption><b>The load queue remembers which loads ran early and from which addresses.</b> When an older store's address resolves, the core checks whether a younger load already read those bytes. If so, it's a <b>memory-ordering violation</b>: squash and replay. If an older store's address is known to match, and its data is ready, when the load runs, <b>store-to-load forwarding</b> hands the data over directly from the store queue. The wrong values 3 and 4 never retire. The last two steps separate <b>retiring</b> a store (committed for this thread) from <b>draining</b> it from the store buffer (visible to other cores).</figcaption></figure>
   <div class="pitfall">Retiring a store doesn't mean other cores can see it yet. It may still wait in a store buffer before reaching the cache. "Retired" (architecturally committed for this thread) and "globally visible" are different events. How multiple cores observe each other's memory operations is the memory-consistency topic of the next unit, and a ROB alone doesn't settle it.</div>
 
   <div class="predict"><div class="ph"><b>Predict</b><span>Track completion and retirement separately.</span></div><ol>
@@ -615,6 +619,7 @@
     <tr><td>ROB + load/store queues</td><td>in-order retirement, committed map, address checks</td><td>oldest blocked instruction, replay cost</td></tr>
   </table></div>
   <p>You're ready for the next unit when you can explain this table with examples, without mistaking overlapping instructions for extra threads, or a cached translation for cached data. Unit 4 will add multiple cores, cache coherence, memory ordering, hardware multithreading and vectors.</p>
+  <div class="worked srcnote"><b>Sources and model assumptions.</b> The explorers are teaching models. Latencies, cache sizes and costs are illustrative round numbers, not measurements of a particular chip. Lessons 8–9 use a simple five-stage in-order pipeline; Lessons 14–15 use a separate out-of-order model with its own timing rules. The diagrams leave out many real timing interactions (overlapped translation and cache lookup, multiple outstanding misses, port conflicts, and more). References: cache organization and the hit/miss taxonomy follow <a href="https://www.cs.cornell.edu/courses/cs3410/2026sp/notes/caches.html">Cornell CS 3410's cache notes</a>; page tables, permissions and page faults follow the <a href="https://docs.riscv.org/reference/isa/v20240411/_attachments/riscv-privileged.pdf">RISC-V privileged specification</a> and <a href="https://pages.cs.wisc.edu/~remzi/OSTEP/vm-complete.pdf">OSTEP's virtual-memory chapters</a>; the reorder buffer and load/store queues are modelled on the open-source BOOM core's <a href="https://docs.boom-core.org/en/latest/sections/reorder-buffer.html">reorder buffer</a> and <a href="https://docs.boom-core.org/en/latest/sections/load-store-unit.html">load/store unit</a> documentation (including committed stores waiting in a queue before they reach memory); simultaneous multithreading is described in <a href="https://www.ibm.com/docs/en/sdsu/8.0.0?topic=planning-simultaneous-multithreading">IBM's SMT overview</a>. Links checked September 2026.</div>
   <div class="nextunit"><a href="unit-02-registers-programs-contexts.html"><small>← Unit 2</small>Programs &amp; contexts</a><a href="unit-04-parallelism.html"><small>Next · Unit 4</small>Add parallelism →</a></div>
 </section>
 
@@ -732,7 +737,7 @@ function grid(rows,ncyc,o={}){
   const temp=Array.from({length:30},(_,i)=>[i/29,[0.2,0.5,0.8][i%3]]);
   let seed=7;const rnd=()=>{seed=(seed*16807)%2147483647;return seed/2147483647;};
   const chase=Array.from({length:30},(_,i)=>[i/29,rnd()*0.9+0.05]);
-  s+=pan(20,'array scan',scan,'spatial locality')+pan(275,'loop variables',temp,'temporal locality')+pan(530,'pointer chase',chase,'neither: hard to cache');
+  s+=pan(20,'array scan',scan,'spatial locality')+pan(275,'loop variables',temp,'temporal locality')+pan(530,'pointer chase',chase,'scattered: poor locality');
   s+='<text x="10" y="100" class="mid xs" transform="rotate(-90 10 100)">address</text>';
   $('#locSvg').innerHTML=s;
 })();
@@ -743,8 +748,11 @@ function grid(rows,ncyc,o={}){
   const scan=a=>a.map(x=>x.toString(16).toUpperCase().padStart(2,'0')).join(' ');
   const TR={pp:'08 48 08 48 0C 4C',three:'08 48 88 08 48 88',fit:scan([0,8,16,24,32,40,48,56,0,8,16,24,32,40,48,56]),big:scan([...Array.from({length:16},(_,i)=>i*8),...Array.from({length:16},(_,i)=>i*8)])};
   let org='dm',trace,st,hist;
-  function parse(){return $('#ctrace').value.trim().split(/[\s,]+/).filter(Boolean).map(x=>parseInt(x.replace(/^0x/i,''),16)).filter(v=>!isNaN(v)&&v>=0&&v<256);}
-  function reset(){trace=parse();const O=ORG[org];st={k:0,time:0,sets:Array.from({length:O.sets},()=>Array.from({length:O.ways},()=>({v:0,tag:0,blk:0,lru:0}))),fa:[],seen:[],res:[],last:null};hist=[];render();}
+  let good='';
+  function parse(){const toks=$('#ctrace').value.trim().split(/[\s,]+/).filter(Boolean),bad=toks.filter(t=>!/^(0x)?[0-9a-f]{1,2}$/i.test(t));
+    if(bad.length||!toks.length){$('#ctErr').innerHTML=`<span style="color:var(--bad)">${toks.length?`<b>${NOTES.esc(bad.join(', '))}</b> isn't a valid address.`:'No addresses given.'} Use hex bytes 00–FF separated by spaces. The previous trace is kept.</span>`;$('#ctrace').value=good;return null;}
+    $('#ctErr').textContent='';good=$('#ctrace').value;return toks.map(t=>parseInt(t.replace(/^0x/i,''),16));}
+  function reset(){const t=parse();if(t)trace=t;else if(trace)return;const O=ORG[org];st={k:0,time:0,sets:Array.from({length:O.sets},()=>Array.from({length:O.ways},()=>({v:0,tag:0,blk:0,lru:0}))),fa:[],seen:[],res:[],last:null};hist=[];render();}
   function step(){
     if(st.k>=trace.length)return false;hist.push(JSON.stringify(st));
     const O=ORG[org],a=trace[st.k],blk=a>>4,set=blk%O.sets,tag=Math.floor(blk/O.sets),S=st.sets[set];st.time++;
@@ -836,7 +844,7 @@ function grid(rows,ncyc,o={}){
       det.walk=`found ${H(vpn,2)} → ${H(p.f,2)}`;on.push('e-walk-perm');msg=`<b>TLB miss</b> → page walk finds page ${H(vpn,2)} → frame ${H(p.f,2)} and <b>fills the TLB</b>. `;}
     on.push('n-perm');
     if(wr&&!e.w){det.perm='write: DENIED';on.push('e-perm-fault');cls.perm='bad-on';cls.fault='bad-on';det.fault='protection fault';draw(on,cls,det);tables(newV);
-      $('#vmMsg').innerHTML=msg+`But the page is <b>read-only</b>, so a write raises a <b>permission fault</b>. The translation was found, and cached; permission is a separate check. The data cache is never consulted.`;return;}
+      $('#vmMsg').innerHTML=msg+`But the page is <b>read-only</b>, so a write raises a <b>permission fault</b>. The translation was found, and cached; permission is a separate check. In this step-by-step model, the data cache is never consulted. (Real speculative hardware may start work before the check completes, but it never lets the write take effect.)`;return;}
     det.perm=(wr?'write':'read')+' allowed';const pa=(e.f<<8)|off,line=pa&~15;on.push('e-perm-pa','n-pa','e-pa-cache','n-cache');det.pa=H(pa,4);
     if(lines.has(line)){det.cache=`line ${H(line,4)}: hit`;cls.cache='ok-on';msg+=`Physical address ${H(pa,4)}. Line ${H(line,4)} is in the data cache: <b>cache hit</b>.`;}
     else{det.cache=`line ${H(line,4)}: miss`;on.push('e-cache-mem','n-mem');det.mem=`load ${H(line,4)}`;lines.add(line);msg+=`Physical address ${H(pa,4)}. Line ${H(line,4)} isn't cached: <b>cache miss</b>, so the line is fetched from memory (it'll hit next time).`;}
@@ -844,8 +852,9 @@ function grid(rows,ncyc,o={}){
   }
   const SCN=[[0x1234,0],[0x1344,0],[0x1254,0],[0x2010,1],[0x3400,0],[0x4010,0]];
   $$('[data-vs]').forEach(b=>b.onclick=()=>{const [a,w]=SCN[+b.dataset.vs];init();$('#vmIn').value=a.toString(16).toUpperCase();access(a,w);});
-  $('#vmR').onclick=()=>{const v=parseInt($('#vmIn').value.replace(/^0x/i,''),16);if(!isNaN(v))access(v,0);};
-  $('#vmW').onclick=()=>{const v=parseInt($('#vmIn').value.replace(/^0x/i,''),16);if(!isNaN(v))access(v,1);};
+  const vaOf=()=>{const t=$('#vmIn').value.trim();if(!/^(0x)?[0-9a-f]{1,4}$/i.test(t)){$('#vmMsg').innerHTML=`<span style="color:var(--bad)"><b>"${NOTES.esc(t)}" isn't a valid address.</b> Enter a 16-bit virtual address: one to four hex digits, 0000–FFFF. Nothing was accessed, and the TLB is unchanged.</span>`;return null;}return parseInt(t.replace(/^0x/i,''),16);};
+  $('#vmR').onclick=()=>{const v=vaOf();if(v!==null)access(v,0);};
+  $('#vmW').onclick=()=>{const v=vaOf();if(v!==null)access(v,1);};
   $('#vmReset').onclick=()=>{init();draw([],{},{});tables();$('#vmMsg').innerHTML='TLB and cache reset to their starting contents.';};
   init();draw([],{},{});tables();$('#vmMsg').innerHTML='<b>Ready.</b> Choose a scenario, or type an address and press Read or Write.';
 })();
@@ -867,7 +876,9 @@ function grid(rows,ncyc,o={}){
     for(let i=0;i<3;i++){const x=110+i*180;h+=`<path d="M${x+32} 52 Q${x+90} 22 ${x+148} 52" class="wt" marker-end="url(#aht)"/><path d="M${x+148} 108 Q${x+90} 138 ${x+32} 108" class="wc" marker-end="url(#ahc)"/>`;}
     h+='<text x="380" y="16" class="mid sm tte">taken → count up</text><text x="380" y="154" class="mid sm tcu">← not taken: count down</text><text x="200" y="84" class="mid xs">predict N</text><text x="560" y="84" class="mid xs">predict T</text>';
     $('#bpSvg').innerHTML=h;}
-  function reset(){outs=[...$('#bpIn').value.toUpperCase()].filter(c=>c==='T'||c==='N');state0=+$('#bpStart').value;k=0;states=[state0];preds=[];render();}
+  let goodBp='';
+  function reset(){const v=$('#bpIn').value.trim();if(!/^[TNtn\s,]+$/.test(v)){$('#bpErr').innerHTML=`<span style="color:var(--bad)"><b>Outcomes must be T or N only</b> (spaces and commas allowed). The previous sequence is kept.</span>`;$('#bpIn').value=goodBp;if(outs)return;}else{$('#bpErr').textContent='';goodBp=v;}
+    outs=[...$('#bpIn').value.toUpperCase()].filter(c=>c==='T'||c==='N');state0=+$('#bpStart').value;k=0;states=[state0];preds=[];render();}
   function step(){if(k>=outs.length)return false;const s=states[k],p=s>=2?'T':'N',t=outs[k]==='T';preds.push(p);states.push(t?Math.min(3,s+1):Math.max(0,s-1));k++;return true;}
   function render(){
     svg(states[k]);
@@ -1014,11 +1025,13 @@ function oneWide(inorder){const n=5,is=[];for(let c=1;c<40&&is.filter(v=>v).leng
     {rows:[['S1','sw 9 → [p]','address resolves: p = A','bad'],['L2','lw r ← [A]','already read A: ORDERING VIOLATION','bad'],['I3','addi s ← r + 1','used the stale 3','bad']],mem:['M[A] = 3','M[B] = 0','store queue: S1 (addr A, data 9)'],msg:'S1\'s address checks the load queue and finds a younger load that already read A. The bet was wrong.'},
     {rows:[base[0].slice(0,2).concat(['address A, data 9 (waiting to retire)','']),['L2','lw r ← [A]','squashed: will replay','sq'],['I3','addi s ← r + 1','squashed: will replay','sq']],mem:['M[A] = 3','M[B] = 0','store queue: S1 (addr A, data 9)'],msg:'L2 and everything younger are squashed. Their wrong values (3, 4) are discarded and never retire.'},
     {rows:[base[0].slice(0,2).concat(['address A, data 9','']),['L2','lw r ← [A]','replays: store-to-load forwarding gives r = 9','ok'],['I3','addi s ← r + 1','s = 10','ok']],mem:['M[A] = 3 (not yet written)','M[B] = 0','store queue forwards 9 → L2'],msg:'On replay the store queue supplies 9 directly, before it\'s even written to the cache.'},
-    {rows:[['S1','sw 9 → [p]','retired → M[A] ← 9','ok'],['L2','lw r ← [A]','retired: r = 9','ok'],['I3','addi s ← r + 1','retired: s = 10','ok']],mem:['M[A] = 9','M[B] = 0','store queue: empty'],msg:'Everything retires in order. The store is written to memory only after it retires. The program saw exactly what sequential execution promises.'}
+    {rows:[['S1','sw 9 → [p]','retired: committed for this thread','ok'],['L2','lw r ← [A]','retired: r = 9','ok'],['I3','addi s ← r + 1','retired: s = 10','ok']],mem:['M[A] = 3 (other cores still see 3)','M[B] = 0','store buffer: S1 committed, M[A] ← 9 waiting to drain'],msg:'Everything retires in order, so the store is now <b>committed</b>: this thread is guaranteed to see 9 at A. But it hasn\'t reached memory yet. It waits in the store buffer, so other cores would still read 3.'},
+    {rows:[['S1','sw 9 → [p]','drained: M[A] ← 9, now visible','ok'],['L2','lw r ← [A]','retired: r = 9','ok'],['I3','addi s ← r + 1','retired: s = 10','ok']],mem:['M[A] = 9','M[B] = 0','store buffer: empty'],msg:'The store buffer <b>drains</b>: M[A] ← 9 reaches the cache and becomes <b>visible to other cores</b>. The program saw exactly what sequential execution promises. "Committed" and "visible" were two different moments.'}
   ];
   const B=[A[0],A[1],
     {rows:[['S1','sw 9 → [p]','address resolves: p = B, no overlap with A','ok'],['L2','lw r ← [A]','r = 3 was correct','ok'],['I3','addi s ← r + 1','s = 4 stands','ok']],mem:['M[A] = 3','M[B] = 0','store queue: S1 (addr B, data 9)'],msg:'The check finds no younger load of B. The early load was right, and the time it saved is pure gain.'},
-    {rows:[['S1','sw 9 → [p]','retired → M[B] ← 9','ok'],['L2','lw r ← [A]','retired: r = 3','ok'],['I3','addi s ← r + 1','retired: s = 4','ok']],mem:['M[A] = 3','M[B] = 9','store queue: empty'],msg:'Retire in order. The bet paid off. Real cores predict which loads are safe to run early, based on history.'}];
+    {rows:[['S1','sw 9 → [p]','retired: committed for this thread','ok'],['L2','lw r ← [A]','retired: r = 3','ok'],['I3','addi s ← r + 1','retired: s = 4','ok']],mem:['M[A] = 3','M[B] = 0 (other cores still see 0)','store buffer: S1 committed, M[B] ← 9 waiting to drain'],msg:'Retire in order. The bet paid off. The store is committed but still waiting in the store buffer.'},
+    {rows:[['S1','sw 9 → [p]','drained: M[B] ← 9, now visible','ok'],['L2','lw r ← [A]','retired: r = 3','ok'],['I3','addi s ← r + 1','retired: s = 4','ok']],mem:['M[A] = 3','M[B] = 9','store buffer: empty'],msg:'The store drains and becomes visible to other cores. Real cores predict which loads are safe to run early, based on history.'}];
   let which='A',k=0;
   function render(){const S=(which==='A'?A:B),s=S[k];
     $('#mdRows').innerHTML=s.rows.map(([n,t,d,c])=>`<div class="r ${c}"><b>${n}</b><span>${t}</span><span style="font-family:var(--sans);font-size:13.5px">${d}</span></div>`).join('');
