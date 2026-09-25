@@ -1,0 +1,730 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CS149 Lecture 3 · Latency, Bandwidth and SPMD</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../assets/notes.css">
+<script src="../assets/notes.js"></script>
+<style>
+.calc{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;align-items:end}
+.stat{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:12px}
+.stat div{background:var(--panel2);border-radius:4px;padding:6px 10px;font:500 11px var(--mono);color:var(--mute)}
+.stat b{display:block;font-size:17px;color:var(--ink)}
+.bytes{display:grid;grid-template-columns:repeat(16,minmax(0,1fr));gap:3px;font:500 11px var(--mono)}
+.bytes div{text-align:center;padding:4px 0;border-radius:3px;background:var(--panel2)}
+.bytes div small{display:block;font-size:9px;color:var(--mute)}
+.bytes div.l0{box-shadow:inset 0 -3px 0 var(--te)} .bytes div.l1{box-shadow:inset 0 -3px 0 var(--pl)} .bytes div.l2{box-shadow:inset 0 -3px 0 var(--cu)} .bytes div.l3{box-shadow:inset 0 -3px 0 var(--warn)}
+.bytes div.cur{outline:2px solid var(--ink)}
+.bytes div.inc{background:var(--te-soft)}
+.slots{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.slots div{border:1px solid var(--line);border-radius:4px;padding:6px 12px;font:500 13px var(--mono);min-width:120px;background:var(--panel)}
+.slots div small{display:block;font-size:10px;color:var(--mute)}
+.slots div.fill{background:var(--cu-soft);border-color:var(--cu)}
+.slots div.hit{background:var(--ok-soft);border-color:var(--ok)}
+.strip{display:flex;flex-wrap:wrap;gap:3px;margin-top:10px}
+.strip span{min-width:40px;padding:3px 4px;border-radius:3px;font:600 11px var(--mono);text-align:center}
+.strip small{display:block;font-weight:500;font-size:9px}
+.strip .h{background:var(--ok-soft);color:var(--ok)} .strip .c{background:var(--bad-soft);color:var(--bad)} .strip .p{background:var(--warn-soft);color:var(--warn)} .strip .n{background:var(--panel2);color:var(--mute)} .strip .cur{outline:2px solid var(--ink)}
+.lanes{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:4px}
+.lanes button{height:54px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font:600 13px var(--mono)}
+.lanes button small{font-size:10px;font-weight:500}
+.lanes button.T{background:var(--te-soft);border-color:var(--te);color:var(--ink)}
+.lanes button.F{background:var(--pl-soft);border-color:var(--pl);color:var(--ink)}
+.cfg{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.cfg > div{display:flex;flex-direction:column;gap:4px}
+.cfg .readout{font-size:11.5px}
+.glossary{display:grid;grid-template-columns:minmax(150px,max-content) 1fr;gap:6px 18px;font-size:15px}
+.glossary dt{font:600 13px var(--mono);color:var(--te);padding-top:2px}
+.glossary dd{margin:0}
+@media (max-width:560px){.glossary{grid-template-columns:1fr}.glossary dd{margin-bottom:8px}}
+
+.pmx{display:grid;grid-template-columns:120px repeat(3,minmax(0,1fr));gap:8px;align-items:stretch}
+@media (max-width:760px){.pmx{grid-template-columns:repeat(1,minmax(0,1fr))}.pmx .rh,.pmx .ch{display:none}}
+.pmx .ch{font:600 11px var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--mute);text-align:center;align-self:end;padding-bottom:4px}
+.pmx .rh{font-size:13px;display:flex;flex-direction:column;justify-content:center;gap:2px;padding-right:6px}
+.pmx .rh b{font-family:var(--display);font-size:18px}
+.pmx .rh small{color:var(--mute);font:500 11px var(--mono)}
+.pcard{background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:8px 10px;cursor:pointer;text-align:left;font:inherit;color:var(--ink);display:flex;flex-direction:column;gap:4px}
+.pcard:hover{border-color:var(--cu)}
+.pcard[aria-pressed="true"]{border-color:var(--cu);box-shadow:0 0 0 3px var(--cu-soft);background:var(--panel)}
+.pcard svg{width:100%;height:auto;min-width:0}
+.pcard .pk{font:600 11px var(--mono);color:var(--cu)}
+.pcard .need{font-size:12.5px;line-height:1.4;color:var(--ink)}
+.pcard .need i{font-style:normal;color:var(--mute)}
+.chk{display:grid;gap:6px;margin-top:12px}
+.chk div{display:grid;grid-template-columns:26px 1fr;gap:8px;align-items:start;padding:7px 10px;border-radius:4px;font-size:14px;background:var(--panel2)}
+.chk div.ok{background:var(--ok-soft)} .chk div.no{background:var(--bad-soft)} .chk div.na{opacity:.6}
+.chk div > span:first-child{font:700 15px var(--mono)}
+.chk div.ok > span:first-child{color:var(--ok)} .chk div.no > span:first-child{color:var(--bad)}
+.recipe{counter-reset:r}
+
+/* slide-style architecture drawings */
+.sl-core{fill:var(--panel2);stroke:var(--mute);stroke-width:1.2}
+.sl-mem{fill:var(--panel);stroke:var(--ink);stroke-width:1.4}
+.sl-cache{fill:#bdbdbd;stroke:#6f6f6f;stroke-width:1.2}
+.sl-fd{fill:#d9763a;stroke:#8f4718;stroke-width:1.2}
+.sl-alu{fill:#f3c24c;stroke:#a87a12;stroke-width:1.2}
+.sl-ctx{fill:#8e9bba;stroke:#3d4a6b;stroke-width:1.4}
+.sl-reg{fill:#b9c5e2;stroke:#7d8bb0;stroke-width:.6}
+svg text.sd{fill:#1b1b1b!important}
+svg text.sw{fill:#fff!important}
+.pmx .pcard svg{background:transparent}
+.sl-pale{fill:#e6e6e6;stroke:#9a9a9a;stroke-width:1}
+.sl-row{fill:#ececec} .sl-row-on{fill:#d9763a}
+.tsrc{width:100%;min-height:190px;box-sizing:border-box;font:500 13px/1.5 var(--mono);background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:8px 10px;resize:vertical}
+.tref{font-size:13.5px;line-height:1.6;color:var(--mute)} .tref b{color:var(--ink)}
+.tedit summary{cursor:pointer;font:600 12.5px var(--mono);color:var(--cu);margin-top:12px}
+.s0a{stroke:var(--te);stroke-width:2.4;fill:none} .s0h{fill:none;stroke:var(--te);stroke-width:3} .s0dim{opacity:.35}
+.sm-ws{fill:#f1ddd0;stroke:#b98a6a;stroke-width:1} .sm-fp32{fill:#f3c24c;stroke:#a87a12;stroke-width:.8} .sm-int{fill:#ee8a60;stroke:#a8502a;stroke-width:.8} .sm-fp64{fill:#b07a86;stroke:#6e4450;stroke-width:.8} .sm-ten{fill:#bf2f1f;stroke:#7a1a10;stroke-width:.8} .sm-ls{fill:#5d9a3c;stroke:#355f1f;stroke-width:.8} .sm-reg{fill:#c9d6f2;stroke:#6c7fae;stroke-width:.8}
+
+.partbar{margin-top:90px;padding:14px 18px;border-radius:5px;background:var(--ink);color:var(--panel)}
+.partbar .kicker{color:var(--cu-soft)}
+.partbar h2{font-family:var(--display);font-size:clamp(32px,5vw,44px);line-height:1;margin:4px 0 4px;color:var(--panel)}
+.partbar p{margin:0;color:var(--panel);opacity:.8;max-width:68ch}
+.code{font:500 13px/1.55 var(--mono);background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:12px 16px;overflow-x:auto;margin:16px 0;white-space:pre;color:var(--ink)}
+.code .u{color:var(--pl);font-weight:600} .code .k{color:var(--cu);font-weight:600}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar"><div class="in">
+  <a class="brand" href="../index.html">Gates <span>→</span> GPUs · Notes</a>
+  <nav class="unitnav" aria-label="Sections"><a href="../index.html">Course map</a><a href="../unit-01-build-a-computer.html">1 · Build a computer</a><a href="../unit-02-registers-programs-contexts.html">2 · Programs &amp; contexts</a><a href="../unit-03-faster-core.html">3 · A faster core</a><a href="../unit-04-parallelism.html">4 · Parallelism</a><a href="../unit-05-gpus.html">5 · GPUs</a><a href="../unit-06-modern-systems.html">6 · Systems</a><a href="index.html" aria-current="page">CS149 lectures</a></nav>
+  <button class="themebtn" type="button">☾ Dark</button>
+</div>
+<nav class="subnav" aria-label="CS149 lectures"><span class="sl">CS149</span><a href="index.html">All lectures</a><a href="lecture-01-why-parallelism.html">L1 · Why parallelism?</a><a href="lecture-02-modern-multicore.html">L2 · A modern multi-core processor</a><a href="lecture-03-bandwidth-spmd.html" aria-current="page">L3 · Bandwidth &amp; SPMD</a></nav>
+</header>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk"/></marker>
+  <marker id="ahc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkc"/></marker>
+  <marker id="aht" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkt"/></marker>
+  <marker id="ahp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkp"/></marker>
+  <marker id="ahb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkb"/></marker>
+</defs></svg>
+
+<div class="wrap">
+<nav class="toc" aria-label="On this page"></nav>
+<main id="main">
+
+<header class="hero">
+  <div class="kicker">Stanford CS149 · Lecture 3 companion</div>
+  <h1>Latency, bandwidth, and the <em>SPMD</em> abstraction</h1>
+  <p class="lede">Lecture 2 filled a chip with parallel hardware: many cores, wide SIMD units, many hardware threads. This lecture asks two questions about using it. First, <b>can memory keep all that hardware fed?</b> Often it can't, and that makes <b>bandwidth</b>, not arithmetic, the resource that decides performance. Second, <b>how do we write programs for it?</b> Using ISPC as the example, it separates a programming model's <b>abstraction</b> (what the program means) from its <b>implementation</b> (how the machine actually runs it).</p>
+  <dl class="outcome">
+    <dt>You'll be able to</dt><dd>Distinguish latency from throughput with everyday and hardware examples. Explain why a throughput processor can be bandwidth-bound, and calculate how badly. Explain why, once enough requests are in flight, memory latency stops mattering and bandwidth takes over. Describe ISPC's SPMD model: gangs, program instances, <code>programIndex</code>, <code>programCount</code>, <code>uniform</code>, <code>foreach</code>. Trace how interleaved and blocked assignments map to SIMD instructions, and spot ISPC programs whose output is undefined.</dd>
+    <dt>Background</dt><dd><a href="lecture-02-modern-multicore.html">Lecture 2</a> (multi-core, SIMD, multithreading) and <a href="lecture-01-why-parallelism.html">Lecture 1</a> (memory, latency, caches). Units 3–5 of these notes go deeper into pipelining, SIMD and GPUs.</dd>
+    <dt>Source</dt><dd>Follows the structure and examples of Stanford CS149 <i>Parallel Computing</i>, Fall 2023, Lecture 3, "Multi-Core Architecture Part II + Parallel Programming Abstractions" (Kayvon Fatahalian and Kunle Olukotun). The explanations, diagrams and explorers here are original study material, not a copy of the slides.</dd>
+  </dl>
+  <div class="insight">Two lessons. <b>Bandwidth is the critical resource</b>: modern processors can compute far faster than memory can deliver operands, so fast programs are the ones that fetch data rarely. And <b>an abstraction is not its implementation</b>: ISPC lets you think of many independent program instances, but the compiler runs them as the lanes of SIMD instructions on one core. Knowing both lets you predict what the machine will actually do.</div>
+</header>
+
+<!-- ================================ PART 1 ================================ -->
+<div class="partbar" id="p1"><div class="kicker">Part 1 · Latency and bandwidth</div><h2>Can memory keep up?</h2><p>A thought experiment, a highway, some laundry, and a timeline that shows exactly when memory becomes the limit.</p></div>
+
+<section class="lesson" id="s1" data-toc="A thought experiment" data-n="1" style="margin-top:36px">
+  <div class="lesson-h"><div class="kicker">Section 1</div><h2>A thought experiment: multiply two long vectors</h2></div>
+  <p>Take two vectors A and B, each with millions of elements, and compute their element-wise product C = A × B. For each element <i>i</i>: load A[i], load B[i], multiply, store C[i]. There's no dependency between elements at all. It's the most parallel program imaginable. <b>Is it a good fit for a throughput processor like a GPU?</b></p>
+  <figure class="fig"><div class="sc"><svg id="v100Svg" viewBox="0 0 760 250" role="img" aria-label="NVIDIA V100: 80 SMs with 64 fp32 ALUs each, 5120 ALUs in total, a 6 MB L2 cache, and 16 GB of HBM memory connected at 900 GB/s" style="min-width:560px"></svg></div>
+    <figcaption><b>An enormous number of ALUs behind one memory interface.</b> The NVIDIA V100 has 80 SMs × 64 fp32 ALUs = 5,120 ALUs, sharing a 6 MB L2 cache and 16 GB of high-bandwidth memory (HBM2) connected through a 4,096-bit interface at about 900 GB/s. Think about supplying every one of those ALUs with fresh operands on every clock.</figcaption></figure>
+  <p>Hold that thought. To answer it we need two precise ideas, <b>latency</b> and <b>bandwidth</b>, and a way to see how they interact. We'll come back to the numbers in Section 5.</p>
+</section>
+
+<section class="lesson" id="s2" data-toc="Latency vs throughput" data-n="2">
+  <div class="lesson-h"><div class="kicker">Section 2</div><h2>Latency versus throughput, in everyday terms</h2></div>
+  <p><b>Latency</b> is how long one task takes from start to finish. <b>Throughput</b> is how many tasks finish per unit of time. They're related but independent: you can often raise throughput without touching latency, and that's exactly what parallel hardware does.</p>
+  <h3>The highway</h3>
+  <p>The lecture's analogy: driving from San Francisco to Stanford, about 50 km. At 100 km/h the trip takes half an hour; that's the <b>latency</b>. Suppose only one car may be on the road at a time, and the next car leaves when the previous one arrives. Then the <b>throughput</b> is 2 cars per hour. How could we move more cars?</p>
+  <figure class="fig"><div class="sc"><svg id="hwySvg" viewBox="0 0 760 300" role="img" aria-label="Four highway scenarios: baseline one car at a time, driving faster, more lanes, and spacing cars 1 km apart" style="min-width:560px"></svg></div>
+    <figcaption><b>Four ways to move more cars.</b> <b>Drive faster</b> (200 km/h): latency halves to 15 minutes and throughput doubles to 4 cars/hour. <b>Add lanes</b> (four lanes): latency is unchanged, and throughput quadruples to 8 cars/hour. <b>Use the road better</b>: let cars follow each other 1 km apart, and 50 cars are on the road at once. Latency is still 30 minutes, but a car arrives every 36 seconds: 100 cars/hour per lane, 400 cars/hour on four lanes.</figcaption></figure>
+  <p>Only "drive faster" improved latency, and it's the hardest to keep doing (think of clock frequency in Lecture 1). The other two raise throughput by having <b>more work in flight at once</b>: more lanes (parallel hardware), or more cars per lane (pipelining).</p>
+
+  <h3>Try it: laundry</h3>
+  <p>Doing one load of laundry: wash (45 min), dry (60 min), fold (15 min). The latency of one load is 2 hours. With many loads, three strategies:</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 8px"><span class="readout">Strategy:</span><div class="seg" role="group" aria-label="Laundry strategy"><button data-ls="seq" aria-pressed="true">one at a time</button><button data-ls="dup">two of everything</button><button data-ls="pipe">pipelined</button></div>
+      <span class="readout" style="margin-left:8px">Loads: <b id="lnV"></b></span><input type="range" id="lnN" min="1" max="6" value="4" aria-label="Number of loads"></div>
+    <div class="sc" style="padding:0"><svg id="lnSvg" viewBox="0 0 760 220" role="img" aria-label="Gantt chart of washer, dryer and folding for each load" style="min-width:560px"></svg></div>
+    <div class="stat" id="lnStat"></div>
+    <p class="msg" id="lnMsg"></p>
+  </div><figcaption><b>Latency stays at 2 hours; throughput changes.</b> <b>Two of everything</b> duplicates the resources: 2 loads every 2 hours, 1 load/hour, at twice the equipment. <b>Pipelining</b> keeps one washer, one dryer and one folder, but starts the next wash as soon as the washer is free. In steady state a load finishes every 60 minutes, set by the slowest stage (the dryer): also 1 load/hour, with no extra equipment.</figcaption></figure>
+  <p>The slowest stage sets a pipeline's throughput. The lecture's last analogy makes that explicit: connect a pipe that carries 100 liters/second to one that carries 50 liters/second, and the system carries <b>50 liters/second</b>. The narrowest part of a path is its <b>bottleneck</b>, and making any other part wider changes nothing.</p>
+</section>
+
+<section class="lesson" id="s3" data-toc="Memory latency & bandwidth" data-n="3">
+  <div class="lesson-h"><div class="kicker">Section 3</div><h2>The same two ideas for memory</h2></div>
+  <ul>
+    <li><b>Memory latency</b> (from Lecture 1): the time for the memory system to deliver one requested item, for example 100 clock cycles or 100 ns.</li>
+    <li><b>Memory bandwidth</b>: the <b>rate</b> at which the memory system can deliver data to a processor, for example 20 GB/s.</li>
+  </ul>
+  <figure class="fig"><div class="sc"><svg id="bwSvg" viewBox="0 0 760 210" role="img" aria-label="Two memory systems with the same 2-second latency per item; the wider one delivers 8 items per second instead of 4" style="min-width:560px"></svg></div>
+    <figcaption><b>Same latency, twice the bandwidth.</b> In both pictures each item takes about 2 seconds to travel from memory to the processor. The top system has 4 items in flight at once and delivers about 4 items per second. The bottom one is twice as wide, has 8 in flight, and delivers about 8 per second. Bandwidth is about how much is in flight, not how fast any one item travels.</figcaption></figure>
+  <p>The relationship is <b>Little's law</b>, which holds for any steady system: <b>items in flight = throughput × latency</b>. To get 8 items per second through a pipe where each item takes 2 seconds, 16 must be in flight at any moment. Memory systems reach high bandwidth exactly this way: many requests outstanding at once, each still taking the full latency.</p>
+  <div class="pitfall"><b>"One operation per clock" is a throughput statement.</b> Students often ask how a processor can finish a multiply in one clock. It doesn't. In a four-stage instruction pipeline (fetch, decode and register read, execute, write back), each instruction takes 4 cycles, but one <i>finishes</i> every cycle. Real pipelines vary by instruction and can be around 20 stages deep. Unit 3 of these notes builds one.</div>
+</section>
+
+<section class="lesson" id="s4" data-toc="Bandwidth-bound execution" data-n="4">
+  <div class="lesson-h"><div class="kicker">Section 4</div><h2>When memory bandwidth limits the whole processor</h2></div>
+  <p>Now apply the ideas to a real core. Many threads each repeat a sequence of three <b>dependent</b> instructions:</p>
+  <div class="asm" style="max-width:520px"><div class="r"><span class="a">1</span><span class="i">X = load 64 bytes</span><span class="c"></span></div><div class="r"><span class="a">2</span><span class="i">Y = add X + X</span><span class="c">needs X</span></div><div class="r"><span class="a">3</span><span class="i">Z = add X + Y</span><span class="c">needs Y</span></div></div>
+  <p>The core, as in the lecture: it executes <b>one math operation per clock</b>; it can issue a <b>load in parallel</b> with math; and memory delivers <b>8 bytes per clock</b>, so one 64-byte load takes 8 clocks of transfer. There are plenty of hardware threads to hide latency, and the memory system allows a limited number of <b>outstanding loads</b>.</p>
+  <figure class="fig"><div class="sc"><svg id="coreSvg" viewBox="0 0 760 210" role="img" aria-label="A multithreaded core with fetch/decode, instruction selection, a scalar ALU and a load/store unit, many execution contexts, and a data cache" style="min-width:560px"></svg></div>
+    <figcaption><b>The core in the example.</b> Two fetch/decode paths let it issue a math instruction and a load in the same clock. The ALU executes scalar math; the LD/ST unit sends loads to memory. Many hardware threads (execution contexts) supply independent work.</figcaption></figure>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 8px"><span class="readout">Preset:</span><div class="seg" role="group" aria-label="Presets"><button data-bp="lec" aria-pressed="true">the lecture's example</button><button data-bp="fast">4× the bandwidth</button><button data-bp="intense">8 adds per load</button><button data-bp="few">too few loads in flight</button></div></div>
+    <div class="cfg">
+      <div><span class="readout">Memory bandwidth: <b id="bbBv"></b></span><input type="range" id="bbB" min="0" max="4" step="1" aria-label="Memory bandwidth in bytes per clock"></div>
+      <div><span class="readout">Math instructions per load: <b id="bbMv"></b></span><input type="range" id="bbM" min="1" max="16" step="1" aria-label="Math instructions per load"></div>
+      <div><span class="readout">Max loads in flight: <b id="bbKv"></b></span><input type="range" id="bbK" min="1" max="8" step="1" aria-label="Maximum outstanding loads"></div>
+      <div><span class="readout">Request latency before transfer: <b id="bbLv"></b></span><input type="range" id="bbL" min="0" max="40" step="2" aria-label="Memory command latency in clocks"></div>
+    </div>
+    <div class="sc" style="padding:10px 0 0"><svg id="bbSvg" viewBox="0 0 760 230" role="img" aria-label="Clock-by-clock timeline: math instructions issued, stall cycles, loads in flight, and the memory channel's transfers" style="min-width:560px"></svg></div>
+    <div class="stat" id="bbStat"></div>
+    <p class="msg" id="bbMsg"></p>
+  </div><figcaption><b>Red means the core had nothing to compute.</b> Each column is one clock. The top row is the ALU: orange when it issued a math instruction, red when it stalled waiting for data. The middle row counts loads in flight. The bottom row is the memory channel: blue while it transfers a load's 64 bytes (a gap means it was idle). The steady-state utilization is measured over a long run, not just the clocks drawn.</figcaption></figure>
+  <p>With the lecture's numbers, each load brings 64 bytes and feeds 2 math instructions, and memory delivers 64 bytes every 8 clocks. So in steady state the core can do at most <b>2 math instructions per 8 clocks: 25% utilization</b>, however many threads it has. The memory channel, meanwhile, is busy <b>100% of the time</b>. It can't transfer data any faster.</p>
+  <p>That's the lecture's key claim: <b>in steady state, the core's utilization depends only on the rate of instructions and the rate of memory, not on memory latency or the number of outstanding requests</b>, as long as there are enough requests in flight. Try it with the lecture's preset: raise the latency from 4 to 16 clocks and nothing changes. The explorer also shows the fine print. Keep going past 16 clocks and utilization drops, because 3 loads in flight are no longer enough to keep the channel busy (at 40 clocks it's about 12%). The "too few loads in flight" preset shows the extreme: with 1 load outstanding and a long latency, the channel sits idle between requests. Little's law says you can't reach full bandwidth without enough requests in flight: here, loads in flight × 64 bytes must cover (latency + transfer time) × bandwidth.</p>
+  <div class="tbl"><table>
+    <tr><th>Limit</th><th>Formula (per clock)</th><th>What raises it</th></tr>
+    <tr><td>Compute</td><td class="m">1 math instruction</td><td>More ALUs, cores, SIMD lanes</td></tr>
+    <tr><td>Bandwidth</td><td class="m">math per load × bandwidth ÷ bytes per load</td><td>More bandwidth, or more math per byte loaded</td></tr>
+    <tr><td>Latency (Little's law)</td><td class="m">loads in flight × math per load ÷ (latency + transfer time)</td><td>More outstanding requests (more threads, more independent loads)</td></tr>
+  </table></div>
+  <p>The achieved rate is the smallest of the three. Adding ALUs helps only when compute is the smallest; adding threads only when latency is.</p>
+</section>
+
+<section class="lesson" id="s5" data-toc="Bandwidth is the critical resource" data-n="5">
+  <div class="lesson-h"><div class="kicker">Section 5</div><h2>Back to the thought experiment: bandwidth is the critical resource</h2></div>
+  <p>Element-wise multiply performs <b>three memory operations</b> (two 4-byte loads and one 4-byte store: 12 bytes) for every <b>one multiply</b>. That ratio decides everything.</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 8px"><span class="readout">Processor:</span><div class="seg" role="group" aria-label="Processor"><button data-tx="v100" aria-pressed="true">NVIDIA V100 GPU</button><button data-tx="xeon">8-core Xeon CPU</button></div></div>
+    <div class="cfg">
+      <div><span class="readout">Useful operations per element: <b id="txOv"></b></span><input type="range" id="txO" min="0" max="10" step="1" value="0" aria-label="Operations per element, log scale"></div>
+    </div>
+    <div class="sc" style="padding:10px 0 0"><svg id="txSvg" viewBox="0 0 760 200" role="img" aria-label="Bandwidth needed to keep every ALU busy, compared with the bandwidth available" style="min-width:560px"></svg></div>
+    <div class="stat" id="txStat"></div>
+    <p class="msg" id="txMsg"></p>
+  </div><figcaption><b>Needed versus available bandwidth.</b> Needed = operations per clock × clock rate × bytes per operation. The V100 can start 5,120 fp32 multiplies per clock at 1.6 GHz; with 12 bytes each, that's about <b>98 TB/s</b>, against 900 GB/s available: under <b>1%</b> efficiency. The CPU preset models a 3.2 GHz eight-core Xeon E5 v4 doing one 8-wide AVX multiply per core per clock with a 76 GB/s memory bus: about <b>3%</b>. Raise the operations per element to see how reuse changes the picture.</figcaption></figure>
+  <p>So the GPU runs this program at under 1% of its arithmetic capability, and the CPU at about 3%. Yet the GPU is still much <b>faster</b>, because its memory system delivers about 12 times more bytes per second, and bandwidth is all that matters here. This computation is <b>bandwidth-limited</b>: if processors request data faster than memory can supply it, the memory system can't keep up.</p>
+  <p>Modern GPUs push bandwidth up with <b>high-bandwidth memory</b> (HBM) stacked right next to the processor, such as the V100's 900 GB/s HBM2. But compute has grown even faster. Overcoming bandwidth limits is often <b>the most important challenge</b> in programming throughput-oriented systems. Performant parallel programs therefore:</p>
+  <ul>
+    <li><b>Fetch data from memory less often.</b> Reuse data the same thread loaded earlier (temporal locality), and share data between threads (cooperation) instead of each loading its own copy.</li>
+    <li><b>Prefer recomputing to storing and reloading.</b> Arithmetic is close to free; memory traffic isn't.</li>
+    <li>Above all, <b>access memory infrequently</b> relative to the computation done.</li>
+  </ul>
+  <div class="predict"><div class="ph"><b>Predict</b><span>Answer before opening.</span></div><ol>
+    <li>In the explorer's lecture preset, a thread does 2 adds per 64-byte load, and memory delivers 8 bytes per clock. What's the best possible ALU utilization? Does doubling the number of threads change it?
+      <details><summary>Show answer</summary><div class="ans"><p>64 bytes take 8 clocks and feed 2 adds: at most 2 useful clocks in 8, <b>25%</b>. More threads don't help: they only add more requests to a memory channel that is already busy 100% of the time.</p></div></details></li>
+    <li>How much bandwidth would the V100 need to keep all 5,120 ALUs busy on element-wise multiply?
+      <details><summary>Show answer</summary><div class="ans"><p>5,120 multiplies × 1.6 × 10⁹ clocks/s × 12 bytes ≈ <b>98 TB/s</b>, more than 100 times the 900 GB/s it has. Efficiency is about 0.9%.</p></div></details></li>
+    <li>Why does raising the latency from 4 to 16 clocks not change the lecture preset's utilization, while the "too few loads in flight" preset is very sensitive to latency?
+      <details><summary>Show answer</summary><div class="ans"><p>With enough loads outstanding, the memory channel is always busy, so only its transfer rate matters. With too few in flight (one load in that preset, or three loads once the latency exceeds 16 clocks), the channel waits out part of the latency between transfers. By Little's law the achieved bandwidth is (loads in flight × 64 bytes) ÷ (latency + transfer time), which falls as latency rises.</p></div></details></li>
+  </ol></div>
+</section>
+
+<!-- ================================ PART 2 ================================ -->
+<div class="partbar" id="p2"><div class="kicker">Part 2 · Abstraction vs. implementation</div><h2>What a program means, and how it runs</h2><p>Using ISPC to separate a programming model's semantics from the machinery that carries them out.</p></div>
+
+<section class="lesson" id="s6" data-toc="Abstraction vs implementation" data-n="6" style="margin-top:36px">
+  <div class="lesson-h"><div class="kicker">Section 6</div><h2>The theme: abstraction versus implementation</h2></div>
+  <p>The second half of the lecture has one theme, and the course returns to it constantly. <b>Confusing the semantics of an abstraction with the details of its implementation is the most common source of confusion in parallel programming.</b></p>
+  <div class="card4">
+    <div class="c2"><span class="l">Abstraction (semantics)</span>What do the operations of a programming model <i>mean</i>? Given a program and those meanings, what answer will it compute?</div>
+    <div class="c3"><span class="l">Implementation (scheduling)</span>How will that answer actually be computed on a parallel machine? In what order do operations run? Which thread, execution unit or vector lane does each one?</div>
+    <div class="c4"><span class="l">Your goal</span>Given a program and knowledge of how its programming model is implemented, <b>trace in your head</b> what each part of the parallel computer is doing at each step.</div>
+    <div class="c1"><span class="l">The trap</span>Assuming a guarantee the abstraction never made, because the implementation you happen to know gives it. Programs built on that assumption break on the next implementation.</div>
+  </div>
+  <p>The example is <b>ISPC</b>, the Intel SPMD Program Compiler, which you use in the first programming assignment. (Matt Pharr's blog series "The Story of ISPC" is a good read on why it was designed this way.)</p>
+</section>
+
+<section class="lesson" id="s7" data-toc="SPMD and ISPC gangs" data-n="7">
+  <div class="lesson-h"><div class="kicker">Section 7</div><h2>SPMD in ISPC: gangs of program instances</h2></div>
+  <p>Recall Lecture 2's example: compute sin(x) with a Taylor series, sin(x) = x − x³/3! + x⁵/5! − …, for every element of an array. The C++ version is an ordinary loop over <code>i</code>. Here it is in ISPC:</p>
+  <pre class="code">export void ispc_sinx(<span class="u">uniform</span> int N, <span class="u">uniform</span> int terms,
+                      <span class="u">uniform</span> float* x, <span class="u">uniform</span> float* result)
+{
+  // assume N % programCount == 0
+  for (<span class="u">uniform</span> int i = 0; i &lt; N; i += <span class="k">programCount</span>) {
+    int idx = i + <span class="k">programIndex</span>;
+    float value = x[idx];
+    float numer = x[idx] * x[idx] * x[idx];
+    <span class="u">uniform</span> int denom = 6;       // 3!
+    <span class="u">uniform</span> int sign = -1;
+    for (<span class="u">uniform</span> int j = 1; j &lt;= terms; j++) {
+      value += sign * numer / denom;
+      numer *= x[idx] * x[idx];
+      denom *= (2*j+2) * (2*j+3);
+      sign *= -1;
+    }
+    result[idx] = value;
+  }
+}</pre>
+  <p>The C++ <code>main</code> calls <code>ispc_sinx(N, terms, x, result)</code> like any function. What that call <i>means</i> is the <b>SPMD</b> (single program, multiple data) abstraction:</p>
+  <ul>
+    <li>The call spawns a <b>gang</b> of ISPC <b>program instances</b>. All instances run the same ISPC function concurrently.</li>
+    <li>Each instance has <b>its own copy of local variables</b> (<code>idx</code>, <code>value</code>, <code>numer</code> above).</li>
+    <li>When the function returns, <b>all instances have completed</b>, and sequential C++ execution resumes.</li>
+  </ul>
+  <figure class="fig"><div class="sc"><svg id="forkSvg" viewBox="0 0 760 230" role="img" aria-label="Sequential C++ code calls the ISPC function, which runs a gang of eight program instances; when all finish, sequential execution resumes" style="min-width:560px"></svg></div>
+    <figcaption><b>Fork, run a gang, join.</b> One thread of control reaches the call, becomes <code>programCount</code> logical instances (8 here), and becomes one thread again only when every instance has finished.</figcaption></figure>
+  <div class="tbl"><table>
+    <tr><th>ISPC keyword</th><th>Meaning</th></tr>
+    <tr><td class="m">programCount</td><td>The number of instances running simultaneously in the gang. The same for every instance (a <b>uniform</b> value).</td></tr>
+    <tr><td class="m">programIndex</td><td>This instance's ID within the gang, 0 to programCount − 1. Different in every instance (a <b>varying</b> value).</td></tr>
+    <tr><td class="m">uniform</td><td>A type modifier: every instance has the same value, so one copy suffices. Purely an optimization; it isn't needed for correctness.</td></tr>
+  </table></div>
+  <p>In <code>ispc_sinx</code>, the loop counter <code>i</code> is uniform: every instance steps through i = 0, 8, 16, … together. Each computes its own element <code>idx = i + programIndex</code>. So with programCount = 8, instance 0 handles elements 0, 8, 16, …, instance 1 handles 1, 9, 17, … This is an <b>interleaved</b> assignment of array elements to instances.</p>
+</section>
+
+<section class="lesson" id="s8" data-toc="Interleaved vs blocked" data-n="8">
+  <div class="lesson-h"><div class="kicker">Section 8</div><h2>Assigning work to instances: interleaved versus blocked</h2></div>
+  <p>A second version divides the array into one contiguous <b>block</b> per instance instead:</p>
+  <pre class="code">// assume N % programCount == 0
+<span class="u">uniform</span> int count = N / <span class="k">programCount</span>;
+int start = <span class="k">programIndex</span> * count;
+for (<span class="u">uniform</span> int i = 0; i &lt; count; i++) {
+  int idx = start + i;
+  float value = x[idx];
+  ...                      // same Taylor series as before
+}</pre>
+  <p>Both versions compute exactly the same results: the <b>abstraction</b> is satisfied either way. The difference is entirely in the <b>implementation</b>, and it's large. ISPC implements a gang with <b>SIMD instructions</b>: the gang size is the hardware's SIMD width (or a small multiple of it), and each instance is one vector lane. At each step of the loop, one vector instruction performs <code>float value = x[idx]</code> for all eight instances at once. What that instruction must do depends on which eight addresses the instances want.</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 8px"><span class="readout">Assignment:</span><div class="seg" role="group" aria-label="Assignment"><button data-as="int" aria-pressed="true">interleaved</button><button data-as="blk">blocked</button><button data-as="one">instance 0 does all</button><button data-as="dyn">dynamic</button></div>
+      <span class="readout" style="margin-left:8px">programCount:</span><div class="seg" role="group" aria-label="Gang size"><button data-pc="4">4</button><button data-pc="8" aria-pressed="true">8</button></div></div>
+    <div class="sc" style="padding:0"><svg id="asSvg" viewBox="0 0 760 300" role="img" aria-label="Grid of time steps by program instances showing which array element each instance handles, and the memory addresses one vector load touches" style="min-width:560px"></svg></div>
+    <div class="ctrl"><button id="asBack">◀ Back</button><button id="asStep" class="pri">Next step ▶</button><button id="asReset">Reset</button><span class="readout" id="asOut"></span></div>
+    <p class="msg" id="asMsg"></p>
+  </div><figcaption><b>Same work, different memory instructions.</b> N = 32 elements. Rows are steps of the loop; columns are program instances (vector lanes). The strip at the bottom is the array in memory, with this step's accesses highlighted. <b>Interleaved</b>: each step's eight addresses are contiguous, so one <b>packed vector load</b> (<code>vmovaps</code>, the <code>_mm256_load_ps</code> intrinsic) fetches them all. <b>Blocked</b>: the eight addresses are 4 apart, so the compiler must use a <b>gather</b> (<code>vgatherdps</code>, <code>_mm256_i32gather_ps</code>), a more complex and more costly instruction. The last two options preview possible <code>foreach</code> implementations (Section 9).</figcaption></figure>
+  <div class="pitfall"><b>Blocked is the natural choice for threads, interleaved for SIMD lanes.</b> Across CPU cores, giving each thread a contiguous block is usually best, since each core streams through its own memory. Across the lanes of one SIMD instruction, it's the opposite: the lanes execute together, so you want <i>neighbouring lanes</i> to touch neighbouring addresses. Which is better depends on the implementation, not the abstraction.</div>
+</section>
+
+<section class="lesson" id="s9" data-toc="foreach" data-n="9">
+  <div class="lesson-h"><div class="kicker">Section 9</div><h2>Raising the level of abstraction: <code>foreach</code></h2></div>
+  <p>Writing <code>programIndex</code> arithmetic by hand is error-prone. ISPC's <b>foreach</b> construct lets the programmer declare the parallel iterations instead:</p>
+  <pre class="code">export void ispc_sinx(<span class="u">uniform</span> int N, <span class="u">uniform</span> int terms,
+                      <span class="u">uniform</span> float* x, <span class="u">uniform</span> float* result)
+{
+  <span class="k">foreach</span> (i = 0 ... N) {
+    float value = x[i];
+    ...                      // same Taylor series, using x[i]
+    result[i] = value;
+  }
+}</pre>
+  <p><code>foreach</code> says: <b>these are the iterations the whole gang must perform</b>, not each instance. The ISPC implementation takes responsibility for assigning iterations to instances. That assignment could be done in several valid ways, and the explorer above shows four: all iterations on instance 0 (valid but pointless), interleaved, blocked, or <b>dynamic</b>, where instances repeatedly grab the next unclaimed iteration from a shared counter with an atomic increment. (In practice ISPC uses an interleaved-style mapping, because it produces packed vector loads.)</p>
+  <p>In many simple cases, <code>foreach</code> lets you write a program <b>almost as if it were sequential</b>: "independently, for each element of the input array, do this." The next section shows where that "almost" matters.</p>
+</section>
+
+<section class="lesson" id="s10" data-toc="Semantics traps" data-n="10">
+  <div class="lesson-h"><div class="kicker">Section 10</div><h2>Reading ISPC programs carefully: semantics traps</h2></div>
+  <h3>Which of these programs is well defined?</h3>
+  <div class="grid2">
+    <pre class="code" style="margin:0">// absolute_repeat
+<span class="k">foreach</span> (i = 0 ... N) {
+  if (x[i] &lt; 0)
+    y[2*i] = -x[i];
+  else
+    y[2*i] = x[i];
+  y[2*i+1] = y[2*i];
+}</pre>
+    <pre class="code" style="margin:0">// shift_negative
+<span class="k">foreach</span> (i = 0 ... N) {
+  if (i &gt;= 1 &amp;&amp; x[i] &lt; 0)
+    y[i-1] = x[i];
+  else
+    y[i] = x[i];
+}</pre>
+  </div>
+  <p><b>absolute_repeat</b> computes the absolute value of each element of x and writes it twice into y. Each iteration writes only its own two slots, 2i and 2i + 1, so the result is the same in every order: <b>well defined</b>. <b>shift_negative</b> is different. Iteration i may write y[i − 1], which iteration i − 1 also writes. Which write lands last depends on the order the implementation happens to run the iterations in, so <b>the output is undefined</b>.</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 8px"><span class="readout">Program:</span><div class="seg" role="group" aria-label="Program"><button data-sp="abs" aria-pressed="true">absolute_repeat</button><button data-sp="shift">shift_negative</button></div>
+      <span class="readout" style="margin-left:8px">Iteration order:</span><div class="seg" role="group" aria-label="Iteration order"><button data-so="fwd" aria-pressed="true">0, 1, 2, …</button><button data-so="rev">…, 2, 1, 0</button><button data-so="gang">shuffled (click again to reshuffle)</button></div></div>
+    <div class="sc" style="padding:0"><svg id="spSvg" viewBox="0 0 760 230" role="img" aria-label="Input x, and the output y produced by the chosen iteration order compared with in-order execution" style="min-width:560px"></svg></div>
+    <p class="msg" id="spMsg"></p>
+  </div><figcaption><b>Change only the order.</b> x has eight elements; three are negative. The two output rows compare the chosen order with plain in-order execution. For absolute_repeat they always match. For shift_negative, some cells are written by two iterations, and which value survives depends on the order. Highlighted cells differ. Any of these orders is a legal implementation of <code>foreach</code>.</figcaption></figure>
+
+  <h3>Computing a sum: the uniform/varying distinction</h3>
+  <p>Summing an array exposes the uniform-versus-varying distinction. Two plausible attempts both fail to compile:</p>
+  <div class="grid2">
+    <div><pre class="code" style="margin:0">// sum_incorrect_1
+float sum = 0.0f;
+<span class="k">foreach</span> (i = 0 ... N)
+  sum += x[i];
+return sum;   // returns uniform float</pre>
+    <p style="font-size:14.5px"><code>sum</code> is <b>varying</b>: every instance has its own copy. The function must return <i>one</i> uniform float to C++. Which copy? It's a compile-time type error.</p></div>
+    <div><pre class="code" style="margin:0">// sum_incorrect_2
+<span class="u">uniform</span> float sum = 0.0f;
+<span class="k">foreach</span> (i = 0 ... N)
+  sum += x[i];
+return sum;</pre>
+    <p style="font-size:14.5px"><code>sum</code> is <b>uniform</b>: one copy for the whole gang. But <code>x[i]</code> differs per instance, so the gang would be trying to add eight different values into one variable in one step. Also a compile-time type error.</p></div>
+  </div>
+  <p>The correct version gives each instance a <b>private partial sum</b>, with no communication during the loop, then combines them with a <b>cross-instance</b> operation from ISPC's standard library:</p>
+  <pre class="code">export <span class="u">uniform</span> float sum_array(<span class="u">uniform</span> int N, <span class="u">uniform</span> float* x) {
+  float partial = 0.0f;                   // one per instance
+  <span class="k">foreach</span> (i = 0 ... N)
+    partial += x[i];
+  return <span class="k">reduce_add</span>(partial);             // one uniform total
+}</pre>
+  <figure class="fig"><div class="widget">
+    <div class="sc" style="padding:0"><svg id="suSvg" viewBox="0 0 760 240" role="img" aria-label="Eight lanes each accumulating a partial sum over 32 elements, then reduce_add combining them" style="min-width:560px"></svg></div>
+    <div class="ctrl"><button id="suBack">◀ Back</button><button id="suStep" class="pri">Next step ▶</button><button id="suReset">Reset</button><span class="readout" id="suOut"></span></div>
+    <p class="msg" id="suMsg"></p>
+  </div><figcaption><b>What the SIMD implementation actually does.</b> The ISPC code behaves like this AVX version: keep an 8-wide vector of partial sums; for each group of eight elements, add a packed vector load into it; finally store the vector and add its eight lanes together. If you can see why that correctly implements the gang abstraction, you have a good command of ISPC.</figcaption></figure>
+  <p><code>reduce_add</code> is one of several <b>cross-instance operations</b>, the parts of ISPC where instances deliberately communicate:</p>
+  <div class="tbl"><table>
+    <tr><th>Operation</th><th>What it does</th></tr>
+    <tr><td class="m">uniform int64 reduce_add(int32 x)</td><td>Sum of x over all instances in the gang</td></tr>
+    <tr><td class="m">uniform int32 reduce_min(int32 a)</td><td>Minimum of a over all instances</td></tr>
+    <tr><td class="m">int32 broadcast(int32 value, uniform int index)</td><td>Every instance receives the value held by instance <code>index</code></td></tr>
+    <tr><td class="m">int32 rotate(int32 value, uniform int offset)</td><td>Pass values around the gang by <code>offset</code> positions, wrapping at the ends</td></tr>
+    <tr><td class="m">shift(value, offset)</td><td>Like rotate, but values shifted past the end of the gang become 0</td></tr>
+  </table></div>
+
+  <h3>Try it: a tree reduction across the gang</h3>
+  <p>These operations can express real cooperation. The lecture's example computes the product of eight numbers in lg 8 = <b>3 steps</b> instead of 7: in each step, some instances multiply their value by a partner's value obtained with <code>shift</code>, and the number of useful partial products halves.</p>
+  <figure class="fig"><div class="widget">
+    <div class="sc" style="padding:0"><svg id="trSvg" viewBox="0 0 760 250" role="img" aria-label="Eight lanes combining values in three steps: pairs, then groups of four, then all eight" style="min-width:560px"></svg></div>
+    <div class="ctrl"><button id="trBack">◀ Back</button><button id="trStep" class="pri">Next step ▶</button><button id="trReset">Reset</button><span class="readout" id="trOut"></span></div>
+    <p class="msg" id="trMsg"></p>
+  </div><figcaption><b>Three steps, not seven.</b> This explorer uses the convention that the shifted value an instance receives comes from the instance <i>d</i> positions above it (so lane 0 pairs with lane 1, then 2, then 4). ISPC's actual sign convention for the offset argument is defined in its documentation; the direction just determines which lane ends up holding the result. Masked lanes (hatched) compute nothing useful in that step.</figcaption></figure>
+</section>
+
+<section class="lesson" id="s11" data-toc="Implementation: SIMD & tasks" data-n="11">
+  <div class="lesson-h"><div class="kicker">Section 11</div><h2>How the gang is implemented, and what it doesn't give you</h2></div>
+  <figure class="fig"><div class="sc"><svg id="implSvg" viewBox="0 0 760 250" role="img" aria-label="The SPMD abstraction of eight program instances is implemented as the eight lanes of SIMD instructions on one core; multiple cores need ISPC tasks" style="min-width:560px"></svg></div>
+    <figcaption><b>Abstraction on top, implementation below.</b> The programmer thinks of programCount logical instruction streams. The compiler emits one stream of SIMD instructions (AVX2 on x86, NEON on Arm), one lane per instance, and turns divergent control flow into masked lanes, just as you do by hand in the first assignment. All of it runs in <b>one thread on one core</b>.</figcaption></figure>
+  <ul>
+    <li><b>SPMD programming model:</b> the programmer "thinks" that calling an ISPC function spawns programCount logical instruction streams, each with a different programIndex. The program is written in terms of that abstraction.</li>
+    <li><b>SIMD implementation:</b> the ISPC compiler emits vector instructions that carry out the gang's logic, handling divergent <code>if</code>s by masking lanes.</li>
+    <li><b>The semantics can be subtle</b>, because <code>uniform</code> values and cross-instance operations let implementation details peek through the abstraction.</li>
+  </ul>
+  <p>One consequence surprises people: everything shown so far uses <b>only one core</b>. On the four-core machines used in the course, the gang runs on one of them. To use all cores, ISPC has a second abstraction, the <b>task</b>, which launches work onto multiple threads and therefore multiple cores. (The first assignment explores it.) So the full picture is <b>tasks across cores, gangs across SIMD lanes within each core</b>: the same "multi-core × SIMD" combination as Lecture 2.</p>
+</section>
+
+<section class="lesson" id="s12" data-toc="Levels of abstraction" data-n="12">
+  <div class="lesson-h"><div class="kicker">Section 12</div><h2>How high should the abstraction go?</h2></div>
+  <p>ISPC is deliberately a <b>low-level</b> language. By exposing <code>programIndex</code> and <code>programCount</code>, it lets the programmer control exactly which work and which data each instance handles. The price: you can write programs with <b>undefined output</b> (like shift_negative), or programs that are correct <b>only for one particular programCount</b>.</p>
+  <p>What if the language didn't expose instances at all?</p>
+  <ul>
+    <li><b>Only <code>foreach</code>:</b> remove <code>programIndex</code> and <code>programCount</code>. Now there's little reason to think about instances. Everything outside a <code>foreach</code> must be uniform values and uniform logic, because with no instance IDs there is nothing that could make one instance's value differ from another's.</li>
+    <li><b>No indexing at all:</b> invoke a function once per element of a <b>collection</b>, like <code>y = map(doWork, x)</code>. The programmer writes no loops and does no indexing. NumPy and PyTorch programmers work this way: <code>Z = X + Y</code> adds whole arrays, and the library decides how to parallelize.</li>
+  </ul>
+  <p>Each step up hides more of the implementation, which makes it easier to write correct programs and harder to control performance. Later lectures return to these data-parallel models.</p>
+  <figure class="fig"><div class="sc"><svg id="ladderSvg" viewBox="0 0 760 190" role="img" aria-label="Three levels of abstraction: ISPC with programIndex, foreach only, and map over collections" style="min-width:560px"></svg></div>
+    <figcaption><b>A ladder of abstractions.</b> Moving right, the programmer says less about <i>how</i> work is assigned and the system decides more. Control and the risk of undefined behaviour decrease together.</figcaption></figure>
+  <div class="insight">The lecture's summary: <b>programming models provide a way to think about the organization of parallel programs. They provide abstractions that permit multiple valid implementations.</b> Keep asking, for the rest of the course: which parts of what I'm seeing are the abstraction's promises, and which are just how this implementation happens to work?</div>
+</section>
+
+<section class="lesson" id="gloss" data-toc="Glossary & review" data-n="✓">
+  <div class="lesson-h"><div class="kicker">Review</div><h2>Terms to know, and questions to test yourself</h2></div>
+  <dl class="glossary">
+    <dt>Latency</dt><dd>Time for one operation or request to complete.</dd>
+    <dt>Throughput</dt><dd>Operations completed per unit time.</dd>
+    <dt>Memory bandwidth</dt><dd>The rate at which memory can supply data, in bytes per second.</dd>
+    <dt>Little's law</dt><dd>Items in flight = throughput × latency.</dd>
+    <dt>Bandwidth-bound</dt><dd>Execution limited by the rate memory can supply data, with compute units stalled.</dd>
+    <dt>Bottleneck</dt><dd>The stage with the lowest throughput, which sets the throughput of the whole path.</dd>
+    <dt>Abstraction vs implementation</dt><dd>What a programming model's operations mean, versus how a particular system carries them out.</dd>
+    <dt>SPMD</dt><dd>Single program, multiple data: one function run by many logical instances on different data.</dd>
+    <dt>Gang, program instance</dt><dd>The group of instances an ISPC call spawns; each instance is one logical stream with its own locals.</dd>
+    <dt>programCount / programIndex</dt><dd>The gang's size (uniform) and an instance's ID (varying).</dd>
+    <dt>uniform / varying</dt><dd>One value shared by the gang / a separate value per instance.</dd>
+    <dt>foreach</dt><dd>Declares iterations for the whole gang, leaving the assignment to the implementation.</dd>
+    <dt>Packed load vs gather</dt><dd>A vector load of contiguous addresses vs of arbitrary addresses; gathers cost more.</dd>
+    <dt>Cross-instance operation</dt><dd>A standard-library call that combines or moves values between instances: reduce_add, broadcast, rotate, shift.</dd>
+    <dt>ISPC task</dt><dd>ISPC's abstraction for multi-core execution; gangs alone use one core's SIMD.</dd>
+  </dl>
+  <div class="predict"><div class="ph"><b>Test yourself</b><span>The lecture's questions, plus a few more.</span></div><ol>
+    <li>A car trip takes 30 minutes with one car on the road at a time. Adding three lanes raises throughput from 2 to 8 cars/hour. What happened to latency?
+      <details><summary>Show answer</summary><div class="ans"><p>Nothing: still 30 minutes. More lanes add parallelism, which raises throughput without changing any one car's trip.</p></div></details></li>
+    <li>Laundry: wash 45 min, dry 60 min, fold 15 min. Pipelined, what's the throughput, and why isn't it one load every 40 minutes?
+      <details><summary>Show answer</summary><div class="ans"><p><b>1 load per hour.</b> The dryer is the slowest stage, so a load can leave the pipeline only every 60 minutes. The pipeline's throughput is set by its bottleneck, not the average stage.</p></div></details></li>
+    <li>Convince yourself: in steady state, with enough loads in flight, why is core utilization independent of memory latency?
+      <details><summary>Show answer</summary><div class="ans"><p>Once enough requests are outstanding, the memory channel is always transferring, so the rate at which data arrives is its bandwidth. Math can proceed only as fast as its operands arrive. Latency just shifts when each item arrives, not how many arrive per second.</p></div></details></li>
+    <li>Why does the blocked sinx version need a gather while the interleaved version uses a packed load?
+      <details><summary>Show answer</summary><div class="ans"><p>At each step the eight instances access x[start + i] with starts that are N/8 apart, so the eight addresses are far apart. In the interleaved version they access x[i + 0 … i + 7], eight contiguous floats that one vector load can fetch.</p></div></details></li>
+    <li>Why is shift_negative's output undefined, while absolute_repeat's isn't?
+      <details><summary>Show answer</summary><div class="ans"><p>In shift_negative, two different iterations can write the same element (y[i − 1] is written by iterations i − 1 and i), and <code>foreach</code> promises no order. In absolute_repeat every iteration writes only its own elements, 2i and 2i + 1.</p></div></details></li>
+    <li>With only <code>foreach</code> (no programIndex or programCount), why must everything outside a foreach be uniform?
+      <details><summary>Show answer</summary><div class="ans"><p>Outside a foreach there's no per-instance information at all: no instance ID and no per-iteration variable. Every instance runs identical code on identical inputs, so every value is necessarily the same across the gang.</p></div></details></li>
+  </ol></div>
+  <p class="credit">Based on Stanford CS149 (Fall 2023), Lecture 3, "Multi-Core Architecture Part II (latency/bandwidth issues) + Parallel Programming Abstractions", by Kayvon Fatahalian and Kunle Olukotun. The explanations, diagrams and interactive models on this page are original study material. Hardware figures (V100, Xeon E5 v4) and ISPC examples are as presented in the lecture; for ISPC's exact semantics see the <a href="https://ispc.github.io/">ISPC documentation</a>. For the course's own slides and videos, see the <a href="https://gfxcourses.stanford.edu/cs149/fall23">CS149 course site</a>.</p>
+  <div class="nextunit"><a href="lecture-02-modern-multicore.html"><small>← Previous lecture</small>Lecture 2 · A modern multi-core processor</a><a href="index.html"><small>Back to</small>All CS149 lectures →</a></div>
+</section>
+
+</main>
+</div>
+<script>
+(function(){
+const {$,$$,RM}=NOTES;
+document.querySelector('svg defs').insertAdjacentHTML('beforeend','<pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--panel2)"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--mute);stroke-width:1.2;opacity:.45"/></pattern>');
+const B=(x,y,w,h,c,t1,t2,o={})=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="${c}" ${o.rx?`rx="${o.rx}"`:''}/>`+(t1?`<text x="${x+w/2}" y="${y+h/2+(t2?-3:4)}" class="mid ${o.big?'hd':'bd'}" style="${o.fs?`font-size:${o.fs}px`:''}">${t1}</text>`:'')+(t2?`<text x="${x+w/2}" y="${y+h/2+12}" class="mid xs">${t2}</text>`:'');
+const A=(d,c='w',m='ah')=>`<path d="${d}" class="${c}" marker-end="url(#${m})"/>`;
+const set=(id,h)=>{const e=document.getElementById(id);if(e)e.innerHTML=h;};
+
+/* ---- slide-style primitives ---- */
+const tS=(x,y,t,fs=11,w=600,anch='mid',cls='sd')=>`<text x="${x}" y="${y}" class="${anch} ${cls}" style="font-size:${fs}px;font-weight:${w}">${t}</text>`;
+const tT=(x,y,t,fs=11,w=600,anch='mid')=>`<text x="${x}" y="${y}" class="${anch}" style="font-size:${fs}px;font-weight:${w}">${t}</text>`;
+const slFD=(x,y,w=64,h=40,fs=11)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-fd"/>`+(h>=26?tS(x+w/2,y+h/2-2,'Fetch/',fs)+tS(x+w/2,y+h/2+fs,'Decode',fs):tS(x+w/2,y+h/2+3.5,'Fetch/Decode',Math.min(fs,9)));
+const slALU=(x,y,w,h,l1='ALU',l2,fs=11)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-alu"/>`+(l1?tS(x+w/2,y+h/2+(l2?-2:fs/3),l1,fs):'')+(l2?tS(x+w/2,y+h/2+11,l2,Math.min(9,fs)):'');
+const slVec=(x,y,cw=30,ch=20,num=false,fs)=>{let v='';for(let k=0;k<8;k++){const ax=x+(k%4)*cw,ay=y+Math.floor(k/4)*ch;v+=`<rect x="${ax}" y="${ay}" width="${cw}" height="${ch}" class="sl-alu"/>`;if(ch>=12)v+=tS(ax+cw/2,ay+ch/2+3.5,num?`ALU ${k}`:'ALU',fs||(num?10:8.5));}return v;};
+const slCtx=(x,y,w,h,title,regs,fs=10.5)=>{let s=`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-ctx"/>`+(title?tS(x+w/2,y+Math.min(14,h/2+4),title,fs):'');
+  if(regs&&regs.length){const rw=(w-12)/2,n=Math.ceil(regs.length/2),top=y+(title?33:8),rh=Math.min(10,(y+h-4-top)/n);s+=`<rect x="${x+w/2-18}" y="${top-12}" width="36" height="9" class="sl-reg"/>`+tS(x+w/2,top-4.5,'PC',7);
+    regs.forEach((r,i)=>{const c=i<n?0:1,row=i%n,rx=x+6+c*rw,ry=top+row*rh;s+=`<rect x="${rx}" y="${ry}" width="${rw}" height="${rh}" class="sl-reg"/>`+(rh>=7?tS(rx+rw/2,ry+rh-2,r,Math.min(7.5,rh-1.5)):'');});}
+  return s;};
+const slCache=(x,y,w,h,t1,t2,fs=11)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-cache"/>`+tS(x+w/2,y+h/2+(t2?-2:4),t1,fs)+(t2?tS(x+w/2,y+h/2+11,t2,Math.min(10,fs),500):'');
+const slMem=(x,y,w,h,t='Memory',t2)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-mem"/>`+tT(x+w/2,y+h/2+(t2?-3:5),t,13)+(t2?`<text x="${x+w/2}" y="${y+h/2+12}" class="mid sm">${t2}</text>`:'');
+const slCore=(x,y,w,h,label,fs=12)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-core"/>`+(label?tT(x+8,y+15,label,fs,700,'start'):'');
+const slBar=(x,y,w,h,t='instruction selection',fs=9.5)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-fd"/>`+tS(x+w/2,y+h/2+3.5,t,fs);
+const slPale=(x,y,w,h,t,fs=10.5)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-pale"/>`+tS(x+w/2,y+h/2+4,t,fs);
+const slStream=(x,y,w,lines,cur,title)=>{let s=title?tT(x+w/2,y-8,title,13,700):'';lines.forEach((l,i)=>{s+=`<rect x="${x}" y="${y+i*22}" width="${w}" height="20" class="${i===cur?'sl-row-on':'sl-row'}"/><text x="${x+8}" y="${y+i*22+14}" class="${i===cur?'sw':'sd'}" style="font-size:11px">${l}</text>`;});
+  if(cur>=0)s+=`<polygon points="${x-24},${y+cur*22} ${x-4},${y+cur*22+10} ${x-24},${y+cur*22+20}" style="fill:#d9763a"/>`;return s;};
+const setVB=(id,w,h,html)=>{const e=document.getElementById(id);if(!e)return;e.setAttribute('viewBox',`0 0 ${w} ${h}`);e.innerHTML=html;};
+/* a small generic core: F/D, execution (scalar ALU or 8-wide grid), contexts */
+const fitL=(lab,wd,maxfs,alt)=>{let fs=Math.min(maxfs,wd/(lab.length*0.64));if(fs<7&&alt){lab=alt;fs=Math.min(maxfs,wd/(lab.length*0.64));}return fs<5.5?null:[lab,fs];};
+function miniCore(x,y,w,h,o={}){const p=Math.max(3,w*0.05);let s=slCore(x,y,w,h,o.label,o.lfs||10);const top=y+(o.label?20:p);
+  const fdH=h*0.2,exH=h*0.3,cxH=h-(top-y)-fdH-exH-p*3;
+  s+=`<rect x="${x+p}" y="${top}" width="${w-2*p}" height="${fdH}" class="sl-fd"/>`+((f=>f&&fdH>=11?tS(x+w/2,top+fdH/2+f[1]*0.35,f[0],f[1]):'')(fitL('Fetch/Decode',w-2*p-4,Math.min(10,fdH*0.6),'F/D')));
+  const ey=top+fdH+p;
+  if(o.simd){const cw=(w-2*p)/4,ch=exH/2;s+=slVec(x+p,ey,cw,ch,false,Math.min(8.5,ch*0.55));}
+  else s+=`<rect x="${x+p}" y="${ey}" width="${w-2*p}" height="${exH}" class="sl-alu"/>`+((f=>f&&exH>=11?tS(x+w/2,ey+exH/2+f[1]*0.35,f[0],f[1]):'')(fitL(o.alu||'ALU',w-2*p-4,Math.min(11,exH*0.5))));
+  const cy=ey+exH+p,nc=o.ctx||1,cw2=(w-2*p-(nc-1)*2)/nc;
+  for(let i=0;i<nc;i++)s+=`<rect x="${x+p+i*(cw2+2)}" y="${cy}" width="${cw2}" height="${cxH}" class="sl-ctx"/>`+((f=>nc===1&&f&&cxH>=11?tS(x+w/2,cy+cxH/2+f[1]*0.35,f[0],f[1]):'')(fitL(o.ctxLabel||'Execution Context',w-2*p-4,Math.min(10,cxH*0.45),'Exec. ctx')));
+  return s;}
+/* ---- slide-style chip drawing (CS149 lecture 2 conventions) ---- */
+const SD={A:{W:1,alu:'S',reg:'R'},B:{W:2,alu:'SS',reg:'R'},C:{W:1,alu:'V',reg:'V'},D:{W:2,alu:'SV',reg:'RV'}};
+function slideCore(x,y,d,T,label,ctx0){const D=SD[d],cw=96,g=8,ctot=T*cw+(T-1)*g,w=Math.max(ctot+24,280),cx=x+w/2;let s='',cy=y+10;
+  const tx=(X,Y,t,cls,fs)=>`<text x="${X}" y="${Y}" class="mid ${cls||'sd'}" style="font-size:${fs||11}px;font-weight:600">${t}</text>`;
+  if(label)s+=`<text x="${x+10}" y="${y+22}" class="bd" style="font-size:14px">${label}</text>`;
+  s+=`<rect x="${cx-70}" y="${cy}" width="140" height="38" class="sl-cache"/>`+tx(cx,cy+16,'Data')+tx(cx,cy+30,'Cache');cy+=46;
+  if(D.W>1){s+=`<rect x="${cx-70}" y="${cy}" width="140" height="16" class="sl-fd"/>`+tx(cx,cy+12,'instruction selection','sd',9.5);cy+=22;}
+  const fw=64,ft=D.W*fw+(D.W-1)*8;for(let i=0;i<D.W;i++){const fx=cx-ft/2+i*(fw+8);s+=`<rect x="${fx}" y="${cy}" width="${fw}" height="40" class="sl-fd"/>`+tx(fx+fw/2,cy+17,'Fetch/')+tx(fx+fw/2,cy+31,'Decode');}cy+=50;
+  const vec=(vx,vy)=>{let v='';for(let k=0;k<8;k++){const ax=vx+(k%4)*30,ay=vy+Math.floor(k/4)*20;v+=`<rect x="${ax}" y="${ay}" width="30" height="20" class="sl-alu"/>`+tx(ax+15,ay+14,'ALU','sd',8.5);}return v;};
+  if(D.alu==='S'){s+=`<rect x="${cx-50}" y="${cy}" width="100" height="42" class="sl-alu"/>`+tx(cx,cy+18,'ALU')+tx(cx,cy+32,'(Execution unit)','sd',9);cy+=50;}
+  else if(D.alu==='SS'){[-1,1].forEach(k=>{const ax=cx+(k<0?-68:4);s+=`<rect x="${ax}" y="${cy}" width="64" height="42" class="sl-alu"/>`+tx(ax+32,cy+26,'ALU');});cy+=50;}
+  else if(D.alu==='V'){s+=vec(cx-60,cy)+tx(cx,cy+52,'(8-wide vector ALU)','',9);cy+=60;}
+  else{s+=`<rect x="${cx-100}" y="${cy}" width="50" height="40" class="sl-alu"/>`+tx(cx-75,cy+25,'ALU')+tx(cx-75,cy+52,'(scalar ALU)','',9)+vec(cx-36,cy)+tx(cx+24,cy+52,'(8-wide vector ALU)','',9);cy+=60;}
+  for(let t=0;t<T;t++){const bx=cx-ctot/2+t*(cw+g);s+=`<rect x="${bx}" y="${cy}" width="${cw}" height="84" class="sl-ctx"/>`+tx(bx+cw/2,cy+13,'Execution','sd',10)+tx(bx+cw/2,cy+25,`Context ${(ctx0||0)+t}`,'sd',10)+
+      `<rect x="${bx+cw/2-18}" y="${cy+30}" width="36" height="9" class="sl-reg"/>`+tx(bx+cw/2,cy+37.5,'PC','sd',7);
+    for(let r=0;r<8;r++){const col=r<4?0:1,row=r%4,rx=bx+6+col*((cw-12)/2),ry=cy+43+row*9.5,nm=D.reg==='RV'?(col?'V':'R')+(row+ (col?0:0)):D.reg+r;
+      s+=`<rect x="${rx}" y="${ry}" width="${(cw-12)/2}" height="9.5" class="sl-reg"/>`+tx(rx+(cw-12)/4,ry+7.5,D.reg==='RV'?(col?'V'+row:'R'+row):D.reg+r,'sd',6.5);}}
+  cy+=92;return {svg:`<rect x="${x}" y="${y}" width="${w}" height="${cy-y}" class="sl-core"/>`+s,w,h:cy-y};}
+function slideChip(d,T,C){const probe=slideCore(0,0,d,T,'',0),cw=probe.w,ch=probe.h;let s='',W,H;const mw=200,mh=36;
+  const tx=(X,Y,t,fs,cls)=>`<text x="${X}" y="${Y}" class="mid ${cls||''}" style="font-size:${fs||13}px;font-weight:600">${t}</text>`;
+  if(C===1){W=cw+20;const mx=W/2;s+=`<rect x="${mx-mw/2}" y="6" width="${mw}" height="${mh}" class="sl-mem"/>`+tx(mx,29,'Memory')+`<path d="M${mx} ${6+mh+2} V${6+mh+18}" class="w" marker-start="url(#ah)" marker-end="url(#ah)"/>`;
+    s+=slideCore(10,6+mh+22,d,T,'',0).svg;H=6+mh+22+ch+8;}
+  else if(C===2){W=2*cw+34;const mx=W/2;s+=`<rect x="${mx-mw/2}" y="6" width="${mw}" height="${mh}" class="sl-mem"/>`+tx(mx,29,'Memory')+`<path d="M${mx} ${44} V${60}" class="w" marker-start="url(#ah)" marker-end="url(#ah)"/>`;
+    s+=`<rect x="${mx-cw*0.8}" y="64" width="${cw*1.6}" height="24" class="sl-cache"/>`+tx(mx,81,'Shared Data Cache',12,'sd');
+    s+=slideCore(10,96,d,T,'Core 0',0).svg+slideCore(24+cw,96,d,T,'Core 1',T).svg;H=96+ch+8;}
+  else{W=cw+44;const mx=(cw+20)/2;s+=`<rect x="${mx-mw/2}" y="6" width="${mw}" height="${mh}" class="sl-mem"/>`+tx(mx,29,'Memory')+`<path d="M${mx} 44 V60" class="w" marker-start="url(#ah)" marker-end="url(#ah)"/>`;
+    s+=`<rect x="10" y="64" width="${cw+24}" height="24" class="sl-cache"/>`+tx(10+(cw+24)/2,81,'Shared Data Cache',12,'sd');
+    for(let k=2;k>=1;k--)s+=`<rect x="${10+k*12}" y="${96+k*8}" width="${cw}" height="${ch}" class="sl-core" style="opacity:.8"/>`;
+    s+=slideCore(10,96,d,T,`Core 0 of ${C}`,0).svg;H=96+ch+30;s+=`<text x="${10+cw/2}" y="${H-6}" class="mid sm">+ ${C-1} more identical cores (${C*T} contexts in total)</text>`;}
+  return {svg:s,W,H};}
+
+
+const pct=v=>{const x=v*100;return (x>=10||x===0?x.toFixed(0):x.toFixed(1))+'%';};
+const hatchR=(x,y,w,h)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" style="fill:url(#hatch);stroke:var(--mute);stroke-width:.5"/>`;
+const fmtBW=b=>b>=1e12?(b/1e12).toFixed(b>=1e13?0:1)+' TB/s':(b/1e9).toFixed(0)+' GB/s';
+
+/* 1 V100 */
+(function(){let s=slCore(20,14,470,222,'NVIDIA V100 GPU');
+  for(let k=0;k<80;k++){const x=34+(k%16)*28,y=38+Math.floor(k/16)*26;s+=`<rect x="${x}" y="${y}" width="24" height="22" class="sl-alu"/>`;}
+  s+=tT(255,184,'80 SMs × 64 fp32 ALUs = 5,120 ALUs',12,600);
+  s+=slCache(34,196,442,30,'L2 cache (6 MB)','',11);
+  s+=`<path d="M494 205 H586" class="wc" style="stroke-width:4" marker-start="url(#ahc)" marker-end="url(#ahc)"/>`+`<text x="540" y="192" class="mid bd">900 GB/s</text><text x="540" y="224" class="mid xs">4,096-bit</text><text x="540" y="237" class="mid xs">interface</text>`;
+  s+=slMem(590,160,152,80,'HBM2 memory','16 GB');
+  s+=`<text x="657" y="40" class="mid sm">5,120 ALUs × 1.6 GHz</text><text x="657" y="58" class="mid sm">= 8.2 trillion ops/s,</text><text x="657" y="76" class="mid sm">all fed through</text><text x="657" y="94" class="mid sm">one memory interface</text>`;
+  set('v100Svg',s);})();
+
+/* 2 highway */
+(function(){let s='';const rows=[['1 lane, one car at a time','0.5 h trip','2 cars/h',1,[0.45],false],['drive faster: 200 km/h','0.25 h trip','4 cars/h',1,[0.6],true],['4 lanes, one car per lane','0.5 h trip','8 cars/h',4,[0.45],false],['4 lanes, cars 1 km apart','0.5 h trip','400 cars/h',4,[0.08,0.2,0.32,0.44,0.56,0.68,0.8,0.92],false]];
+  rows.forEach(([t,lat,thr,ln,cars,fast],i)=>{const y=20+i*70,h=ln===1?16:40,x0=190,w=410;
+    s+=`<text x="10" y="${y+10}" class="bd xs">${t}</text><text x="10" y="${y+26}" class="xs">${lat}</text>`;
+    s+=`<rect x="${x0}" y="${y}" width="${w}" height="${h}" class="bg2"/>`;for(let l=1;l<ln;l++)s+=`<line x1="${x0}" y1="${y+l*10}" x2="${x0+w}" y2="${y+l*10}" style="stroke:var(--line);stroke-dasharray:6 5"/>`;
+    s+=`<text x="${x0-4}" y="${y+h/2+4}" class="end xs">SF</text><text x="${x0+w+4}" y="${y+h/2+4}" class="xs">Stanford</text>`;
+    for(let l=0;l<ln;l++)cars.forEach(c=>{const cx=x0+c*w,cy=y+l*10+(ln===1?4:1);s+=`<rect x="${cx}" y="${cy}" width="14" height="8" rx="2" class="${fast?'bad':'cu'}"/>`+(fast?`<path d="M${cx-14} ${cy+2} H${cx-3} M${cx-10} ${cy+6} H${cx-3}" class="w"/>`:'');});
+    s+=`<text x="750" y="${y+h/2+4}" class="end bd">${thr}</text>`;});
+  set('hwySvg',s);})();
+
+/* 2 laundry */
+(function(){const ST=[['wash',45,'te'],['dry',60,'cu'],['fold',15,'pl']];let strat='seq';
+  function sched(n){const L=[];if(strat==='seq'){for(let k=0;k<n;k++){const t=k*120;L.push([t,t+45,t+105,t+120]);}}
+    else if(strat==='dup'){for(let k=0;k<n;k++){const t=Math.floor(k/2)*120;L.push([t,t+45,t+105,t+120]);}}
+    else{let w=0,d=0,f=0;for(let k=0;k<n;k++){const ws=w,we=ws+45;w=we;const ds=Math.max(we,d),de=ds+60;d=de;const fs=Math.max(de,f),fe=fs+15;f=fe;L.push([ws,we,ds,de,fs,fe]);}}
+    return L;}
+  function draw(){const n=+$('#lnN').value;$('#lnV').textContent=n;const L=sched(n);
+    const seg=l=>l.length===4?[[l[0],l[1]],[l[1],l[2]],[l[2],l[3]]]:[[l[0],l[1]],[l[2],l[3]],[l[4],l[5]]];
+    const end=Math.max(...L.map(l=>l[l.length-1])),sc=620/Math.max(end,240),x0=110;let s='';
+    for(let t=0;t<=end;t+=60)s+=`<line x1="${x0+t*sc}" y1="14" x2="${x0+t*sc}" y2="${24+n*30}" style="stroke:var(--line)"/><text x="${x0+t*sc}" y="${36+n*30}" class="mid xs">${t/60} h</text>`;
+    L.forEach((l,k)=>{const y=20+k*30;s+=`<text x="${x0-8}" y="${y+15}" class="end xs">load ${k+1}${strat==='dup'?(k%2?' (set B)':' (set A)'):''}</text>`;
+      seg(l).forEach(([a,b],j)=>s+=`<rect x="${x0+a*sc}" y="${y}" width="${(b-a)*sc-1}" height="20" class="${ST[j][2]}"/>`+((b-a)*sc>34?`<text x="${x0+(a+b)/2*sc}" y="${y+14}" class="mid xs">${ST[j][0]}</text>`:''));});
+    setVB('lnSvg',760,44+n*30,s);
+    const thr=strat==='seq'?0.5:1,res=strat==='dup'?'2 washers, 2 dryers, 2 people':'1 washer, 1 dryer, 1 person';
+    $('#lnStat').innerHTML=[['latency of one load','2 h'],['all loads done',`${(end/60).toFixed(2).replace(/\.00$/,'')} h`],['steady throughput',`${thr} load/h`],['resources',res]].map(([k,v])=>`<div>${k}<b style="${k==='resources'?'font-size:12px':''}">${v}</b></div>`).join('');
+    $('#lnMsg').innerHTML=strat==='seq'?`One load at a time: every load takes 2 hours, and the next can't start until it's folded. ${n} loads take <b>${2*n} hours</b>.`:strat==='dup'?`Twice the equipment runs two loads side by side: ${n} loads take <b>${Math.ceil(n/2)*2} hours</b>. Throughput doubled because resources doubled.`:`The washer starts the next load as soon as it's free. After the first load, one finishes every <b>60 minutes</b>, the dryer's time: the dryer is the bottleneck, and the washer sits idle 15 minutes an hour waiting for it. ${n} loads take <b>${(end/60).toFixed(2).replace(/\.?0+$/,'')} hours</b>.`;
+    $$('[data-ls]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.ls===strat));}
+  $$('[data-ls]').forEach(b=>b.onclick=()=>{strat=b.dataset.ls;draw();});$('#lnN').oninput=draw;draw();})();
+
+/* 3 bandwidth figure */
+(function(){let s='';[[0,4,'4 items in flight → ~4 items/s'],[1,8,'8 items in flight → ~8 items/s']].forEach(([r,k,t])=>{const y=20+r*96,h=r?52:26;
+  s+=slMem(20,y,110,h+10,'Memory')+`<rect x="140" y="${y+5}" width="440" height="${h}" class="bg2"/>`;
+  for(let i=0;i<k;i++){const lane=r?(i%2):0,idx=r?Math.floor(i/2):i;s+=`<rect x="${160+idx*105}" y="${y+10+lane*26}" width="40" height="16" rx="3" class="te"/>`;}
+  s+=`<path d="M140 ${y+h/2+5} H580" class="w dash" marker-end="url(#ah)"/>`+`<rect x="590" y="${y}" width="150" height="${h+10}" class="sl-core"/>`+tT(665,y+h/2+10,'Processor',12,700);
+  s+=`<text x="360" y="${y+h+24}" class="mid sm">${t}; each item still takes ~2 s</text>`;});
+  set('bwSvg',s);})();
+
+/* 4 core figure (slide style) */
+(function(){let s=slCore(160,8,440,196,'');s=s.replace('width="440"','width="440"');
+  s+=slFD(190,20,90,40,11)+slFD(300,20,90,40,11)+slBar(190,68,200,16,'instruction selection',9);
+  s+=slALU(190,94,90,50,'ALU/EXEC','(scalar math)',11)+`<rect x="300" y="94" width="90" height="50" class="sl-pale"/>`+tS(345,114,'LD/ST',11)+tS(345,128,'(loads/stores)',9,500);
+  for(let k=0;k<4;k++)s+=slCtx(410+k*44,20,40,124,'',[])+tS(430+k*44,86,'HW',8)+tS(430+k*44,98,'thread',8);
+  s+=tS(498,160,'many execution contexts',9.5,500,'mid','');
+  s+=slCache(190,158,200,36,'Data Cache','',11);
+  s+=`<text x="608" y="60" class="xs">1 math op / clock</text><text x="608" y="78" class="xs">+ 1 load / clock</text><text x="608" y="96" class="xs">memory: 8 bytes / clock</text><text x="608" y="114" class="xs">64-byte load = 8 clocks</text>`;
+  set('coreSvg',s);})();
+
+/* 4 bandwidth-bound simulator */
+(function(){const BW=[4,8,16,32,64],PRE={lec:{B:1,M:2,K:3,L:4},fast:{B:3,M:2,K:3,L:4},intense:{B:1,M:8,K:3,L:4},few:{B:1,M:2,K:1,L:24}};
+  function sim(B,M,K,L,T){const D=64/B,th=[...Array(32)].map(()=>({ph:'need',at:0,left:0,ready:0})),loads=[],math=[],inflightAt=[];let chan=0,inflight=0;
+    for(let t=0;t<T;t++){th.forEach(x=>{if(x.ph==='wait'&&x.at<=t){x.ph='go';x.left=M;x.ready=x.at;inflight--;}});
+      inflightAt.push(inflight);
+      const r=th.find(x=>x.ph==='go'&&x.ready<=t);if(r){math.push(t);r.left--;r.ready=t+1;if(!r.left){r.ph='need';r.at=t+1;}}
+      if(inflight<K){const n=th.find(x=>x.ph==='need'&&x.at<=t);if(n){const st=Math.max(t+L,chan),en=st+D;chan=en;n.ph='wait';n.at=en;inflight++;loads.push([t,st,en]);inflightAt[t]=inflight;}}}
+    return {math,loads,inflightAt,D};}
+  let st={...PRE.lec};
+  function draw(){const B=BW[st.B],D=64/B;$('#bbB').value=st.B;$('#bbM').value=st.M;$('#bbK').value=st.K;$('#bbL').value=st.L;
+    $('#bbBv').textContent=`${B} bytes/clock (64-byte load = ${D} clocks)`;$('#bbMv').textContent=st.M;$('#bbKv').textContent=st.K;$('#bbLv').textContent=`${st.L} clocks`;
+    const long=sim(B,st.M,st.K,st.L,3000),w0=500,w1=2500,util=long.math.filter(t=>t>=w0&&t<w1).length/(w1-w0);
+    let busy=0;long.loads.forEach(([,a,b])=>{busy+=Math.max(0,Math.min(b,w1)-Math.max(a,w0));});const chanU=busy/(w1-w0);
+    const bwB=st.M*B/64,latB=st.K*st.M/(st.L+D);
+    const N=64,x0=110,cw=(750-x0)/N,r=sim(B,st.M,st.K,st.L,N);const ms=new Set(r.math);let s='';
+    s+=`<text x="${x0-8}" y="34" class="end xs">ALU</text><text x="${x0-8}" y="64" class="end xs">loads in flight</text><text x="${x0-8}" y="94" class="end xs">load issued</text><text x="${x0-8}" y="124" class="end xs">memory channel</text>`;
+    for(let t=0;t<N;t++){const x=x0+t*cw;s+=ms.has(t)?`<rect x="${x}" y="22" width="${cw-1}" height="18" class="sl-alu"/>`:`<rect x="${x}" y="22" width="${cw-1}" height="18" class="bad" style="opacity:.7"/>`;
+      s+=`<text x="${x+cw/2}" y="68" class="mid" style="font-size:9px">${r.inflightAt[t]||0}</text>`;
+      if(r.loads.some(l=>l[0]===t))s+=`<rect x="${x}" y="84" width="${cw-1}" height="14" style="fill:#5d9a3c"/>`;
+      const tr=r.loads.some(([,a,b])=>t>=a&&t<b);s+=tr?`<rect x="${x}" y="112" width="${cw-1}" height="18" class="te"/>`:`<rect x="${x}" y="112" width="${cw-1}" height="18" class="bg2" style="opacity:.5"/>`;}
+    for(let t=0;t<=N;t+=8)s+=`<text x="${x0+t*cw}" y="148" class="mid xs">${t}</text>`;s+=`<text x="750" y="162" class="end xs">clock</text>`;
+    let lx=x0;[['sl-alu','math instruction'],['bad','stalled (no data)'],['g','load issued'],['te','transferring data']].forEach(([c,t])=>{s+=(c==='g'?`<rect x="${lx}" y="176" width="14" height="12" style="fill:#5d9a3c"/>`:`<rect x="${lx}" y="176" width="14" height="12" class="${c}"/>`)+`<text x="${lx+19}" y="186" class="xs">${t}</text>`;lx+=38+t.length*6.6;});
+    setVB('bbSvg',760,200,s);
+    const lim=Math.min(1,bwB,latB),who=lim>=1?'compute':bwB<=latB?'bandwidth':'latency';
+    $('#bbStat').innerHTML=[['ALU utilization (steady state)',pct(util)],['memory channel busy',pct(chanU)],['bandwidth limit',pct(Math.min(1,bwB))],['latency limit (Little)',pct(Math.min(1,latB))]].map(([k,v])=>`<div>${k}<b>${v}</b></div>`).join('');
+    $('#bbMsg').innerHTML=who==='bandwidth'?`<b>Bandwidth-bound.</b> Each load brings 64 bytes in ${D} clocks and feeds ${st.M} math instruction${st.M>1?'s':''}, so the ALU can be busy at most ${st.M} of every ${D} clocks: ${pct(bwB)}. The memory channel is busy ${pct(chanU)} of the time; it can't go faster. Changing the latency (with enough loads in flight) changes nothing.`:who==='latency'?`<b>Latency-bound.</b> Only ${st.K} load${st.K>1?'s':''} can be in flight, and each takes ${st.L} + ${D} clocks, so memory delivers ${st.K} × 64 bytes every ${st.L+D} clocks, below its bandwidth (the channel is busy only ${pct(chanU)} of the time). Allowing more loads in flight would help; so would lower latency.`:`<b>Compute-bound.</b> Memory supplies data fast enough that the ALU is almost always busy: ${pct(util)}. Adding bandwidth wouldn't help now; more ALUs would.`;
+    $$('[data-bp]').forEach(b=>b.setAttribute('aria-pressed',JSON.stringify(PRE[b.dataset.bp])===JSON.stringify(st)));}
+  $$('[data-bp]').forEach(b=>b.onclick=()=>{st={...PRE[b.dataset.bp]};draw();});
+  [['bbB','B'],['bbM','M'],['bbK','K'],['bbL','L']].forEach(([id,k])=>$('#'+id).oninput=e=>{st[k]=+e.target.value;draw();});draw();})();
+
+/* 5 thought experiment */
+(function(){const P={v100:{n:'V100',ops:5120,f:1.6e9,bw:900e9},xeon:{n:'Xeon',ops:64,f:3.2e9,bw:76e9}};let dev='v100';
+  function draw(){const k=+$('#txO').value,ope=2**k,d=P[dev],need=d.ops*d.f*12/ope,eff=Math.min(1,d.bw/need);$('#txOv').textContent=`${ope}${k===0?' (a plain multiply)':''}`;
+    const X=v=>100+(Math.log10(v)-9)/(15-9)*620;let s='';for(let e=9;e<=15;e++)s+=`<line x1="${X(10**e)}" y1="20" x2="${X(10**e)}" y2="130" style="stroke:var(--line)"/><text x="${X(10**e)}" y="146" class="mid xs">${['1 GB/s','10 GB/s','100 GB/s','1 TB/s','10 TB/s','100 TB/s','1 PB/s'][e-9]}</text>`;
+    s+=`<text x="92" y="52" class="end bd xs">needed</text><rect x="100" y="36" width="${X(need)-100}" height="26" class="cu"/><text x="${X(need)+6}" y="54" class="bd xs">${fmtBW(need)}</text>`;
+    s+=`<text x="92" y="100" class="end bd xs">available</text><rect x="100" y="84" width="${X(d.bw)-100}" height="26" class="te"/><text x="${X(d.bw)+6}" y="102" class="bd xs">${fmtBW(d.bw)}</text>`;
+    s+=`<text x="100" y="176" class="xs">needed = ${d.ops.toLocaleString()} ops/clock × ${d.f/1e9} GHz × 12 bytes ÷ ${ope} op${ope>1?'s':''} per element (log scale)</text>`;
+    setVB('txSvg',760,190,s);
+    $('#txStat').innerHTML=[['peak ops/s',(d.ops*d.f/1e12).toFixed(d.ops*d.f>=1e12?1:3)+' T'],['bytes per op',(12/ope).toFixed(ope>12?3:2)],['efficiency',pct(eff)],['achievable ops/s',(eff*d.ops*d.f/1e9).toFixed(0)+' G']].map(([a,b])=>`<div>${a}<b>${b}</b></div>`).join('');
+    $('#txMsg').innerHTML=eff<1?`The ${d.n} needs <b>${fmtBW(need)}</b> to keep every ALU busy but has ${fmtBW(d.bw)}: <b>${pct(eff)}</b> efficiency. ${ope===1?'Three memory operations per multiply is far too few operations per byte.':`Doing ${ope} operations on each element loaded (reuse) raises efficiency ${ope}×.`}`:`With ${ope} operations per element the ${d.n} needs only ${fmtBW(need)}, within its ${fmtBW(d.bw)}. It is now <b>compute-bound</b>: bandwidth is no longer the limit.`;
+    $$('[data-tx]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.tx===dev));}
+  $$('[data-tx]').forEach(b=>b.onclick=()=>{dev=b.dataset.tx;draw();});$('#txO').oninput=draw;draw();})();
+
+/* 7 fork-join */
+(function(){let s='';s+=`<path d="M20 115 H170" class="wc" style="stroke-width:3"/><text x="95" y="104" class="mid xs">main(): sequential C++</text>`;
+  s+=`<rect x="170" y="98" width="70" height="34" class="bx"/><text x="205" y="119" class="mid xs">call</text>`;
+  for(let i=0;i<8;i++){const y=30+i*24;s+=`<path d="M240 115 C 270 115, 270 ${y}, 300 ${y} H540 C 570 ${y}, 570 115, 600 115" class="wt" style="fill:none"/><text x="310" y="${y-4}" class="xs">instance ${i}</text>`;}
+  s+=`<rect x="600" y="98" width="70" height="34" class="bx"/><text x="635" y="119" class="mid xs">return</text><path d="M670 115 H750" class="wc" style="stroke-width:3" marker-end="url(#ahc)"/>`;
+  s+=`<text x="420" y="224" class="mid sm">ispc_sinx(): a gang of programCount = 8 instances, each with its own locals</text>`;
+  set('forkSvg',s);})();
+
+/* 8 assignment explorer */
+(function(){const N=32;let mode='int',P=8,k=0,perm=null;
+  function mapping(){const M=[];if(mode==='one'){for(let s=0;s<N;s++)M.push([...Array(P)].map((_,p)=>p===0?s:null));}
+    else if(mode==='int'){for(let s=0;s<N/P;s++)M.push([...Array(P)].map((_,p)=>s*P+p));}
+    else if(mode==='blk'){const c=N/P;for(let s=0;s<c;s++)M.push([...Array(P)].map((_,p)=>p*c+s));}
+    else{if(!perm||perm.P!==P){let seed=7;const rnd=()=>(seed=(seed*1103515245+12345)&0x7fffffff)/0x7fffffff;perm={P,rows:[]};for(let s=0;s<N/P;s++){const r=[...Array(P).keys()].map(p=>s*P+p);for(let i=r.length-1;i>0;i--){const j=Math.floor(rnd()*(i+1));[r[i],r[j]]=[r[j],r[i]];}perm.rows.push(r);}}M.push(...perm.rows);}
+    return M;}
+  function draw(){const M=mapping(),S=M.length;k=Math.min(k,S-1);const rowsShown=Math.min(S,8),first=Math.max(0,Math.min(k-3,S-rowsShown));let s='';const x0=90,cw=(740-x0)/P;
+    for(let p=0;p<P;p++)s+=`<rect x="${x0+p*cw+2}" y="8" width="${cw-4}" height="26" class="sl-pale"/>`+tS(x0+p*cw+cw/2,25,`instance ${p}`,P===8?9.5:11,600);
+    for(let r=0;r<rowsShown;r++){const st=first+r,y=42+r*24,on=st===k;s+=`<text x="${x0-8}" y="${y+16}" class="end xs">step ${st}</text>`;if(on)s+=`<rect x="${x0}" y="${y}" width="${740-x0}" height="22" rx="3" style="fill:none;stroke:var(--bad);stroke-width:2"/>`;
+      M[st].forEach((e,p)=>s+=e===null?hatchR(x0+p*cw+3,y+2,cw-6,18):`<text x="${x0+p*cw+cw/2}" y="${y+16}" class="mid ${on?'bd':''}" style="font-size:13px">${e}</text>`);}
+    if(S>rowsShown)s+=`<text x="${x0-8}" y="${42+rowsShown*24+8}" class="end xs">(${S} steps)</text>`;
+    const my=42+rowsShown*24+(S>rowsShown?26:14),ew=(740-x0)/N,cur=new Set(M[k].filter(e=>e!==null));s+=`<text x="${x0-8}" y="${my+14}" class="end xs">x[0…31]</text>`;
+    for(let i=0;i<N;i++)s+=`<rect x="${x0+i*ew+1}" y="${my}" width="${ew-2}" height="20" class="${cur.has(i)?'cu':'bg2'}" style="${cur.has(i)?'':'opacity:.6'}"/>`+(i%4===0?`<text x="${x0+i*ew+ew/2}" y="${my+34}" class="mid xs">${i}</text>`:'');
+    setVB('asSvg',760,my+44,s);
+    const idx=[...cur].sort((a,b)=>a-b),contig=idx.length>1&&idx[idx.length-1]-idx[0]===idx.length-1;
+    const instr=mode==='one'?'one scalar load (only lane 0 active; the other lanes are masked off)':contig?'one <b>packed vector load</b> of '+idx.length+' contiguous floats':'a <b>gather</b>: '+idx.length+' separate addresses, '+(idx[1]-idx[0])+' apart';
+    $('#asMsg').innerHTML=`Step ${k}: instances access x[${M[k].map(e=>e===null?'–':e).join(', ')}]. Implementing <code>float value = x[idx]</code> takes ${instr}. ${mode==='one'?`All ${N} iterations run one after another on instance 0: correct, but ${P}× slower.`:mode==='dyn'?'Each instance grabs the next unclaimed iteration from a shared counter, so which lane gets which element depends on timing. The results are the same; the lanes just hold them in a different order.':mode==='blk'?`Each instance owns a block of ${N/P} consecutive elements, so neighbouring lanes are ${N/P} apart.`:'Neighbouring lanes handle neighbouring elements.'}`;
+    $('#asOut').textContent=`step ${k} of ${S-1}`;$('#asBack').disabled=k===0;$('#asStep').disabled=k>=S-1;
+    $$('[data-as]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.as===mode));$$('[data-pc]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.pc===P));}
+  $$('[data-as]').forEach(b=>b.onclick=()=>{mode=b.dataset.as;k=0;draw();});$$('[data-pc]').forEach(b=>b.onclick=()=>{P=+b.dataset.pc;k=0;draw();});
+  $('#asStep').onclick=()=>{k++;draw();};$('#asBack').onclick=()=>{k--;draw();};$('#asReset').onclick=()=>{k=0;draw();};draw();})();
+
+/* 10 semantics: abs vs shift */
+(function(){const X=[3,-1,4,-1,5,-9,2,6];let prog='abs',ord='fwd',shuf=null;
+  const run=order=>{const y=Array(prog==='abs'?16:8).fill(null),who=Array(y.length).fill(null).map(()=>[]);
+    order.forEach(i=>{if(prog==='abs'){const v=X[i]<0?-X[i]:X[i];y[2*i]=v;who[2*i].push(i);y[2*i+1]=y[2*i];who[2*i+1].push(i);}
+      else{if(i>=1&&X[i]<0){y[i-1]=X[i];who[i-1].push(i);}else{y[i]=X[i];who[i].push(i);}}});return {y,who};};
+  function order(){const f=[...X.keys()];if(ord==='fwd')return f;if(ord==='rev')return f.reverse();if(!shuf){shuf=[...f];for(let i=7;i>0;i--){const j=Math.floor(Math.random()*(i+1));[shuf[i],shuf[j]]=[shuf[j],shuf[i]];}}return shuf;}
+  function draw(){const o=order(),a=run([...X.keys()]),b=run(o),n=a.y.length,cw=Math.min(80,640/n),x0=110;let s='';
+    s+=`<text x="${x0-8}" y="34" class="end bd xs">x</text>`;X.forEach((v,i)=>{s+=`<rect x="${x0+i*80+2}" y="18" width="76" height="24" class="${v<0?'bad':'bg2'}"/><text x="${x0+i*80+40}" y="35" class="mid bd">${v}</text><text x="${x0+i*80+40}" y="54" class="mid xs">i = ${i}</text>`;});
+    const row=(y,res,lab,cmp)=>{let q=`<text x="${x0-8}" y="${y+16}" class="end bd xs">${lab}</text>`;res.y.forEach((v,i)=>{const diff=cmp&&v!==a.y[i],multi=res.who[i].length>1;q+=`<rect x="${x0+i*cw+2}" y="${y}" width="${cw-4}" height="24" class="${diff?'cu':v===null?'':'te'}" style="${v===null?'fill:none;stroke:var(--line);stroke-dasharray:3 2':''}${diff?';stroke:var(--bad);stroke-width:2':''}"/><text x="${x0+i*cw+cw/2}" y="${y+17}" class="mid ${diff?'bd':''}" style="font-size:${cw<50?11:13}px">${v===null?'?':v}</text>`;if(multi&&prog==='shift')q+=`<text x="${x0+i*cw+cw/2}" y="${y+38}" class="mid xs tbad">by ${res.who[i].join(' & ')}</text>`;});return q;};
+    s+=row(76,a,'y, in order',false)+row(140,b,'y, this order',true);
+    for(let i=0;i<n;i++)s+=`<text x="${x0+i*cw+cw/2}" y="${196}" class="mid xs">${i}</text>`;s+=`<text x="${x0-8}" y="196" class="end xs">index</text>`;
+    setVB('spSvg',760,210,s);
+    const nd=b.y.filter((v,i)=>v!==a.y[i]).length,unw=b.y.filter(v=>v===null).length;
+    $('#spMsg').innerHTML=`Order: ${o.join(', ')}. `+(prog==='abs'?`Every iteration writes only y[2i] and y[2i+1], its own two slots, so any order gives the same y: <b>well defined</b>.`:`${nd?`<b>${nd} element${nd>1?'s':''} differ</b> from in-order execution`:'This order happens to match in-order execution'}: y[0], y[2] and y[4] are each written by two iterations, and the last write wins. ${unw} elements (marked ?) are never written at all. Both effects make the output <b>undefined</b>.`);
+    $$('[data-sp]').forEach(x=>x.setAttribute('aria-pressed',x.dataset.sp===prog));$$('[data-so]').forEach(x=>x.setAttribute('aria-pressed',x.dataset.so===ord));}
+  $$('[data-sp]').forEach(x=>x.onclick=()=>{prog=x.dataset.sp;draw();});$$('[data-so]').forEach(x=>x.onclick=()=>{ord=x.dataset.so;if(ord==='gang')shuf=null;draw();});draw();})();
+
+/* 10 sum with reduce_add */
+(function(){const X=[...Array(32)].map((_,i)=>(i*7)%5+1),P=8;let k=0;
+  function draw(){const steps=4;let part=Array(P).fill(0);for(let s=0;s<Math.min(k,steps);s++)for(let p=0;p<P;p++)part[p]+=X[s*P+p];const total=part.reduce((a,b)=>a+b,0);
+    let s='';const x0=90,cw=(740-x0)/32;s+=`<text x="${x0-8}" y="22" class="end xs">x[0…31]</text>`;
+    X.forEach((v,i)=>{const grp=Math.floor(i/P),on=k>=1&&k<=steps&&grp===k-1,done=grp<Math.min(k,steps)&&!on;s+=`<rect x="${x0+i*cw+1}" y="8" width="${cw-2}" height="22" class="${on?'cu':done?'te':'bg2'}" style="${done?'opacity:.55':''}"/><text x="${x0+i*cw+cw/2}" y="23" class="mid xs">${v}</text>`;});
+    const lw=(740-x0)/P;s+=`<text x="${x0-8}" y="92" class="end xs">partial</text>`;
+    for(let p=0;p<P;p++){s+=`<rect x="${x0+p*lw+4}" y="74" width="${lw-8}" height="30" class="sl-pale"/>`+tS(x0+p*lw+lw/2,94,part[p],14,700)+`<text x="${x0+p*lw+lw/2}" y="120" class="mid xs">lane ${p}</text>`;
+      if(k>=1&&k<=steps)s+=`<path d="M${x0+((k-1)*P+p)*cw+cw/2} 31 L${x0+p*lw+lw/2} 72" class="w" style="opacity:.5"/>`;}
+    if(k>steps){for(let p=0;p<P;p++)s+=`<path d="M${x0+p*lw+lw/2} 106 L415 150" class="wc"/>`;s+=`<rect x="330" y="150" width="170" height="36" class="cu"/><text x="415" y="173" class="mid bd">reduce_add = ${total}</text>`;}
+    s+=`<text x="${x0}" y="222" class="xs">${k===0?'partial = 0 in every lane':k<=steps?`step ${k}: one packed load of x[${(k-1)*P}…${k*P-1}] added to the partial-sum vector`:'reduce_add: store the vector and add its 8 lanes'}</text>`;
+    set('suSvg',s);
+    $('#suMsg').innerHTML=k===0?'Each of the 8 instances (SIMD lanes) starts a private partial sum at 0. No communication happens inside the loop.':k<=steps?`One vector add updates all eight partial sums at once, each lane adding its own element. After this step the partials are [${part.join(', ')}].`:`The cross-instance <code>reduce_add</code> combines the eight partials into one uniform value: <b>${total}</b>, the same as adding all 32 elements one by one (${X.reduce((a,b)=>a+b,0)}).`;
+    $('#suOut').textContent=`step ${k} of ${steps+1}`;$('#suBack').disabled=k===0;$('#suStep').disabled=k>steps;}
+  $('#suStep').onclick=()=>{k++;draw();};$('#suBack').onclick=()=>{k--;draw();};$('#suReset').onclick=()=>{k=0;draw();};draw();})();
+
+/* 10 tree product */
+(function(){const X=[2,1,3,1,2,2,1,4];let k=0;
+  function vals(n){let v=[...X];for(let s=0,d=1;s<n;s++,d*=2){const nv=[...v];for(let p=0;p<8;p++)if(p%(2*d)===0)nv[p]=v[p]*(p+d<8?v[p+d]:0);v=nv;}return v;}
+  function draw(){let s='';const x0=100,lw=(740-x0)/8,rows=[0,1,2,3];
+    rows.forEach(r=>{const y=16+r*56,v=vals(r),d=2**(r-1),act=p=>r===0||p%(2*d)===0,show=r<=k;s+=`<text x="${x0-8}" y="${y+22}" class="end xs">${r===0?'start':`step ${r} (d=${d})`}</text>`;
+      for(let p=0;p<8;p++){const alive=r===0||p%(2*d)===0;if(!show){s+=`<rect x="${x0+p*lw+6}" y="${y}" width="${lw-12}" height="32" class="bg2" style="opacity:.3"/>`;continue;}
+        s+=alive?`<rect x="${x0+p*lw+6}" y="${y}" width="${lw-12}" height="32" class="${r===0?'sl-pale':'cu'}"/>`+tS(x0+p*lw+lw/2,y+21,v[p],14,700,'mid',r===0?'sd':''):hatchR(x0+p*lw+6,y,lw-12,32);
+        if(r>0&&alive){s+=`<path d="M${x0+p*lw+lw/2} ${y-22} L${x0+p*lw+lw/2} ${y-2}" class="wc" marker-end="url(#ahc)"/><path d="M${x0+(p+d)*lw+lw/2} ${y-22} L${x0+p*lw+lw/2+8} ${y-2}" class="wt" marker-end="url(#aht)"/>`;}}});
+    for(let p=0;p<8;p++)s+=`<text x="${x0+p*lw+lw/2}" y="240" class="mid xs">lane ${p}</text>`;
+    set('trSvg',s);const v=vals(k);
+    $('#trMsg').innerHTML=k===0?`Each of the 8 instances loads one value: x = [${X.join(', ')}]. Their product is ${X.reduce((a,b)=>a*b,1)}.`:k<3?`Step ${k}: each instance receives its neighbour's value from ${2**(k-1)} lane${k>1?'s':''} above (shift); lanes whose index is a multiple of ${2**k} multiply it in. The others are masked off. ${8>>k} useful partial products remain.`:`Step 3: lane 0 multiplies in lane 4's value and writes <b>${v[0]}</b>. Three steps instead of seven sequential multiplies: lg 8 = 3.`;
+    $('#trOut').textContent=`step ${k} of 3`;$('#trBack').disabled=k===0;$('#trStep').disabled=k>=3;}
+  $('#trStep').onclick=()=>{k++;draw();};$('#trBack').onclick=()=>{k--;draw();};$('#trReset').onclick=()=>{k=0;draw();};draw();})();
+
+/* 11 implementation */
+(function(){let s=`<text x="210" y="18" class="mid bd">abstraction (what you write)</text>`;
+  for(let i=0;i<8;i++)s+=`<rect x="${20+i*48}" y="28" width="42" height="36" rx="4" class="te"/><text x="${41+i*48}" y="44" class="mid xs">inst</text><text x="${41+i*48}" y="58" class="mid bd">${i}</text>`;
+  s+=`<text x="210" y="84" class="mid xs">8 logical instruction streams, each with its own programIndex</text>`;
+  s+=`<path d="M210 92 V112" class="wc" marker-end="url(#ahc)"/><text x="218" y="106" class="xs tcu">ISPC compiler</text>`;
+  s+=slCore(20,116,380,120,'one CPU core')+slFD(36,140,70,40,11)+slVec(126,138,52,22,false,9)+tS(230,196,'8-wide SIMD unit: one lane per instance',10,500,'mid','')+slCtx(36,196,70,30,'',[])+tS(71,215,'1 thread',9);
+  s+=`<text x="580" y="18" class="mid bd">multiple cores need tasks</text>`;
+  for(let c=0;c<4;c++){const x=440+(c%2)*160,y=30+Math.floor(c/2)*100;s+=slCore(x,y,150,90,`core ${c}`,10)+slVec(x+12,y+26,31,14,false,7)+tS(x+75,y+80,`task ${c}: its own gang`,9.5,500,'mid','');}
+  set('implSvg',s);})();
+
+/* 12 ladder */
+(function(){let s='';const B=[['ISPC today','programIndex, programCount, uniform, foreach','full control; undefined output possible','cu'],['foreach only','no instance IDs; loops declare iterations','little need to think about instances','pl'],['map over collections','y = map(f, x); NumPy, PyTorch','no loops, no indexing','te']];
+  B.forEach(([a,b,c,cl],i)=>{const x=20+i*250;s+=`<rect x="${x}" y="30" width="220" height="104" rx="6" class="${cl}"/><text x="${x+110}" y="56" class="mid bd">${a}</text><text x="${x+110}" y="80" class="mid xs">${b}</text><text x="${x+110}" y="104" class="mid xs">${c}</text>`;if(i<2)s+=A(`M${x+222} 82 H${x+248}`);});
+  s+=`<path d="M20 160 H740" class="w" marker-end="url(#ah)"/><text x="20" y="180" class="xs">more control over how work is assigned</text><text x="740" y="180" class="end xs">the system decides more</text>`;
+  set('ladderSvg',s);})();
+})();
+</script>
+</body>
+</html>
