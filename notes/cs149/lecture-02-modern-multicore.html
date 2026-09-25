@@ -76,6 +76,10 @@ svg text.sw{fill:#fff!important}
 .pmx .pcard svg{background:transparent}
 .sl-pale{fill:#e6e6e6;stroke:#9a9a9a;stroke-width:1}
 .sl-row{fill:#ececec} .sl-row-on{fill:#d9763a}
+.tsrc{width:100%;min-height:190px;box-sizing:border-box;font:500 13px/1.5 var(--mono);background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:8px 10px;resize:vertical}
+.tref{font-size:13.5px;line-height:1.6;color:var(--mute)} .tref b{color:var(--ink)}
+.tedit summary{cursor:pointer;font:600 12.5px var(--mono);color:var(--cu);margin-top:12px}
+.s0a{stroke:var(--te);stroke-width:2.4;fill:none} .s0h{fill:none;stroke:var(--te);stroke-width:3} .s0dim{opacity:.35}
 .sm-ws{fill:#f1ddd0;stroke:#b98a6a;stroke-width:1} .sm-fp32{fill:#f3c24c;stroke:#a87a12;stroke-width:.8} .sm-int{fill:#ee8a60;stroke:#a8502a;stroke-width:.8} .sm-fp64{fill:#b07a86;stroke:#6e4450;stroke-width:.8} .sm-ten{fill:#bf2f1f;stroke:#7a1a10;stroke-width:.8} .sm-ls{fill:#5d9a3c;stroke:#355f1f;stroke-width:.8} .sm-reg{fill:#c9d6f2;stroke:#6c7fae;stroke-width:.8}
 
 .partbar{margin-top:90px;padding:14px 18px;border-radius:5px;background:var(--ink);color:var(--panel)}
@@ -121,12 +125,122 @@ svg text.sw{fill:#fff!important}
 <!-- ================================ PART 0 ================================ -->
 <div class="partbar" id="p0"><div class="kicker">Part 0 · Review</div><h2>What a processor does, and what memory is</h2><p>A quick rebuild of the basic model, because every later idea modifies one of its three boxes.</p></div>
 
-<section class="lesson" id="s1" data-toc="What a processor does" data-n="1" style="margin-top:36px">
+<section class="lesson" id="s0" data-toc="The instruction life cycle" data-n="0" style="margin-top:36px">
+  <div class="lesson-h"><div class="kicker">Section 0 · Foundations</div><h2>Three boxes, one rhythm: the life of an instruction</h2></div>
+  <p>Every processor in this lecture, from the simplest core to a GPU, is built from three kinds of box. They are drawn the same way in every diagram on this page: <b style="color:#d9763a">orange</b> for fetch/decode, <b style="color:#b8860b">yellow</b> for execution units, <b style="color:#5b6a8e">slate</b> for execution contexts. Before we start duplicating them, it pays to understand exactly what each box does, what it hands to the others, and how the three stay in step while a program runs.</p>
+  <div class="card4">
+    <div class="c1"><span class="l">Fetch / decode</span>Works out <b>which instruction is next</b> and <b>what it means</b>. It reads the PC, fetches the instruction's bits, and turns them into control signals: which operation, which registers, which memory access.</div>
+    <div class="c2"><span class="l">Execution unit (ALU)</span><b>Does the arithmetic.</b> Given an operation and some input values, it produces a result: a sum, a product, a comparison, or the address a load or store will use. It remembers nothing afterwards.</div>
+    <div class="c3"><span class="l">Execution context</span><b>Holds the program's state</b>: the registers and the program counter (PC). It is the only box that remembers anything from one instruction to the next. Swap it and you are running a different program.</div>
+    <div class="c4"><span class="l">The clock</span><b>Keeps them in sync.</b> Between clock edges, signals flow from box to box. On each edge, results are saved into the context and the machine moves on. Nothing becomes permanent except at a clock edge.</div>
+  </div>
+
+  <h3>Who reads and writes what</h3>
+  <p>The cleanest way to see how the boxes cooperate is to follow the information. Each box consumes something produced by another and produces something another consumes. Only two places hold state that outlives an instruction: the execution context and memory.</p>
+  <div class="tbl"><table>
+    <tr><th>Box</th><th>Takes in</th><th>Hands on</th><th>Keeps state between instructions?</th></tr>
+    <tr><td><b>Fetch/decode</b></td><td>The PC (from the context) and the instruction bits (from instruction memory)</td><td>Control signals: the operation, source and destination register names, any constant</td><td>No. It forgets an instruction once it has passed it on.</td></tr>
+    <tr><td><b>Execution unit</b></td><td>The operation (from decode) and operand values (from the context)</td><td>A result value, or a memory address for a load or store</td><td>No. It is a pure function of its inputs.</td></tr>
+    <tr><td><b>Execution context</b></td><td>Results (from the ALU), loaded values (from the data cache) and the next PC</td><td>Register values to the ALU, the PC to fetch</td><td><b>Yes</b>. It <i>is</i> the program's state.</td></tr>
+    <tr><td><b>Data cache / memory</b></td><td>An address, and for a store the value to write</td><td>For a load, the value at that address</td><td><b>Yes</b>. This is memory, shared by everything.</td></tr>
+  </table></div>
+
+  <h3>Start simple: a machine you can program</h3>
+  <p>Start with the smallest machine that still has all three boxes. <b>TINY-4</b> is a core with four registers, four instructions and no data memory at all. Every instruction is one byte, and every instruction takes exactly one clock. Its four phases map directly onto the three boxes:</p>
+  <ul>
+    <li><b>Fetch</b> (fetch/decode): the PC selects one byte of instruction memory.</li>
+    <li><b>Decode</b> (fetch/decode, reading the context): the byte is cut into fields, and the registers it names are read.</li>
+    <li><b>Execute</b> (execution unit): the ALU adds, subtracts, passes a constant through, or tests a register for zero.</li>
+    <li><b>Write back</b> (execution context): at the clock's rising edge, the result register and the PC are updated together.</li>
+  </ul>
+  <div class="tbl"><table>
+    <tr><th>Instruction</th><th>Bits</th><th>Meaning</th></tr>
+    <tr><td class="m">SET rd, n</td><td class="m">00 dd nnnn</td><td>rd ← n, a constant from 0 to 15</td></tr>
+    <tr><td class="m">ADD rd, rs</td><td class="m">01 dd ss 00</td><td>rd ← rd + rs</td></tr>
+    <tr><td class="m">SUB rd, rs</td><td class="m">10 dd ss 00</td><td>rd ← rd − rs</td></tr>
+    <tr><td class="m">JNZ rd, addr</td><td class="m">11 dd aaaa</td><td>if rd ≠ 0, jump to addr; otherwise continue with the next instruction</td></tr>
+  </table></div>
+  <p>The two leftmost bits are the <b>opcode</b>, the next two name the destination register <b>dd</b>, and the last four are either a source register <b>ss</b> (plus two unused bits), a constant <b>n</b>, or a jump address <b>a</b>. Registers start at 0 and hold 8-bit values (0 to 255) that wrap around: 255 + 1 = 0 and 0 − 1 = 255. There's no HALT instruction: the machine stops when the PC reaches an empty slot in memory. Pick an example, or edit the program below the simulator and load it.</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 8px"><span class="readout">Example:</span><div class="seg" role="group" aria-label="Example program"><button data-tp="add" aria-pressed="true">add two numbers</button><button data-tp="cnt">count down</button><button data-tp="mul">multiply 3 × 4</button><button data-tp="fib">Fibonacci pairs</button></div></div>
+    <div class="sc" style="padding:0"><svg id="tSvg" viewBox="0 0 760 370" role="img" aria-label="TINY-4: instruction memory, a core with fetch/decode, decoded fields, ALU and execution context, and a clock panel with the instruction encoding" style="min-width:560px"></svg></div>
+    <div class="strip" id="tStrip"></div>
+    <p class="msg" id="tMsg"></p>
+    <div class="ctrl"><button id="tBack">◀ Back</button><button id="tNext" class="pri">Next phase ▶</button><button id="tInst">Next instruction ▶▶</button><button id="tRun">Run ▶</button><div class="seg" role="group" aria-label="Run speed"><button data-ts="900">slow</button><button data-ts="350" aria-pressed="true">medium</button><button data-ts="60">fast</button></div><button id="tReset">Reset</button><span class="readout" id="tOut"></span></div>
+    <details class="tedit" open><summary>Edit the program</summary>
+      <div class="grid2" style="margin-top:8px"><textarea id="tSrc" class="tsrc" spellcheck="false" aria-label="TINY-4 assembly program"></textarea>
+        <div class="tref"><b>Syntax</b><br>One instruction per line, for example <code>ADD r0, r1</code>.<br>Registers r0 to r3; constants 0 to 15.<br><code>loop:</code> in front of an instruction makes a label that JNZ can jump to (or give the address as a number).<br><code>;</code> starts a comment.<br>At most 16 instructions.</div></div>
+      <div class="ctrl"><button id="tLoad" class="pri">Load into memory</button><span class="readout" id="tErr"></span></div>
+    </details>
+  </div><figcaption><b>One byte, one clock.</b> Follow the bits. Fetch brings eight bits into fetch/decode. Decode cuts them into fields, and the matching row of the encoding table lights up. The ALU acts, and only at the clock edge does the execution context change, with the register and the PC updated in the same instant. The orange row is the instruction being processed, and the triangle marks where the PC points. During write back the two separate, because the PC has already moved on. The four phases are drawn as quarters of the clock for clarity. In the hardware, signals simply ripple from fetch through decode to the ALU during the clock period, and nothing is saved until the edge.</figcaption></figure>
+  <div class="predict"><div class="ph"><b>Try it</b><span>Use the simulator to check your answers.</span></div><ol>
+    <li>In "multiply 3 × 4", how many instructions does the machine execute, and how many clocks does that take?
+      <details><summary>Show answer</summary><div class="ans"><p><b>15 of each.</b> Three SETs, then the three-instruction loop runs four times: 3 + 4 × 3 = 15. TINY-4 finishes one instruction per clock, so 15 clocks. The loop's ADD is the only instruction doing the "real" work. The rest is bookkeeping, which is typical of real programs too.</p></div></details></li>
+    <li>In the multiply program, change <code>SET r2, 4</code> to <code>SET r2, 0</code>. Predict the result, then load it and press Run on fast.
+      <details><summary>Show answer</summary><div class="ans"><p>The loop body runs before the test, so the first <code>SUB r2, r3</code> computes 0 − 1, which wraps to <b>255</b>. The loop then runs 256 times in all, adding 3 each time: r0 = 768, which wraps to <b>0</b> in 8 bits. That's 3 + 256 × 3 = 771 instructions. The hardware did exactly what the bits said; the bug is in the program.</p></div></details></li>
+    <li>During the write-back phase of a <code>JNZ</code>, which part of the execution context changes?
+      <details><summary>Show answer</summary><div class="ans"><p>Only the <b>PC</b>. JNZ produces no register result: it just chooses between the jump target and PC + 1. It's the instruction that shows most clearly that "which instruction runs next" is itself part of the program's state.</p></div></details></li>
+    <li>Constants only go up to 15. Write a program that leaves r0 = 100 while executing as few instructions as possible.
+      <details><summary>Show answer</summary><div class="ans"><p>One six-instruction answer: <code>SET r0, 12</code>, then <code>ADD r0, r0</code> three times (24, 48, 96), then <code>SET r1, 4</code> and <code>ADD r0, r1</code>. Doubling with ADD is the trick: it's a shift left by one bit. A loop would be shorter to <i>write</i> but would execute more instructions.</p></div></details></li>
+  </ol></div>
+
+  <h3>The life cycle, phase by phase</h3>
+  <p>TINY-4 needs only four phases because it never touches data memory. A realistic core also has loads and stores, and memory access gets a phase of its own. Every instruction, however complicated, passes through the same sequence of seven phases. Some instructions skip a phase (an add never touches memory; a store produces no register result), but the order never changes:</p>
+  <ol>
+    <li><b>Fetch.</b> The PC, held in the execution context, is the address of the next instruction. Fetch/decode sends it to instruction memory (in practice, the instruction cache) and gets back the instruction's bits.</li>
+    <li><b>Decode.</b> The bits are split into fields and turned into control signals: which operation the ALU should perform, which registers supply its inputs, which register receives the result, and whether memory is involved.</li>
+    <li><b>Read operands.</b> The register names from decode select entries in the context's register file, which supplies their current values to the ALU's inputs. The context is read, not changed.</li>
+    <li><b>Execute.</b> The ALU performs the operation. For arithmetic, the output is the answer. For a load or store, the output is an <i>address</i>: base plus offset.</li>
+    <li><b>Memory</b> (loads and stores only). The address goes to the data cache. A load waits for the value to come back; a store sends a value to be written. This is the one phase whose length the core does not control.</li>
+    <li><b>Write back.</b> The result (from the ALU, or from memory for a load) is written into the destination register. Only now does the program's visible state change.</li>
+    <li><b>Advance the PC.</b> The PC moves to the next instruction: normally PC + 4, or a branch target if the instruction was a taken branch. The cycle starts again.</li>
+  </ol>
+  <p>Step through a more realistic program below, on a core with a data cache. It is the one this lecture uses for its first diagram: load x[i], cube it with two multiplies, and store the result to y[i]. The execution context starts with r1 = r2 = 2 (the index i), and memory holds x[2] = 3.</p>
+
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 8px"><span class="readout">The load from x[2]:</span><div class="seg" role="group" aria-label="Load latency"><button data-s0m="0" aria-pressed="true">hits in L1 (~4 cycles)</button><button data-s0m="1">goes to DRAM (~248 cycles)</button></div></div>
+    <div class="sc" style="padding:0"><svg id="s0Svg" viewBox="0 0 760 330" role="img" aria-label="Instruction memory, a core with fetch/decode, a decoded-instruction latch, an ALU and an execution context, and a data cache. The current phase is highlighted." style="min-width:560px"></svg></div>
+    <div class="strip" id="s0Strip"></div>
+    <p class="msg" id="s0Msg"></p>
+    <div class="ctrl"><button id="s0Back">◀ Back</button><button id="s0Next" class="pri">Next phase ▶</button><button id="s0Inst">Next instruction ▶▶</button><button id="s0Reset">Reset</button><span class="readout" id="s0Out"></span></div>
+  </div><figcaption><b>Handing off, box to box.</b> The highlighted box is doing the work in each phase, and the teal arrows show what it is receiving or sending. Watch the execution context: it changes only at <b>write back</b> and <b>advance PC</b>. Everything before that is preparation, which is what lets a core cancel an instruction, or switch to another thread, without damaging the program. Switch the load to DRAM and look at the utilisation readout at the end.</figcaption></figure>
+
+  <h3>Staying in sync: what the clock does</h3>
+  <p>Fetch/decode, the ALU and the wires between them are <b>combinational logic</b>: their outputs follow their inputs after a short delay, with no memory of their own. The execution context is made of <b>registers</b>, storage that captures its input only at the rising edge of the clock. That split is the whole synchronisation mechanism.</p>
+  <p>At a clock edge, the PC and registers take on new values. During the following clock period, those values ripple through fetch, decode, the register read and the ALU, and the result settles at the context's inputs. At the next edge, the context captures it. The clock period is chosen to be long enough for the slowest path to settle, so no box ever sees a half-computed value. In the simplest core (Section 1, and Unit 1's machine), all seven phases fit into one clock, and the core completes <b>one instruction per clock</b>.</p>
+  <p>Two rules follow, and every later design must keep them even as it breaks the simple picture apart:</p>
+  <ul>
+    <li><b>Dependencies are honoured.</b> The second <code>mul</code> reads r1, which the first <code>mul</code> wrote. It must see the new value, 9, not the old one. In the simple core this is automatic, because the first instruction's write back happens at a clock edge before the second instruction reads.</li>
+    <li><b>State changes in program order.</b> The context must end up exactly as if the instructions had run one at a time, in order. A core may overlap or reorder the <i>work</i> (Section 2), but not the visible <i>result</i>.</li>
+  </ul>
+
+  <h3>Keeping every box busy: overlapping the phases</h3>
+  <p>In the one-instruction-at-a-time picture, each box works for only part of the time. While the ALU multiplies, fetch/decode has nothing to do. Real cores fix this by <b>pipelining</b>: each phase becomes a stage with its own clock period, separated by latches, and a new instruction enters every clock. Fetch/decode works on instruction <i>n</i>+2 while the ALU executes <i>n</i>+1 and <i>n</i> writes its result into the context.</p>
+  <figure class="fig"><div class="sc"><svg id="s0Pipe" viewBox="0 0 760 330" role="img" aria-label="Timeline of the four instructions. One at a time takes 20 clocks. Pipelined, with one stall for the load-to-multiply dependency, takes 9 clocks." style="min-width:560px"></svg></div>
+    <figcaption><b>Same four instructions, same boxes, less than half the time.</b> Colours match the boxes: F and D are fetch/decode, X is the execution unit, M is the data cache, W is the write into the execution context. Pipelined, a new instruction starts almost every clock. The one hatched <b>stall</b> is the first <code>mul</code> waiting for r0, which the load produces only at the end of its M stage. The core <b>forwards</b> the value straight to the ALU rather than waiting for W, so it waits just one clock. The second <code>mul</code> needs r1 from the first, which the ALU has just produced and forwards with no wait at all. Unit 3 covers pipelining and forwarding in detail.</figcaption></figure>
+  <p>The stall shows the weak point. The timeline assumes the load's M stage takes one clock. If x[2] must come from DRAM, M takes about 248 clocks. The first <code>mul</code> can't proceed without r0, and in this simple core nothing else can run, so fetch/decode and the ALU sit idle for the whole wait. The program is correct, just slow. Most of this lecture is about what to do with that idle hardware.</p>
+
+  <h3>Why this matters for the rest of the lecture</h3>
+  <p>Once you see the three boxes as separate resources with a clear contract between them, every design in this lecture is just a different answer to one question: <b>which box do you duplicate?</b></p>
+  <figure class="fig"><div class="sc"><svg id="s0Map" viewBox="0 0 760 236" role="img" aria-label="Four designs. Superscalar: two fetch/decode units and two ALUs sharing one context. Multi-core: every box duplicated. SIMD: one fetch/decode driving eight ALUs. Multithreading: one fetch/decode and ALU with four contexts." style="min-width:560px"></svg></div>
+    <figcaption><b>Every idea duplicates a different box.</b> <b>Superscalar</b> duplicates fetch/decode and execution units, but keeps one context, so it needs independent instructions from one stream. <b>Multi-core</b> duplicates everything, so it needs independent streams. <b>SIMD</b> duplicates only the ALU, so every lane must follow the same instruction. <b>Multithreading</b> duplicates only the context, so while one thread waits on memory, fetch/decode and the ALU serve another. That last trick works only because of the rule above: a context holds <i>all</i> of a program's state, so the other boxes can serve any context, clock by clock.</figcaption></figure>
+
+  <div class="predict"><div class="ph"><b>Predict</b><span>Answer before opening.</span></div><ol>
+    <li>During the <b>execute</b> phase of <code>ld r0, x[r1]</code>, what does the ALU compute? Has r0 changed yet?
+      <details><summary>Show answer</summary><div class="ans"><p>The ALU computes the <b>address</b> of x[2]: the base address of x plus the index 2 scaled by the element size. r0 has <b>not</b> changed. It changes only at write back, after the data cache has returned the value 3.</p></div></details></li>
+    <li>In the one-at-a-time core, the load goes to DRAM. What fraction of clocks does the ALU do useful work across the four instructions?
+      <details><summary>Show answer</summary><div class="ans"><p>The ALU works for one clock per instruction, so 4 useful clocks. The load takes 1 clock to fetch, decode and compute its address, plus 248 clocks stalled waiting for DRAM: 249. The other three take 1 each, so the run takes 252 clocks. That's 4/252, about <b>1.6%</b>. With an L1 hit, the load takes 1 + 4 = 5 clocks and the run takes 8, so 4/8 = 50%. Memory latency, not arithmetic, sets the pace.</p></div></details></li>
+    <li>A second program is waiting to run on this core. Which box would you have to duplicate so the core could switch to it during the DRAM wait, and why is that one enough?
+      <details><summary>Show answer</summary><div class="ans"><p>The <b>execution context</b>. Fetch/decode and the ALU keep no state between instructions, so they can serve any program on any clock. Only the PC and registers identify <i>which</i> program is running. With a second context, the core can fetch from the other PC and compute with the other registers while the first program's load is outstanding. This is hardware multithreading, Section 10.</p></div></details></li>
+  </ol></div>
+</section>
+
+<section class="lesson" id="s1" data-toc="What a processor does" data-n="1">
   <div class="lesson-h"><div class="kicker">Section 1</div><h2>A program is a list of instructions</h2></div>
   <p>A compiler turns a C function into a <b>sequence of machine instructions</b>: loads, multiplies, adds, compares, jumps, stores. The processor's only job is to execute that sequence. The simplest useful processor has three parts:</p>
   <figure class="fig"><div class="sc"><svg id="simpleCore" viewBox="0 0 760 230" role="img" aria-label="Simple processor: fetch/decode, ALU, execution context with registers"></svg></div>
     <figcaption><b>The three boxes.</b> <b>Fetch/decode</b> works out which instruction runs next. The <b>ALU</b> (execution unit) performs it. The <b>execution context</b> holds the program's state: registers, and the PC that says where we are. This simple processor completes one instruction per clock. Keep these three boxes in mind, because every idea in this lecture duplicates one of them.</figcaption></figure>
-  <p>Each clock, the processor fetches the instruction at the PC, decodes it, the ALU executes it, and the result goes back into a register (or memory). Then the PC advances. Unit 1 builds exactly this machine from gates.</p>
+  <p>Each clock, the processor fetches the instruction at the PC, decodes it, the ALU executes it, and the result goes back into a register (or memory). Then the PC advances. Section 0 walked through that life cycle phase by phase. Unit 1 builds exactly this machine from gates.</p>
 </section>
 
 <section class="lesson" id="s2" data-toc="ILP & superscalar" data-n="2">
@@ -574,6 +688,210 @@ function slideChip(d,T,C){const probe=slideCore(0,0,d,T,'',0),cw=probe.w,ch=prob
     s+=slideCore(10,96,d,T,`Core 0 of ${C}`,0).svg;H=96+ch+30;s+=`<text x="${10+cw/2}" y="${H-6}" class="mid sm">+ ${C-1} more identical cores (${C*T} contexts in total)</text>`;}
   return {svg:s,W,H};}
 
+
+/* 0 instruction life cycle */
+(function(){
+  const PROG=[
+    {a:'0x00',t:'ld   r0, x[r1]',k:'ld',dst:'r0',src:['r1'],dec:'LOAD · dst r0 · addr x + r1',op:'address'},
+    {a:'0x04',t:'mul  r1, r0, r0',k:'alu',dst:'r1',src:['r0','r0'],dec:'MUL · dst r1 · src r0, r0'},
+    {a:'0x08',t:'mul  r1, r1, r0',k:'alu',dst:'r1',src:['r1','r0'],dec:'MUL · dst r1 · src r1, r0'},
+    {a:'0x0C',t:'st   y[r2], r1',k:'st',src:['r2','r1'],dec:'STORE · addr y + r2 · data r1'}];
+  const PH=[['fetch','Fetch'],['decode','Decode'],['read','Read operands'],['exec','Execute'],['mem','Memory'],['wb','Write back'],['pc','Advance PC']];
+  const hx=n=>'0x'+n.toString(16).toUpperCase().padStart(2,'0');
+  let miss=0,S=[],cur=0;
+  function build(){const R={r0:0,r1:2,r2:2,r3:0},M={x:3,y:null};let pc=0,clk=0,busy=0,ck='before clock 1';const lat=miss?248:4;S=[];
+    const snap=(i,ph,o)=>S.push(Object.assign({i,ph,R:{...R},M:{...M},pc,clk,busy,ck,hl:[],ar:[],regHl:[]},o));
+    snap(-1,null,{msg:'The core is ready. The <b>PC</b> in the execution context holds 0x00, the address of the first instruction. Registers: r1 = r2 = 2 (the index i). Memory: x[2] = 3. Press <b>Next phase</b>.'});
+    PROG.forEach((P,i)=>{const v=P.src.map(r=>R[r]);let res,addr;const c0=clk+1,end=P.k==='ld'?c0+lat:c0;ck=`clock ${c0}`;
+      snap(i,'fetch',{hl:['fd','pc','row'],ar:['pc','fetch'],msg:`<b>Fetch.</b> The PC in the execution context holds <b>${hx(pc)}</b>. Fetch/decode sends that address to instruction memory (in practice, the instruction cache) and receives the bits of <code>${P.t.replace(/ +/g,' ')}</code>. Nothing else in the core has changed.`});
+      snap(i,'decode',{hl:['fd','dec'],ar:['dec'],dec:P.dec,msg:`<b>Decode.</b> The instruction's bits are split into fields and turned into control signals: <b>${P.dec}</b>. ${P.k==='alu'?'The ALU will multiply; the data cache is not needed.':P.k==='ld'?'The ALU will compute an address, the data cache will be read, and r0 will receive the loaded value.':'The ALU will compute an address, and r1 will be written to memory. No register receives a result.'}`});
+      snap(i,'read',{hl:['ctx','alu'],ar:['opA',P.src.length>1?'opB':null],dec:P.dec,regHl:P.src,alu:P.src.map((r,j)=>`${r} = ${v[j]}`).join(', '),msg:`<b>Read operands.</b> The register names from decode select entries in the execution context, which supplies their current values to the ALU's inputs: ${P.src.map((r,j)=>`<b>${r} = ${v[j]}</b>`).join(' and ')}. The context is <i>read</i>, not changed.`});
+      if(P.k==='alu'){res=v[0]*v[1];snap(i,'exec',{hl:['alu'],ar:['ctl'],dec:P.dec,alu:`${v[0]} × ${v[1]} = ${res}`,msg:`<b>Execute.</b> The ALU multiplies: <b>${v[0]} × ${v[1]} = ${res}</b>. The result sits on the ALU's output wires. ${P.dst} still holds its old value, ${R[P.dst]}.`});}
+      else{addr=P.k==='ld'?'x':'y';snap(i,'exec',{hl:['alu'],ar:['ctl'],dec:P.dec,alu:`${addr} + ${v[0]} → &${addr}[${v[0]}]`,msg:`<b>Execute.</b> For a ${P.k==='ld'?'load':'store'}, the ALU's job is address arithmetic: base address of ${addr} plus the index ${v[0]} (scaled by the element size) gives <b>the address of ${addr}[${v[0]}]</b>. No data has moved yet.`});}
+      if(P.k==='ld'){ck=`clocks ${c0+1} to ${end}: stalled`;
+        snap(i,'mem',{hl:['cache'],ar:['addr'],dec:P.dec,alu:'&x[2]',stall:miss,msg:miss?`<b>Memory: a miss.</b> At the end of clock ${c0} the address goes to the data cache, but x[2] is not there, so the request continues to DRAM: about <b>248 cycles</b>. The core stalls for clocks ${c0+1} to ${end}. The next instruction needs r0, so it cannot start, and in this simple core fetch/decode and the ALU sit <b>idle</b> the whole time.`:`<b>Memory: a hit.</b> At the end of clock ${c0} the address goes to the data cache. It has x[2], but even a hit takes about <b>4 cycles</b>, so the core stalls for clocks ${c0+1} to ${end} and the value <b>3</b> arrives in the last of them.`,ldv:3});R.r0=M.x;ck=`edge ending clock ${end}`;
+        snap(i,'wb',{hl:['ctx'],ar:['ldwb'],dec:P.dec,regHl:['r0'],msg:`<b>Write back.</b> At the clock edge that ends clock ${end}, the loaded value is written into <b>r0 = 3</b>. This is the first moment the program's visible state changes.`});}
+      else if(P.k==='st'){M.y=v[1];snap(i,'mem',{hl:['cache'],ar:['addr','stdata'],dec:P.dec,alu:'&y[2]',msg:`<b>Memory.</b> The address from the ALU and the value of r1 (<b>27</b>) both go to the data cache, which records <b>y[2] = 27</b>. A store needs no answer back, so the core doesn't wait for DRAM.`});
+        ck=`edge ending clock ${end}`;snap(i,'wb',{skip:1,dec:P.dec,msg:`<b>Write back: skipped.</b> A store produces no register result, so the execution context's registers are untouched.`});}
+      else{snap(i,'mem',{skip:1,dec:P.dec,alu:`${res}`,msg:`<b>Memory: skipped.</b> A multiply doesn't touch memory, so the data cache is idle for this instruction.`});
+        R[P.dst]=res;ck=`edge ending clock ${end}`;snap(i,'wb',{hl:['ctx','alu'],ar:['wb'],dec:P.dec,regHl:[P.dst],alu:`${res}`,msg:`<b>Write back.</b> At the clock edge that ends clock ${end}, the ALU's result is written into <b>${P.dst} = ${res}</b>. ${i===1?'The next instruction reads r1, so it must see this new value: it will, because this write happens before its read.':'The value of x[2]³ is now in r1.'}`});}
+      pc+=4;clk=end;busy+=1;
+      snap(i,'pc',{hl:['pc'],regHl:[],dec:P.dec,msg:`<b>Advance PC.</b> At that same clock edge, the PC becomes <b>${hx(pc)}</b>, the next instruction${i===3?', past the end of this program':''}. (Write back and the PC update are shown as separate steps, but in this core they happen together.) ${P.k==='ld'?`This load took ${end-c0+1} clocks: 1 to fetch, decode and compute its address, plus ${lat} stalled waiting for memory. `:'This instruction took 1 clock. '}${i===3?`<b>Done.</b> ${clk} clocks for 4 instructions. The ALU did useful work in only 4 of them: <b>${(400/clk).toFixed(1)}%</b> utilisation. ${miss?'Almost all the time went to waiting for DRAM. That is the problem Part 2 of this lecture solves.':'Switch the load to DRAM to see what a cache miss does.'}`:'The instruction is complete, and the cycle starts again with fetch.'}`});
+    });}
+  const ROW0=58,rowY=i=>ROW0+i*22+10;
+  function draw(){const st=S[cur],on=id=>st.hl.includes(id),P=st.i>=0?PROG[st.i]:null;let s='';
+    const lines=PROG.map(p=>`${p.a}  ${p.t}`).concat(['0x10  …']);
+    const rowI=st.i<0?0:(st.ph==='pc'?Math.min(st.i+1,4):st.i);
+    s+=slStream(30,ROW0,230,lines,rowI,'Instruction memory');
+    s+=slCore(300,14,250,306,'Core',11);
+    const dim=st.stall?' class="s0dim"':'';
+    s+=`<g${dim}>`+`<rect x="316" y="36" width="218" height="40" class="sl-fd"/>`+tS(425,61,'Fetch/Decode',12)+'</g>';
+    s+=`<rect x="316" y="90" width="218" height="28" class="sl-pale"/>`+tS(425,108,st.dec?st.dec:'decoded instruction: (none yet)',st.dec?10.5:9.5,st.dec?600:500);
+    s+=`<g${dim}>`+`<rect x="316" y="132" width="218" height="50" class="sl-alu"/>`+tS(425,151,'ALU (execution unit)',11)+tS(425,171,st.alu||'idle',st.alu?12:10,st.alu?700:500)+'</g>';
+    s+=`<rect x="316" y="200" width="218" height="112" class="sl-ctx"/>`+tS(425,215,'Execution Context',11);
+    s+=`<rect x="376" y="222" width="98" height="20" class="sl-reg"/>`+tS(425,236,`PC = ${hx(st.pc)}`,10.5);
+    ['r0','r1','r2','r3'].forEach((r,k)=>{const x=324+(k%2)*105,y=252+Math.floor(k/2)*28;s+=`<rect x="${x}" y="${y}" width="97" height="22" class="sl-reg"/>`+tS(x+48.5,y+15,`${r} = ${st.R[r]}`,11.5)+(st.regHl.includes(r)?`<rect x="${x-2}" y="${y-2}" width="101" height="26" class="s0h"/>`:'');});
+    s+=tS(670,120,'memory system',10,500,'mid','sm')+`<rect x="600" y="130" width="140" height="70" class="sl-cache"/>`+tS(670,148,'Data Cache',11)+tS(670,168,'x[2] = 3',11,500)+tS(670,188,`y[2] = ${st.M.y===null?'—':st.M.y}`,11,st.M.y===null?500:700);
+    if(st.stall)s+=`<rect x="580" y="58" width="170" height="40" rx="4" class="bad"/><text x="665" y="74" class="mid bd">waiting ~248 cycles</text><text x="665" y="90" class="mid xs">F/D and ALU idle</text>`;
+    /* wiring: faint always, teal when active */
+    const ry=rowY(st.i<0?0:st.i);
+    const W={pc:`M374 232 H250 V172`,fetch:`M262 ${ry} C 292 ${ry}, 290 56, 314 56`,dec:'M425 77 V88',ctl:'M425 119 V130',opA:'M350 199 V184',opB:'M392 199 V184',wb:'M500 184 V198',addr:'M536 157 H598',ldwb:'M650 202 V296 H536',stdata:'M536 304 H700 V202'};
+    Object.entries(W).forEach(([k,d])=>{const a=st.ar.includes(k);s+=`<path d="${d}" class="${a?'s0a':'w'}" style="${a?'':'opacity:.3'}" marker-end="url(#${a?'aht':'ah'})"/>`;});
+    const box={fd:[316,36,218,40],dec:[316,90,218,28],alu:[316,132,218,50],ctx:[316,200,218,112],pc:[376,222,98,20],cache:[600,130,140,70],row:[30,ROW0+(st.i<0?0:st.i)*22,230,20]};
+    st.hl.forEach(h=>{const b=box[h];if(b)s+=`<rect x="${b[0]-3}" y="${b[1]-3}" width="${b[2]+6}" height="${b[3]+6}" rx="3" class="s0h"/>`;});
+    setVB('s0Svg',760,330,s);
+    /* phase strip */
+    $('#s0Strip').innerHTML=PH.map(([k,n])=>{const it=st.i>=0&&S.find(x=>x.i===st.i&&x.ph===k),sk=it&&it.skip,done=st.i>=0&&PH.findIndex(p=>p[0]===k)<PH.findIndex(p=>p[0]===st.ph);
+      return `<span class="${st.ph===k?'h cur':done?'h':'n'}" style="${sk?'opacity:.45;text-decoration:line-through':''}">${n}<small>${sk?'skipped':st.ph===k?'now':done?'done':'·'}</small></span>`;}).join('');
+    $('#s0Msg').innerHTML=st.msg;
+    $('#s0Out').innerHTML=st.i<0?'before clock 1':cur===S.length-1?`<b>${st.clk}</b> clocks in total`:`instruction <b>${st.i+1}</b> of 4 · <b>${st.ck}</b>`;
+    $('#s0Back').disabled=cur===0;$('#s0Next').disabled=$('#s0Inst').disabled=cur===S.length-1;
+    $$('[data-s0m]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.s0m===miss));}
+  $('#s0Next').onclick=()=>{if(cur<S.length-1)cur++;draw();};
+  $('#s0Back').onclick=()=>{if(cur>0)cur--;draw();};
+  $('#s0Inst').onclick=()=>{do{cur++;}while(cur<S.length-1&&S[cur].ph!=='pc');draw();};
+  $('#s0Reset').onclick=()=>{cur=0;draw();};
+  $$('[data-s0m]').forEach(b=>b.onclick=()=>{miss=+b.dataset.s0m;const old=S[cur];build();cur=Math.max(0,S.findIndex(x=>x.i===old.i&&x.ph===old.ph));draw();});
+  build();draw();
+
+  /* pipeline timeline */
+  (function(){const L=['ld r0','mul r1','mul r1','st y'],CW=29,X0=150,cls={F:'sl-fd',D:'sl-fd',X:'sl-alu',M:'sl-cache',W:'sl-ctx'};let s='';
+    const cell=(c,y,t)=>t==='~'?`<rect x="${X0+(c-1)*CW+1}" y="${y}" width="${CW-2}" height="22" style="fill:url(#hatch);stroke:var(--mute);stroke-width:.8"/>`:`<rect x="${X0+(c-1)*CW+1}" y="${y}" width="${CW-2}" height="22" class="${cls[t]}"/>`+tS(X0+(c-.5)*CW,y+15,t,11);
+    const rows=(y0,seq)=>seq.forEach((r,k)=>{const y=y0+k*26;s+=`<text x="${X0-10}" y="${y+15}" class="end sm">${L[k]}</text>`;r.forEach(([c,t])=>s+=cell(c,y,t));});
+    for(let c=1;c<=20;c++)s+=`<text x="${X0+(c-.5)*CW}" y="36" class="mid xs">${c}</text>`;
+    s+=`<text x="${X0-10}" y="36" class="end xs">clock</text>`;
+    s+=`<text x="10" y="16" class="bd">One instruction at a time</text>`;
+    const st=['F','D','X','M','W'];rows(46,[0,1,2,3].map(k=>st.map((t,j)=>[k*5+j+1,t])));
+    s+=`<text x="${X0+20*CW}" y="160" class="end sm">done at clock 20</text>`;
+    s+=`<text x="10" y="186" class="bd">Pipelined (with forwarding)</text>`;
+    rows(196,[[[1,'F'],[2,'D'],[3,'X'],[4,'M'],[5,'W']],[[2,'F'],[3,'D'],[4,'~'],[5,'X'],[6,'M'],[7,'W']],[[3,'F'],[4,'~'],[5,'D'],[6,'X'],[7,'M'],[8,'W']],[[5,'F'],[6,'D'],[7,'X'],[8,'M'],[9,'W']]]);
+    s+=A(`M${X0+3.5*CW} ${196+23} C ${X0+3.5*CW} ${222+11}, ${X0+3.8*CW} ${222+11}, ${X0+4*CW} ${222+11}`,'wc','ahc');
+    s+=`<text x="${X0+9*CW+10}" y="${196+3*26+15}" class="bd">done at clock 9</text><text x="${X0+7*CW+10}" y="${222+15}" class="sm">r0 forwarded from M to X: one-clock stall</text>`;
+    let lx=10;[['sl-fd','F D  fetch/decode'],['sl-alu','X  execution unit'],['sl-cache','M  data cache'],['sl-ctx','W  write to context'],['hatch','stall']].forEach(([c,t])=>{s+=`<rect x="${lx}" y="306" width="16" height="14" ${c==='hatch'?'style="fill:url(#hatch);stroke:var(--mute);stroke-width:.8"':`class="${c}"`}/><text x="${lx+22}" y="317" class="sm">${t}</text>`;lx+=22+t.length*7.2+18;});
+    setVB('s0Pipe',760,330,s);})();
+
+  /* which box is duplicated */
+  (function(){let s='';const P=[[14,'Superscalar','2 F/D + 2 ALUs, 1 context','§2'],[200,'Multi-core','every box duplicated','§5'],[386,'SIMD','1 F/D drives 8 ALUs','§6'],[572,'Multithreading','1 F/D + ALU, 4 contexts','§10']],w=174;
+    P.forEach(([x,t,sub,sec])=>{s+=tT(x+w/2,18,`${t} (${sec})`,13,700)+`<text x="${x+w/2}" y="34" class="mid sm">${sub}</text>`;});
+    let x=14;s+=slCore(x,44,w,180);s+=slFD(x+10,54,72,40)+slFD(x+92,54,72,40)+slALU(x+10,104,72,44)+slALU(x+92,104,72,44)+slCtx(x+10,158,154,56,'Execution Context',[]);
+    x=200;s+=miniCore(x,44,84,180,{label:'Core 0'})+miniCore(x+90,44,84,180,{label:'Core 1'});
+    x=386;s+=miniCore(x,44,w,180,{simd:true});
+    x=572;s+=miniCore(x,44,w,180,{ctx:4});const p=Math.max(3,w*0.05),cw=(w-2*p-6)/4,cy=44+p+180*0.2+p+180*0.3+p,ch=180-p-180*0.2-180*0.3-p*3;
+    for(let i=0;i<4;i++)s+=tS(x+p+i*(cw+2)+cw/2,cy+ch/2+4,`T${i}`,11);
+    setVB('s0Map',760,236,s);})();
+})();
+
+/* 0b TINY-4: an even simpler machine */
+(function(){
+  const PRE={
+    add:'; r0 = 5 + 7\nSET r0, 5\nSET r1, 7\nADD r0, r1',
+    cnt:'; count r0 down from 3 to 0\n      SET r0, 3\n      SET r1, 1\nloop: SUB r0, r1\n      JNZ r0, loop',
+    mul:'; r0 = 3 × 4, by adding 3 four times\n      SET r1, 3      ; what to add\n      SET r2, 4      ; how many times\n      SET r3, 1      ; the constant 1\nloop: ADD r0, r1\n      SUB r2, r3\n      JNZ r2, loop',
+    fib:'; Fibonacci numbers, two per loop\n      SET r1, 1\n      SET r2, 4      ; pairs to compute\n      SET r3, 1\nloop: ADD r0, r1     ; r0 = r0 + r1\n      ADD r1, r0     ; r1 = r1 + r0\n      SUB r2, r3\n      JNZ r2, loop'};
+  const OPC={SET:0,ADD:1,SUB:2,JNZ:3},CAP=1000,esc=NOTES.esc;
+  const b=(v,n)=>v.toString(2).padStart(n,'0'),isR=op=>op==='ADD'||op==='SUB';
+  const bitsOf=I=>isR(I.op)?`${b(OPC[I.op],2)} ${b(I.rd,2)} ${b(I.x,2)} 00`:`${b(OPC[I.op],2)} ${b(I.rd,2)} ${b(I.x,4)}`;
+  const asmOf=I=>I.op==='SET'?`SET r${I.rd}, ${I.x}`:isR(I.op)?`${I.op} r${I.rd}, r${I.x}`:`JNZ r${I.rd}, ${I.x}`;
+  function assemble(src){const L=[],labels={},errs=[];let pend=null;
+    src.split('\n').forEach((raw,ln)=>{let t=raw.replace(/[;#].*$/,'').trim();if(!t)return;const m=t.match(/^([A-Za-z_]\w*)\s*:\s*(.*)$/);
+      if(m){const k=m[1].toLowerCase();if(labels[k]!==undefined)errs.push(`line ${ln+1}: label "${esc(m[1])}" is defined twice`);labels[k]=L.length;pend=m[1];t=m[2].trim();if(!t)return;}
+      L.push({t,ln:ln+1,label:pend});pend=null;});
+    if(L.length>16)errs.push(`${L.length} instructions, but memory holds only 16`);
+    const prog=L.slice(0,16).map(o=>{const m=o.t.match(/^([A-Za-z]+)\s+r([0-3])\s*,\s*([A-Za-z_]\w*|\d+)$/i);
+      if(!m){errs.push(`line ${o.ln}: can't read "${esc(o.t)}". Expected something like ADD r0, r1`);return null;}
+      const op=m[1].toUpperCase(),rd=+m[2],arg=m[3];let x;
+      if(!(op in OPC)){errs.push(`line ${o.ln}: unknown instruction "${esc(m[1])}". Use SET, ADD, SUB or JNZ`);return null;}
+      if(isR(op)){const r=arg.match(/^r([0-3])$/i);if(!r){errs.push(`line ${o.ln}: ${op} needs a register (r0 to r3) as its second operand`);return null;}x=+r[1];}
+      else if(op==='SET'){if(!/^\d+$/.test(arg)||+arg>15){errs.push(`line ${o.ln}: SET takes a constant from 0 to 15`);return null;}x=+arg;}
+      else{if(/^\d+$/.test(arg))x=+arg;else if(labels[arg.toLowerCase()]!==undefined)x=labels[arg.toLowerCase()];else{errs.push(`line ${o.ln}: there is no label "${esc(arg)}"`);return null;}
+        if(x>15){errs.push(`line ${o.ln}: jump address must be 0 to 15`);return null;}}
+      return {op,rd,x,label:o.label};});
+    return {prog,errs};}
+  function trace(prog){const R=[0,0,0,0];let pc=0,n=0;const S=[];
+    const snap=(ph,o={})=>S.push(Object.assign({ph,pc,R:[...R],n,i:-1,ar:[],hl:[],regHl:[]},o));
+    snap('start',{msg:`The program sits in instruction memory, one 8-bit instruction per address. All registers start at 0, and so does the PC. Press <b>Next phase</b> to step, or <b>Run</b>.`});
+    while(pc<prog.length&&n<CAP){const I=prog[pc],i=pc,bits=bitsOf(I),a=R[I.rd],c=isR(I.op)?R[I.x]:null;
+      const reads=I.op==='SET'?[]:isR(I.op)?[...new Set([I.rd,I.x])]:[I.rd];
+      snap('fetch',{i,bits,hl:['fd','pc','row'],ar:['pc','fetch'],msg:`<b>Fetch.</b> The PC holds <b>${pc}</b>, so fetch/decode reads the byte at address ${pc}: <b>${bits}</b>. To the hardware it is just eight bits; nothing has been interpreted yet.`});
+      const third=I.op==='SET'?`The last four, <b>${b(I.x,4)}</b>, are the constant <b>${I.x}</b>.`:I.op==='JNZ'?`The last four, <b>${b(I.x,4)}</b>, are the jump target, <b>address ${I.x}</b>.`:`The next two, <b>${b(I.x,2)}</b>, name the source <b>r${I.x}</b>; the last two bits are unused.`;
+      const rt=reads.length?`Decode also reads ${reads.map(r=>`<b>r${r} = ${R[r]}</b>`).join(' and ')} from the execution context.`:'SET needs no register values, so the context is not read.';
+      snap('decode',{i,bits,dec:1,hl:['fd','dec'].concat(reads.length?['ctx']:[]),ar:['dec'].concat(reads.length?['opA']:[]).concat(reads.length>1?['opB']:[]),regHl:reads,msg:`<b>Decode.</b> The first two bits, <b>${b(OPC[I.op],2)}</b>, are the opcode: <b>${I.op}</b>. The next two, <b>${b(I.rd,2)}</b>, name <b>r${I.rd}</b>. ${third} ${rt}`});
+      let res=null,next=pc+1,alu,ex;
+      if(I.op==='SET'){res=I.x;alu=`pass ${I.x}`;ex=`For SET there is nothing to compute: the ALU passes the constant <b>${I.x}</b> through to its output. r${I.rd} still holds ${a}.`;}
+      else if(I.op==='ADD'){const raw=a+c;res=raw&255;alu=`${a} + ${c} = ${res}`;ex=`The ALU adds: <b>${a} + ${c} = ${res}</b>.${raw>255?` The true sum, ${raw}, doesn't fit in 8 bits, so it wraps around to ${res}.`:''} The result waits on the ALU's output wires; r${I.rd} still holds ${a}.`;}
+      else if(I.op==='SUB'){const raw=a-c;res=raw&255;alu=`${a} − ${c} = ${res}`;ex=`The ALU subtracts: <b>${a} − ${c} = ${res}</b>.${raw<0?` The true answer, ${raw}, is below 0, so it wraps around to ${res}.`:''} The result waits on the ALU's output wires; r${I.rd} still holds ${a}.`;}
+      else{const t=a!==0;next=t?I.x:pc+1;alu=`${a} ≠ 0 ? ${t?'yes: jump':'no: next'}`;ex=`The ALU tests whether r${I.rd} (${a}) is zero. ${t?`It isn't, so the branch is <b>taken</b>: the next PC will be <b>${I.x}</b>.`:`It is, so the branch is <b>not taken</b>: the next PC will be ${pc} + 1 = <b>${pc+1}</b>.`} No register receives a result.`;}
+      snap('exec',{i,bits,dec:1,alu,hl:['alu'],ar:['ctl'],msg:ex});
+      const old=pc;if(res!==null)R[I.rd]=res;pc=next;n++;
+      snap('wb',{i,bits,dec:1,alu,edge:1,hl:['ctx','pc'].concat(res!==null?['alu']:[]),ar:(res!==null?['wb']:[]).concat(I.op==='JNZ'?['npc']:[]),regHl:res!==null?[I.rd]:[],
+        msg:`<b>Clock edge: write back.</b> On the rising edge of the clock, the execution context saves ${res!==null?`<b>r${I.rd} ← ${res}</b> and `:''}<b>PC ← ${pc}</b>${pc===old+1?' (the next address)':' (the jump target)'}, in the same instant. This is the only moment the context changes. Instruction ${n} is done, after ${n} clock${n>1?'s':''}.`});}
+    if(n>=CAP)snap('cap',{msg:`<b>Stopped after ${CAP} instructions.</b> This looks like an infinite loop: a JNZ keeps jumping back because its register never reaches 0. Registers now: ${R.map((v,k)=>`r${k} = ${v}`).join(', ')}.`});
+    else snap('halt',{msg:`<b>Halted.</b> The PC is ${pc}, ${pc>=16?'past the end of memory':'an empty slot'}, so there is nothing to fetch. Final state: ${R.map((v,k)=>`<b>r${k} = ${v}</b>`).join(', ')}. ${n} instruction${n>1?'s':''} took ${n} clock${n>1?'s':''}: one per clock.`});
+    return S;}
+
+  let prog=[],S=[],cur=0,timer=null,speed=350;
+  const PH=[['fetch','Fetch'],['decode','Decode'],['exec','Execute'],['wb','Write back (clock edge)']];
+  function draw(){const st=S[cur],I=st.i>=0?prog[st.i]:null,act=st.i>=0;let s='';
+    /* instruction memory */
+    s+=tT(160,32,'Instruction memory',13,700)+`<text x="26" y="50" class="xs">addr</text><text x="56" y="50" class="xs">bits</text><text x="150" y="50" class="xs">instruction</text>`;
+    for(let k=0;k<16;k++){const y=58+k*18,p=prog[k],on=act&&k===st.i,cl=on?'sw':'sd';
+      s+=`<rect x="20" y="${y}" width="280" height="16" class="${on?'sl-row-on':'sl-row'}" style="${p?'':'opacity:.45'}"/>`;
+      s+=tS(30,y+12,String(k),10,600,'start',cl);
+      if(p)s+=tS(56,y+12,bitsOf(p),10.5,500,'start',cl)+tS(150,y+12,asmOf(p),10.5,600,'start',cl)+(p.label?tS(294,y+12,p.label+':',9.5,500,'end',cl):'');
+      else s+=tS(56,y+12,'(empty)',9.5,500,'start','sd');}
+    if(st.pc<16)s+=`<polygon points="4,${58+st.pc*18} 16,${58+st.pc*18+8} 4,${58+st.pc*18+16}" style="fill:#d9763a"/>`;
+    /* core */
+    s+=slCore(330,14,250,346);
+    s+=`<rect x="346" y="32" width="218" height="50" class="sl-fd"/>`+tS(455,51,'Fetch/Decode',12)+tS(455,71,act&&st.bits?st.bits:'—',act&&st.bits?13:10,700);
+    if(act&&st.dec){const F=[[`op ${b(OPC[I.op],2)}`,I.op],[`dd ${b(I.rd,2)}`,`r${I.rd}`],I.op==='SET'?[`nnnn ${b(I.x,4)}`,String(I.x)]:I.op==='JNZ'?[`aaaa ${b(I.x,4)}`,`→ ${I.x}`]:[`ss ${b(I.x,2)}`,`r${I.x}`]];
+      F.forEach(([t1,t2],k)=>{const x=346+k*73;s+=`<rect x="${x}" y="92" width="72" height="46" class="sl-pale"/>`+tS(x+36,108,t1,9,500)+tS(x+36,128,t2,13,700);});}
+    else s+=`<rect x="346" y="92" width="218" height="46" class="sl-pale"/>`+tS(455,119,'decoded fields: (none yet)',9.5,500);
+    s+=`<rect x="346" y="150" width="218" height="54" class="sl-alu"/>`+tS(455,170,'ALU (execution unit)',11)+tS(455,192,act&&st.alu?st.alu:'idle',act&&st.alu?12:10,act&&st.alu?700:500);
+    s+=`<rect x="346" y="220" width="218" height="130" class="sl-ctx"/>`+tS(455,236,'Execution Context',11);
+    s+=`<rect x="405" y="244" width="100" height="20" class="sl-reg"/>`+tS(455,258,`PC = ${st.pc}`,11);
+    st.R.forEach((v,k)=>{const x=354+(k%2)*106,y=274+Math.floor(k/2)*28;s+=`<rect x="${x}" y="${y}" width="98" height="22" class="sl-reg"/>`+tS(x+49,y+15,`r${k} = ${v}`,11.5)+(st.regHl.includes(k)?`<rect x="${x-2}" y="${y-2}" width="102" height="26" class="s0h"/>`:'');});
+    s+=tS(455,342,'changes only at the clock edge',9,500);
+    /* wires */
+    const rk=Math.min(15,act?st.i:st.pc),ry=58+rk*18+8;
+    const W={pc:`M403 254 H316 V${ry+3} H304`,fetch:`M302 ${ry-3} C 324 ${ry-3}, 322 46, 344 46`,dec:'M455 83 V90',ctl:'M455 139 V148',opA:'M390 219 V206',opB:'M430 219 V206',wb:'M520 206 V219',npc:'M566 177 H574 V254 H507'};
+    Object.entries(W).forEach(([k,d])=>{const a=st.ar.includes(k);s+=`<path d="${d}" class="${a?'s0a':'w'}" style="${a?'':'opacity:.3'}" marker-end="url(#${a?'aht':'ah'})"/>`;});
+    const box={fd:[346,32,218,50],dec:[346,92,218,46],alu:[346,150,218,54],ctx:[346,220,218,130],pc:[405,244,100,20],row:[20,58+rk*18,280,16]};
+    st.hl.forEach(h=>{const q=box[h];if(q)s+=`<rect x="${q[0]-3}" y="${q[1]-3}" width="${q[2]+6}" height="${q[3]+6}" rx="3" class="s0h"/>`;});
+    /* clock panel */
+    const pi=PH.findIndex(p=>p[0]===st.ph);
+    s+=tT(673,32,'Clock',13,700);
+    if(pi>=0)s+=`<rect x="${604+pi*34}" y="44" width="34" height="50" style="fill:var(--te-soft)"/>`;
+    s+=`<path d="M604 90 V50 H672 V90 H740 V50" class="${st.edge?'s0a':'w'}" style="stroke-width:2"/>`;
+    s+=`<path d="M604 90 V50" class="w" style="stroke-width:2"/>`;
+    PH.forEach((p,k)=>s+=`<text x="${621+k*34}" y="108" class="mid ${k===pi?'bd':'xs'}">${['F','D','X','W'][k]}</text>`);
+    s+=`<text x="740" y="124" class="end xs ${st.edge?'tte':''}">↑ edge: state saved</text>`;
+    const cnow=pi<0?'—':pi===3?st.n:st.n+1;
+    s+=`<text x="604" y="150" class="sm">current clock</text><text x="746" y="150" class="end bd">${cnow}</text><text x="604" y="168" class="sm">instructions done</text><text x="746" y="168" class="end bd">${st.n}</text>`;
+    s+=`<text x="604" y="198" class="bd">Encoding (8 bits)</text>`;
+    [['SET','00 dd nnnn'],['ADD','01 dd ss 00'],['SUB','10 dd ss 00'],['JNZ','11 dd aaaa']].forEach(([o,e],k)=>{const y=206+k*20,h=act&&st.dec&&I.op===o;
+      if(h)s+=`<rect x="600" y="${y}" width="148" height="18" style="fill:var(--te-soft)"/>`;s+=`<text x="606" y="${y+13}" class="${h?'bd':''}">${o}</text><text x="648" y="${y+13}" class="${h?'bd':''}">${e}</text>`;});
+    s+=`<text x="604" y="304" class="xs">dd destination register</text><text x="604" y="318" class="xs">ss source register</text><text x="604" y="332" class="xs">nnnn constant</text><text x="604" y="346" class="xs">aaaa jump address</text>`;
+    setVB('tSvg',760,370,s);
+    $('#tStrip').innerHTML=PH.map(([k,nm],j)=>`<span class="${j===pi?'h cur':pi>j?'h':'n'}">${nm}<small>${j===pi?'now':pi>j?'done':'·'}</small></span>`).join('');
+    $('#tMsg').innerHTML=st.msg;
+    $('#tOut').innerHTML=`PC <b>${st.pc}</b> · ${pi<0?(st.ph==='start'?'before clock 1':`<b>${st.n}</b> clocks in total`):pi===3?`edge ending clock <b>${st.n}</b>`:`in clock <b>${st.n+1}</b>`}${I&&pi>=0?` · <b>${asmOf(I)}</b>`:''}`;
+    $('#tBack').disabled=cur===0;$('#tNext').disabled=$('#tInst').disabled=cur===S.length-1;}
+  function stop(){if(timer){clearInterval(timer);timer=null;}$('#tRun').textContent='Run ▶';}
+  function load(src){stop();const r=assemble(src);
+    if(r.errs.length){$('#tErr').innerHTML=`<span style="color:var(--bad)">${r.errs.join('<br>')}</span>`;return;}
+    if(!r.prog.length){$('#tErr').innerHTML=`<span style="color:var(--bad)">No instructions found.</span>`;return;}
+    prog=r.prog;S=trace(prog);cur=0;$('#tErr').textContent=`Loaded ${prog.length} instruction${prog.length>1?'s':''} into memory.`;draw();}
+  $('#tNext').onclick=()=>{stop();if(cur<S.length-1)cur++;draw();};
+  $('#tBack').onclick=()=>{stop();if(cur>0)cur--;draw();};
+  $('#tInst').onclick=()=>{stop();do{cur++;}while(cur<S.length-1&&S[cur].ph!=='wb');draw();};
+  $('#tReset').onclick=()=>{stop();cur=0;draw();};
+  $('#tRun').onclick=()=>{if(timer){stop();return;}if(cur>=S.length-1)cur=0;$('#tRun').textContent='Pause ❚❚';
+    timer=setInterval(()=>{if(cur>=S.length-1){stop();return;}cur++;draw();},speed);};
+  $$('[data-ts]').forEach(bt=>bt.onclick=()=>{speed=+bt.dataset.ts;$$('[data-ts]').forEach(x=>x.setAttribute('aria-pressed',x===bt));if(timer){stop();$('#tRun').click();}});
+  $$('[data-tp]').forEach(bt=>bt.onclick=()=>{$$('[data-tp]').forEach(x=>x.setAttribute('aria-pressed',x===bt));$('#tSrc').value=PRE[bt.dataset.tp];load(PRE[bt.dataset.tp]);});
+  $('#tLoad').onclick=()=>{$$('[data-tp]').forEach(x=>x.setAttribute('aria-pressed',false));load($('#tSrc').value);};
+  $('#tSrc').value=PRE.add;load(PRE.add);
+})();
 
 /* 1 simple core */
 
