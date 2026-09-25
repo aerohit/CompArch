@@ -35,7 +35,7 @@ a.unit:hover{border-color:var(--cu);box-shadow:0 0 0 3px var(--cu-soft)}
 <a class="skip" href="#main">Skip to content</a>
 <header class="topbar"><div class="in">
   <a class="brand" href="index.html">Gates <span>→</span> GPUs · Notes</a>
-  <nav class="unitnav" aria-label="Units"><a href="index.html" aria-current="page">Course map</a><a href="unit-01-build-a-computer.html">1 · Build a computer</a><a href="unit-02-registers-programs-contexts.html">2 · Programs &amp; contexts</a><a href="unit-03-faster-core.html">3 · A faster core</a><a href="unit-04-parallelism.html">4 · Parallelism</a><a href="unit-05-gpus.html">5 · GPUs</a><a href="cs149/index.html">CS149 lectures</a></nav>
+  <nav class="unitnav" aria-label="Units"><a href="index.html" aria-current="page">Course map</a><a href="unit-01-build-a-computer.html">1 · Build a computer</a><a href="unit-02-registers-programs-contexts.html">2 · Programs &amp; contexts</a><a href="unit-03-faster-core.html">3 · A faster core</a><a href="unit-04-parallelism.html">4 · Parallelism</a><a href="unit-05-gpus.html">5 · GPUs</a><a href="unit-06-modern-systems.html">6 · Systems</a><a href="cs149/index.html">CS149 lectures</a></nav>
   <button class="themebtn" type="button">☾ Dark</button>
 </div></header>
 
@@ -78,9 +78,9 @@ a.unit:hover{border-color:var(--cu);box-shadow:0 0 0 3px var(--cu-soft)}
   <a class="unit" href="unit-05-gpus.html"><span class="k">Unit 5 · Lessons 20–24 <span class="tag">ready</span></span><h3>Understand GPUs</h3>
     <ol start="20"><li>SIMT and the programming model</li><li>Occupancy, scheduling, divergence</li><li>GPU memory traffic</li><li>Tiling and synchronization</li><li>Roofline and measurement</li></ol>
     <div class="ms"><b>Milestone:</b> explain why a simple kernel is slow, predict its limit, and design the measurement that tests it.</div></a>
-  <div class="unit planned"><span class="k">Unit 6 · Lessons 25–28 <span class="tag">planned</span></span><h3>From processors to systems</h3>
-    <ol start="25"><li>Matrix hardware and number formats</li><li>Heterogeneous SoCs</li><li>Packaging, HBM, NUMA</li><li>Multiple GPUs and nodes</li></ol>
-    <div class="ms">Follow bytes from host memory to a kernel and back.</div></div>
+  <a class="unit" href="unit-06-modern-systems.html"><span class="k">Unit 6 · Lessons 25–28 <span class="tag">ready</span></span><h3>Connect the modern system</h3>
+    <ol start="25"><li>Matrix hardware and number formats</li><li>Heterogeneous SoCs and shared memory</li><li>Packaging, HBM, NUMA</li><li>Multiple GPUs and collectives</li></ol>
+    <div class="ms"><b>Milestone:</b> follow bytes from host memory through a kernel and across GPUs, with an explicit time budget.</div></a>
   <div class="unit planned"><span class="k">Unit 7 · Lessons 29–30 <span class="tag">planned</span></span><h3>Read real architectures</h3>
     <ol start="29"><li>Case studies of current CPUs, GPUs and accelerators</li><li>Capstone: explain performance from first principles</li></ol>
     <div class="ms">Predict, measure, change one thing, explain.</div></div>

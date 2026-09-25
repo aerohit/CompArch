@@ -65,6 +65,7 @@
 .chain{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:14px;margin:14px 0}
 .chain span{padding:5px 11px;border:1px solid var(--line);border-radius:3px;background:var(--panel)}
 .chain i{font-style:normal;color:var(--mute)}
+.modelnote::before{content:"Model versus real machine"}
 .ctxcols{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media (max-width:620px){.ctxcols{grid-template-columns:1fr}}
 .ctxcols > div{border-radius:5px;padding:12px 16px}
@@ -76,7 +77,7 @@
 <a class="skip" href="#main">Skip to content</a>
 <header class="topbar"><div class="in">
   <a class="brand" href="index.html">Gates <span>→</span> GPUs · Notes</a>
-  <nav class="unitnav" aria-label="Units"><a href="index.html">Course map</a><a href="unit-01-build-a-computer.html" aria-current="page">1 · Build a computer</a><a href="unit-02-registers-programs-contexts.html">2 · Programs &amp; contexts</a><a href="unit-03-faster-core.html">3 · A faster core</a><a href="unit-04-parallelism.html">4 · Parallelism</a><a href="unit-05-gpus.html">5 · GPUs</a><a href="cs149/index.html">CS149 lectures</a></nav>
+  <nav class="unitnav" aria-label="Units"><a href="index.html">Course map</a><a href="unit-01-build-a-computer.html" aria-current="page">1 · Build a computer</a><a href="unit-02-registers-programs-contexts.html">2 · Programs &amp; contexts</a><a href="unit-03-faster-core.html">3 · A faster core</a><a href="unit-04-parallelism.html">4 · Parallelism</a><a href="unit-05-gpus.html">5 · GPUs</a><a href="unit-06-modern-systems.html">6 · Systems</a><a href="cs149/index.html">CS149 lectures</a></nav>
   <button class="themebtn" type="button">☾ Dark</button>
 </div></header>
 
@@ -119,7 +120,7 @@
 
   <h3 class="part">Why two states?</h3>
   <p>A wire in a chip carries a voltage, and voltages are noisy. Neighbouring wires couple into each other, the supply ripples, and temperature drifts. If we tried to store ten different levels on one wire, a small disturbance could turn a 6 into a 7.</p>
-  <p>Digital logic avoids this by asking only one question of each wire: is it <i>low</i> or <i>high</i>? Any voltage in a wide "low" band counts as <b>0</b>. Any voltage in a wide "high" band counts as <b>1</b>. A gap in between is never supposed to be read. Every gate also <b>restores</b> its output to a clean level, so a signal can pass through any number of gates in a row without the noise piling up.</p>
+  <p>Digital logic avoids this by asking only one question of each wire: is it <i>low</i> or <i>high</i>? Any voltage in a wide "low" band counts as <b>0</b>. Any voltage in a wide "high" band counts as <b>1</b>. A gap in between is never supposed to be read. Every gate also <b>restores</b> its output to a clean level, so noise doesn't pile up from one gate to the next: each stage regenerates a valid 0 or 1. (A chain of gates still adds delay, and every gate has loading and operating limits, so "regenerated" doesn't mean "free".)</p>
   <figure class="fig"><div class="sc">
     <svg viewBox="0 0 760 226" role="img" aria-label="A noisy input voltage passes through a gate and comes out as a clean digital signal">
       <rect x="80" y="20" width="660" height="56" class="te" style="opacity:.35;stroke:none"/>
@@ -136,7 +137,7 @@
       <path d="M504 180 H570 V40 H656 V180 H736" class="wt" style="stroke-width:2.5"/>
       <text x="620" y="16" class="mid sm">restored output</text>
     </svg></div>
-    <figcaption><b>Wide bands give noise margins.</b> The input wobbles but never leaves its valid band, so the gate reads it correctly and drives a clean 0 or 1. The "1" is a <i>range</i> of voltages, not one magic value.</figcaption></figure>
+    <figcaption><b>Wide bands give noise margins.</b> The noise wobbles stay inside the valid bands, so the gate reads each level correctly and drives a clean 0 or 1. The signal does pass through the forbidden gap while it switches, which is fine: an input only needs a valid level when its value is sampled or relied on, after it has settled. The "1" is a <i>range</i> of voltages, not one magic value.</figcaption></figure>
 
   <h3 class="part">Place value in base 2</h3>
   <p>With one bit we can tell apart two possibilities. With two bits, four (00, 01, 10, 11). With <i>n</i> bits, 2<sup>n</sup>. To read a bit pattern as an ordinary number, give each position a weight, just like decimal's ones, tens and hundreds, except the weights double: 1, 2, 4, 8, 16…</p>
@@ -162,12 +163,12 @@
   <p>An 8-bit register can't hold 300. When a result needs more bits than the register has, the extra high bits are simply dropped. The result is the true answer <b>modulo 2<sup>8</sup> = 256</b>.</p>
   <div class="worked">
     <p>200 + 100 = 300. In binary that's <code>1 0010 1100</code>, nine bits. Keep the low eight, <code>0010 1100</code>, and you get <b>44</b>, which is 300 − 256.</p>
-    <p>Now read the <i>same</i> bits as signed: 200 is really −56 in 8-bit two's complement, and −56 + 100 = 44. The same bits give the correct signed answer. Nothing overflowed in the signed reading, even though the unsigned reading wrapped.</p>
+    <p>Now read the <i>same</i> bits as signed: the 8-bit pattern that means 200 unsigned means −56 in two's complement, and −56 + 100 = 44. The same bits give the correct signed answer. Nothing overflowed in the signed reading, even though the unsigned reading wrapped.</p>
   </div>
   <div class="pitfall">Our teaching machine wraps silently. Real instruction sets must <i>define</i> what happens on overflow, and programming languages add their own rules on top: some wrap, some trap, and in C, signed overflow is undefined. Don't assume every language behaves like this toy.</div>
 
   <h3 class="part">An address is not the value stored there</h3>
-  <p>Memory is a numbered row of storage locations. The <b>address</b> picks a location, and the <b>contents</b> are whatever bits are stored there. We write <code>M[6] = 42</code> to mean "the location at address 6 holds 42". Mixing up the two is the most common beginner mistake in this whole subject.</p>
+  <p>Memory is a numbered row of storage locations. The <b>address</b> picks a location, and the <b>contents</b> are whatever bits are stored there. We write <code>M[6] = 42</code> to mean "the location at address 6 holds 42". For now this is abstract notation; Lesson 3 builds the hardware that actually stores the values. Mixing up the two is the most common beginner mistake in this whole subject.</p>
   <figure class="fig"><div class="sc">
     <svg viewBox="0 0 760 260" role="img" aria-label="Reading address 3 returns 6; using 6 as an address returns 42">
       <g id="memcol"></g>
@@ -178,7 +179,7 @@
       <text x="530" y="172" class="sm tte">(a pointer)</text>
       
     </svg></div>
-    <figcaption><b>Address versus contents.</b> Reading address 3 gives 6. That 6 is only another address if some instruction <i>chooses</i> to use it as one. Following it leads to 42. This one indirect step is exactly what a pointer is.</figcaption></figure>
+    <figcaption><b>Address versus contents.</b> Reading address 3 gives 6. That 6 is only another address if some instruction <i>chooses</i> to use it as one. Following it leads to 42. A value used this way, one that holds an address, is a <b>pointer</b>; using it to read another location, M[M[3]], is a <b>dereference</b> (an indirect read).</figcaption></figure>
   <p>A machine's widths are separate design choices: how many bits a register holds, how many bits an address has, how long an instruction is, and how many bytes one address names. They're often confused because they happen to match on some machines:</p>
   <div class="tbl"><table>
     <tr><th>Machine</th><th>Register width</th><th>Address names…</th><th>Instruction length</th></tr>
@@ -226,6 +227,7 @@
   <figure class="fig narrow"><div class="widget">
     <div class="sc" style="padding:0"><svg id="muxSvg" viewBox="0 0 520 170" role="img" aria-label="A two-input multiplexer choosing between 7 and 12" style="min-width:420px"></svg></div>
     <div class="ctrl"><button id="muxS" class="pri">S = 0</button><span class="readout">Flip the select line. The data inputs never change, only which one reaches the output.</span></div>
+    <p class="msg" id="muxOut"></p>
   </div><figcaption><b>A 2-to-1 mux on 8-bit values.</b> S = 0 passes A, and S = 1 passes B. Wider muxes (4-to-1, 8-to-1) just use more select bits.</figcaption></figure>
 
   <h3 class="part">Building addition: the full adder</h3>
@@ -243,15 +245,16 @@
     <div class="rip" id="rip"></div>
     <div class="ctrl"><button id="ripGo" class="pri">Watch it ripple</button><label class="rl" for="ripT">time elapsed: <span id="ripTv">9</span> gate delays<input type="range" id="ripT" min="0" max="9" value="9"></label></div>
     <p class="readout" id="ripOut" style="margin:10px 0 0"></p>
-  </div><figcaption><b>Hatched cells haven't settled yet.</b> In the worst case, the carry <i>out of</i> column <i>i</i> settles only after about 2<i>i</i> + 3 gate delays, so the final carry settles after 9. A 64-bit ripple adder would need over 100 gate delays. Real CPUs use <i>carry-lookahead</i> adders that compute all the carries in parallel using more gates. It's the first of many times we'll trade extra hardware for less waiting.</figcaption></figure>
+  </div><figcaption><b>Hatched cells haven't settled yet.</b> In the worst case, the carry <i>out of</i> column <i>i</i> settles only after about 2<i>i</i> + 3 gate delays, so the final carry settles after 9. A 64-bit ripple adder would need over 100 gate delays. Real CPUs use faster carry structures instead, such as <i>carry-lookahead</i> adders, which compute carries in parallel using more gates. It's the first of many times we'll trade extra hardware for less waiting.</figcaption></figure>
 
   <h3 class="part">The ALU: many operations, one chosen result</h3>
-  <p>An <b>arithmetic logic unit</b> bundles several operations (add, subtract, AND, OR, XOR…) with a mux on the output. <b>All the units compute at once, on every input, all the time.</b> The operation-select signal just decides which answer comes out. Subtraction reuses the adder: A − B = A + (NOT B) + 1, with the "+1" entering as the adder's first carry-in.</p>
+  <p>An <b>arithmetic logic unit</b> bundles several operations (add, subtract, AND, OR, XOR…) with a mux on the output. <b>In the simple circuit drawn here, every unit computes at once, on every input, all the time</b>, and the operation-select signal just decides which answer comes out. (Real ALUs vary: some share hardware between operations, or switch off units that aren't needed.) Subtraction reuses the adder: A − B = A + (NOT B) + 1, with the "+1" entering as the adder's first carry-in.</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 10px"><label class="rl" for="aluA">A (0–255)<input id="aluA" type="number" min="0" max="255" value="23"></label><label class="rl" for="aluB">B (0–255)<input id="aluB" type="number" min="0" max="255" value="19"></label>
       <div class="seg" role="group" aria-label="ALU operation"><button data-op="ADD" aria-pressed="true">ADD</button><button data-op="SUB">SUB</button><button data-op="AND">AND</button><button data-op="OR">OR</button><button data-op="XOR">XOR</button></div></div>
     <div class="sc" style="padding:0"><svg id="aluSvg" viewBox="0 0 760 270" role="img" aria-label="ALU with four units feeding an output multiplexer"></svg></div>
-  </div><figcaption><b>Every unit computes, one result is chosen.</b> The grey values are computed and thrown away every time. That costs a little energy but saves time, because the answer is ready the moment the select signal changes. The <b>zero flag</b> (is the result 0?) is the kind of extra output a later branch instruction can test.</figcaption></figure>
+    <p class="msg" id="aluOut"></p>
+  </div><figcaption><b>Every unit computes, one result is chosen.</b> The grey values are computed and thrown away every time. That costs a little energy but saves time: no unit has to wait to be started. The answer still isn't instant. After A, B or the select signal changes, it takes the chosen unit's delay plus the mux's delay before the output is valid. The <b>zero flag</b> (is the result 0?) is the kind of extra output a later branch instruction can test.</figcaption></figure>
 
   <h3 class="part">What we still can't do</h3>
   <p>Change an input, and after the delay the output changes. The adder doesn't keep its old answer anywhere. It's a <b>calculator circuit</b>, not yet a machine that can carry out a <i>sequence</i> of steps, because nothing holds a result so the next step can use it. That missing ingredient is the next lesson.</p>
@@ -302,6 +305,7 @@
     <li><b>Between edges</b>, combinational logic reads the current register values and computes the <i>next</i> values. The outputs wobble while signals settle, and that's fine.</li>
     <li><b>At the edge</b>, every enabled register captures its next value <i>at the same instant</i>.</li>
   </ol>
+  <div class="pitfall"><b>"At the same instant" is the synchronous teaching abstraction.</b> A real flip-flop needs its input stable for a <b>setup time</b> before the edge and a <b>hold time</b> after it, and the clock reaches different registers at slightly different moments (<b>clock skew</b>). Designers budget for all three; as long as those constraints are met, the simple model gives the right answer.</div>
   <figure class="fig"><div class="sc"><svg id="timingSvg" viewBox="0 0 760 236" role="img" aria-label="Timing diagram: register output Q changes only at rising clock edges, capturing input D"></svg></div>
     <figcaption><b>Q changes only at rising edges.</b> D can change at any time, even mid-cycle, but Q ignores it until the next edge. The shaded <b>setup window</b> before each edge is the time D must be stable before the flip-flop can capture it reliably.</figcaption></figure>
 
@@ -331,7 +335,7 @@
       <path d="M40 124 H520" class="w" marker-start="url(#ah)" marker-end="url(#ah)"/><text x="280" y="118" class="mid sm">minimum clock period = 800 ps → at most 1.25 GHz</text>
       <text x="540" y="154" class="sm">At 1.6 GHz (625 ps), the second</text><text x="540" y="170" class="sm">register would capture a value</text><text x="540" y="186" class="sm">that hasn't finished computing.</text>
     </svg></div>
-    <figcaption><b>Timing is physics, not a setting.</b> Making the clock faster requires shortening the critical path: faster transistors, fewer gates in a row, or cutting the path into pieces with registers in between. That last option is <i>pipelining</i>, and it's the first lesson of Unit 3.</figcaption></figure>
+    <figcaption><b>Timing is physics, not a setting.</b> (A simplified calculation: it ignores clock skew, hold constraints and manufacturing and temperature variation.) Making the clock faster requires shortening the critical path: faster transistors, fewer gates in a row, or cutting the path into pieces with registers in between. That last option is <i>pipelining</i>, and it's the first lesson of Unit 3.</figcaption></figure>
 
   <h3 class="part">Registers, memory, datapath, control</h3>
   <p>Both registers and memory hold state, but at different scales:</p>
@@ -339,8 +343,9 @@
     <tr><th></th><th>Register</th><th>Memory array</th></tr>
     <tr><td>Size</td><td>One value (say 8–64 bits); a register file has a few dozen</td><td>Thousands to billions of locations</td></tr>
     <tr><td>How you pick one</td><td>By its wiring or a small register number</td><td>By an address</td></tr>
-    <tr><td>Access</td><td>Immediate, several reads at once</td><td>Slower, usually one or two accesses at a time</td></tr>
+    <tr><td>Access</td><td>Small and directly selected, so typically the fastest storage; register files often have several read ports</td><td>Larger and addressed, so typically slower; how many accesses it serves at once depends on the design</td></tr>
   </table></div>
+  <p>Exact latencies and port counts depend on the implementation. The lasting difference is size and how one item is selected: by a wire or a small register number, or by an address.</p>
   <p>From here on we split a processor into two halves. The <b>datapath</b> holds and transforms values: registers, ALU, muxes, memory. The <b>control logic</b> decides, every cycle, which operation the ALU does, which input each mux selects, and which registers are enabled to write. We now have every ingredient for both.</p>
 
   <div class="predict"><div class="ph"><b>Predict</b><span>Remember: all registers read old values.</span></div><ol>
@@ -351,7 +356,7 @@
     <li>Starting from A = 0, B = 1 with the Fibonacci rule (A ← B, B ← A + B), what is B after 5 ticks?
       <details><summary>Show answer</summary><div class="ans"><p>(A, B) goes (0,1) → (1,1) → (1,2) → (2,3) → (3,5) → (5,8). So <b>B = 8</b>. Each tick advances the whole pair at once.</p></div></details></li>
     <li>A design's longest logic path is 700 ps and its registers add 100 ps of overhead. Why can't we just double the clock frequency?
-      <details><summary>Show answer</summary><div class="ans"><p>The period must be at least <b>800 ps</b> (1.25 GHz). At double that frequency (400 ps), the capturing register would sample the logic's output long before it settled, and it would store garbage. To go faster you must change the circuit, for example split the path with extra registers (pipelining).</p></div></details></li>
+      <details><summary>Show answer</summary><div class="ans"><p>The period must be at least <b>800 ps</b> (1.25 GHz). At double that frequency (400 ps), the capturing register would sample the logic's output long before it settled, violating its setup time. The captured value would be unreliable: it might be the old value, the new one, or a mix. To go faster you must change the circuit, for example split the path with extra registers (pipelining).</p></div></details></li>
   </ol></div>
   <p class="checkpoint">Describe any clocked machine as three things: its <b>current state</b>, the <b>combinational logic</b> that computes the next state, and the <b>rule for when state changes</b> (the clock edge and write enables).</p>
 </section>
@@ -442,12 +447,13 @@
   <div class="pitfall">One <b>instruction cycle</b> (fetch, decode, execute) here takes three <b>clock cycles</b>. The two terms are easy to blur. Also notice that PC already points to the <i>next</i> instruction while the current one executes. That's why a jump simply overwrites PC.</div>
 
   <h3 class="part">Run it: the NIB-8 simulator</h3>
-  <p>Pick a program, then press <b>Tick</b> one clock edge at a time. Before each tick, predict what will change. Memory cells are editable: type a hex byte into any cell to change the program or its data, and the machine resets.</p>
+  <p>Pick a program, then press <b>Tick</b> one clock edge at a time. Before each tick, predict what will change. Memory cells are editable: type a hex byte (one or two digits, 0–9 and A–F) into any cell to change the program or its data, and the machine resets. <b>Reset</b> restarts from the memory as you've edited it; clicking a program button restores that program's original bytes.</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 12px"><span class="readout">Program:</span><div class="seg" role="group" aria-label="Program"><button data-prog="add" aria-pressed="true">Add two numbers</button><button data-prog="count">Countdown</button><button data-prog="mul">Multiply</button></div></div>
     <div class="sim">
       <div><p class="panel-t">Memory (hex, editable)</p><div class="memg" id="memg"></div>
-        <p class="readout" style="margin-top:8px"><span style="outline:2px solid var(--ink);padding:0 4px">outlined</span> = PC · <span style="background:var(--te-soft);padding:0 4px">teal</span> = read · <span style="background:var(--cu-soft);padding:0 4px">copper</span> = written</p></div>
+        <p class="readout" id="memNote" style="margin-top:8px;min-height:1.2em"></p>
+        <p class="readout" style="margin-top:4px"><span style="outline:2px solid var(--ink);padding:0 4px">outlined</span> = PC · <span style="background:var(--te-soft);padding:0 4px">teal</span> = read · <span style="background:var(--cu-soft);padding:0 4px">copper</span> = written</p></div>
       <div>
         <div class="phring" id="phring"><span>Fetch</span><span>Decode</span><span>Execute</span></div>
         <div class="regs" id="simRegs"></div>
@@ -481,10 +487,10 @@
   <h3 class="part">What is an "execution context"?</h3>
   <p>Suppose we want to pause a NIB-8 program and resume it later, or on a second NIB-8. What must we save? It depends on <i>where</i> we pause. At a clean <b>instruction boundary</b> (between an execute and the next fetch), the essential state is small:</p>
   <div class="ctxcols">
-    <div class="ctx-a"><p class="panel-t" style="color:var(--te)">Must be saved (architectural)</p><ul><li><b>PC</b>: where to continue</li><li><b>ACC</b>: the working value</li><li><b>halted</b></li><li>The <b>memory</b> contents, or access to them</li></ul></div>
+    <div class="ctx-a"><p class="panel-t" style="color:var(--te)">Saved context (architectural)</p><ul><li><b>PC</b>: where to continue</li><li><b>ACC</b>: the working value</li><li><b>halted</b></li></ul><p class="panel-t" style="margin-top:10px">Must also still be there</p><ul><li>The same <b>memory</b> contents, left in place rather than copied</li></ul></div>
     <div class="ctx-b"><p class="panel-t">Can be dropped at a boundary</p><ul><li><b>IR</b>: the next fetch refills it</li><li><b>phase</b>: always "fetch next" at a boundary</li><li>ALU outputs and mux settings</li></ul></div>
   </div>
-  <p>Pause <i>mid-instruction</i>, after fetch but before execute, and PC + ACC is no longer enough: you'd also need IR and the phase. That's why real processors are careful to switch tasks only at well-defined boundaries. This <b>saved context</b> is exactly what an operating system stores when it switches between programs, as Unit 2 shows in detail. Note that an OS doesn't copy a program's whole memory on each switch. It just keeps track of which memory belongs to which program.</p>
+  <p>Pause <i>mid-instruction</i>, after fetch but before execute, and PC + ACC is no longer enough: you'd also need IR and the phase. That's why real processors are careful to switch tasks only at well-defined boundaries. PC, ACC and halted are NIB-8's <b>saved execution context</b>. When an operating system switches between programs, it saves the equivalent registers of a real processor (Unit 2 shows this in detail). The program's memory is <i>not</i> part of that saved context: it stays where it is, and the OS keeps track of which memory belongs to which program so the same contents are there on resumption.</p>
 
   <h3 class="part">A first performance calculation</h3>
   <p>Every program's run time breaks into three factors, which we'll use for the rest of the course:</p>
@@ -504,7 +510,7 @@
     <li>In Multiply, what happens if the counter M[14] starts at 0?
       <details><summary>Show answer</summary><div class="ans"><p>The loop adds once, then computes 0 − 1 = <b>255</b>, which isn't zero, so it keeps going. It runs <b>256 times</b> before the counter wraps back to 0, and the product becomes 6 × 256 mod 256 = 0. The loop tests the counter <i>after</i> adding, so a zero count was never handled. Try it in the simulator (set cell 14 to 00) and use Run.</p></div></details></li>
     <li>For "Add two numbers", count instruction-fetch reads, data reads and data writes.
-      <details><summary>Show answer</summary><div class="ans"><p>4 instruction fetches (one per instruction, including HALT), <b>2 data reads</b> (LOAD 8, ADD 9) and <b>1 data write</b> (STORE 10): 7 memory accesses in total. The simulator's counters confirm this. Everything goes through one memory, and that is the bottleneck Unit 2 starts attacking.</p></div></details></li>
+      <details><summary>Show answer</summary><div class="ans"><p>4 instruction fetches (one per instruction, including HALT), <b>2 data reads</b> (LOAD 8, ADD 9) and <b>1 data write</b> (STORE 10): 7 memory accesses in total. The simulator's counters confirm this. That count alone doesn't make memory the bottleneck: NIB-8 is defined to take 3 ticks per instruction whatever it accesses. What it shows is how much work goes into shuttling values in and out of memory. Unit 2's extra registers cut that shuttling, and with it the instruction count. Calling something a bottleneck needs a specified or measured timing limit.</p></div></details></li>
     <li>You pause right after tick 4 of "Add two numbers" and save only PC and ACC. Why can't a second NIB-8 continue from exactly that point?
       <details><summary>Show answer</summary><div class="ans"><p>Tick 4 was a <i>fetch</i>: IR now holds <code>ADD 9</code> and PC is already 2. With only PC = 2 and ACC = 23, the second machine would fetch address 2 (STORE) and <b>skip the ADD entirely</b>. It needs IR and the phase too, or else you should pause only at instruction boundaries.</p></div></details></li>
   </ol></div>
@@ -513,8 +519,12 @@
 
 <section class="lesson" id="wrap" data-toc="Putting it together" data-n="✓">
   <div class="lesson-h"><div class="kicker">Unit 1 · Summary</div><h2>Putting it together</h2></div>
-  <p>Explain the whole machine aloud using this chain as prompts. When every arrow feels obvious, you're ready for Unit 2.</p>
-  <div class="chain"><span>bits</span><i>given meaning by</i><span>interpretation</span><i>stored at an</i><span>address</span><i>routed by</i><span>muxes</span><i>transformed by the</i><span>ALU</span><i>held in</i><span>registers</span><i>updated on the</i><span>clock</span><i>programs live in</i><span>memory</span><i>as</i><span>instructions</span><i>located by the</i><span>PC</span><i>decoded by</i><span>control</span><i>resumable via a saved</i><span>context</span></div>
+  <p>Explain the whole machine aloud using these two chains as prompts. When every arrow feels obvious, you're ready for Unit 2.</p>
+  <p style="margin-bottom:4px"><b>Data path</b>: what happens to values.</p>
+  <div class="chain"><span>bit patterns in registers and memory</span><i>→ selected by muxes as</i><span>operands</span><i>→ transformed by the</i><span>ALU</span><i>→</i><span>result</span><i>→ written back at the</i><span>clock edge</span></div>
+  <p style="margin-bottom:4px"><b>Control path</b>: what decides which values move.</p>
+  <div class="chain"><span>PC</span><i>→ addresses the next</i><span>instruction</span><i>→ fetched into</i><span>IR</span><i>→ decoded by</i><span>control</span><i>→ sets</i><span>mux selects, write enables, next PC</span></div>
+  <p>Keep the distinction from Lesson 1 in view throughout: an <b>address</b> picks a location, the <b>contents</b> there are a bit pattern, and the <b>operation</b> using it decides how it is interpreted. PC, ACC and halted are the <b>context</b> that lets a program resume.</p>
   <div class="tbl"><table>
     <tr><th>Lesson</th><th>Mechanism added</th><th>State it adds</th><th>What still limits us</th></tr>
     <tr><td>1</td><td>Binary encoding</td><td>—</td><td>Bits don't do anything</td></tr>
@@ -522,7 +532,17 @@
     <tr><td>3</td><td>Registers + clock</td><td>Register contents</td><td>Fixed behaviour</td></tr>
     <tr><td>4</td><td>Stored program</td><td>PC, IR, ACC, phase, halted</td><td>One accumulator: every intermediate result detours through memory</td></tr>
   </table></div>
-  <p>That last limitation is where Unit 2 begins. Look at the Multiply loop. Four of its seven loop instructions exist only to shuttle the product and the counter between memory and ACC, because there's only one place to keep a working value.</p>
+  <p>That last limitation is where Unit 2 begins. Look at the Multiply loop. It occupies eight instructions (addresses 0–7), and four of them, <code>LOAD 12</code>, <code>STORE 12</code>, <code>LOAD 14</code> and <code>STORE 14</code>, exist only to shuttle the product and the counter between memory and ACC, because there's only one place to keep a working value. (The final pass skips the <code>JMP</code>, so 6 × 3 still takes 8 + 8 + 7 loop instructions plus HALT = 24 instructions, 72 ticks.)</p>
+  <h3 class="part">One more, unseen: a transfer exercise</h3>
+  <p>Memory holds <code>M[0..4] = [0x18, 0x39, 0x64, 0x2A, 0xF0]</code>, with <code>M[8] = 250</code>, <code>M[9] = 6</code> and <code>M[10] = 99</code>. Everything else is 0, and the machine starts with PC = 0, ACC = 0. Decode the program by hand, then predict the final <b>PC</b>, <b>ACC</b> and <b>M[10]</b>, the number of instructions executed, and the number of ticks.</p>
+  <div class="ctrl"><button id="exLoad" class="pri">Load it into the simulator</button><span class="readout">(after you've made your prediction)</span></div>
+  <details class="predict" style="padding:0"><summary style="margin:12px 16px">Show the worked trace</summary><div class="ans" style="margin:0 16px 16px">
+    <p>The program is <code>LOAD 8 · ADD 9 · JZ 4 · STORE 10 · HALT</code>. The trick is the ADD: 250 + 6 = 256, which wraps to <b>0</b> in 8 bits, so <code>JZ 4</code> is taken and the STORE never runs.</p>
+    <div class="tbl"><table><tr><th>tick</th><th>phase</th><th>PC after</th><th>IR</th><th>ACC</th><th>what happened</th></tr><tr><td class="m">1</td><td>fetch</td><td class="m">1</td><td class="m">0x18 LOAD 8</td><td class="m">0</td><td>IR ← M[0]; PC ← 1</td></tr><tr><td class="m">2</td><td>decode</td><td class="m">1</td><td class="m">LOAD 8</td><td class="m">0</td><td>opcode 1 = LOAD, address 8</td></tr><tr><td class="m">3</td><td>execute</td><td class="m">1</td><td class="m">LOAD 8</td><td class="m">250</td><td>ACC ← M[8] = 250</td></tr><tr><td class="m">4</td><td>fetch</td><td class="m">2</td><td class="m">0x39 ADD 9</td><td class="m">250</td><td>IR ← M[1]; PC ← 2</td></tr><tr><td class="m">5</td><td>decode</td><td class="m">2</td><td class="m">ADD 9</td><td class="m">250</td><td>opcode 3 = ADD, address 9</td></tr><tr><td class="m">6</td><td>execute</td><td class="m">2</td><td class="m">ADD 9</td><td class="m">0</td><td>ACC ← 250 + 6 = 256, wraps to <b>0</b></td></tr><tr><td class="m">7</td><td>fetch</td><td class="m">3</td><td class="m">0x64 JZ 4</td><td class="m">0</td><td>IR ← M[2]; PC ← 3</td></tr><tr><td class="m">8</td><td>decode</td><td class="m">3</td><td class="m">JZ 4</td><td class="m">0</td><td>opcode 6 = JZ, target 4</td></tr><tr><td class="m">9</td><td>execute</td><td class="m">4</td><td class="m">JZ 4</td><td class="m">0</td><td>ACC is 0, so <b>taken</b>: PC ← 4 (STORE is skipped)</td></tr><tr><td class="m">10</td><td>fetch</td><td class="m">5</td><td class="m">0xF0 HALT</td><td class="m">0</td><td>IR ← M[4]; PC ← 5</td></tr><tr><td class="m">11</td><td>decode</td><td class="m">5</td><td class="m">HALT</td><td class="m">0</td><td>opcode 15 = HALT</td></tr><tr><td class="m">12</td><td>execute</td><td class="m">5</td><td class="m">HALT</td><td class="m">0</td><td>machine halts</td></tr></table></div>
+    <p><b>Final: PC = 5, ACC = 0, M[10] = 99</b> (unchanged), after <b>4 instructions, 12 ticks</b>. PC is 5, not 4, because fetching HALT already advanced it.</p>
+    <p><b>Variation:</b> with <code>M[9] = 5</code>, the sum is 255, so JZ is <i>not</i> taken (PC stays 3). STORE 10 then writes <b>255</b> into M[10], and HALT ends the run with PC = 5 and ACC = 255: <b>5 instructions, 15 ticks</b>. If your prediction differs, find the first row of the table where it goes wrong.</p>
+  </div></details>
+  <div class="worked modelnote"><b>NIB-8 versus real machines.</b> These are <b>invented teaching rules</b>, not facts about real processors: 16 memory words, one accumulator, a 4-bit opcode and 4-bit address in every instruction, exactly 3 clock ticks per instruction, silent 8-bit wraparound, and halting on an unknown opcode. The real-machine comparisons on this page come from published sources: RISC-V RV32I's byte addressing and 32-bit base instructions (<a href="https://docs.riscv.org/reference/isa/v20240411/unpriv/rv32.html">RV32I specification</a>); x86-64's 1–15-byte instructions (<a href="https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html">Intel Software Developer's Manuals</a>); setup, hold and clock-period constraints (<a href="https://ocw.mit.edu/courses/6-004-computation-structures-spring-2017/pages/c5/c5s1/">MIT 6.004 timing notes</a>); and what an OS saves on a context switch versus a process's address space (<a href="https://pages.cs.wisc.edu/~remzi/OSTEP/cpu-mechanisms.pdf">OSTEP, limited direct execution</a> and <a href="https://pages.cs.wisc.edu/~remzi/OSTEP/vm-intro.pdf">address spaces</a>). Links checked September 2026. The 800 ps timing example uses made-up round numbers.</div>
   <div class="nextunit"><a href="index.html"><small>← Back to</small>Course map</a><a href="unit-02-registers-programs-contexts.html"><small>Next · Unit 2</small>Registers, programs &amp; execution contexts →</a></div>
 </section>
 
@@ -630,7 +650,7 @@ const wc=v=>'w'+(v?' on1':'');
       `<path d="M220 6 V37" class="wp dash" marker-end="url(#ah)"/><text x="232" y="16" class="sm tpl">S = ${S}</text>`+
       `<path d="M240 85 H330" class="wc" style="stroke-width:3" marker-end="url(#ahc)"/>`+
       `<rect x="334" y="64" width="150" height="42" class="cu"/><text x="409" y="90" class="mid bd">output = ${out}</text>`;
-    $('#muxS').textContent=`S = ${S}`;
+    $('#muxS').textContent=`S = ${S}`;$('#muxOut').innerHTML=`S = ${S} selects input ${S?'B':'A'}: output = <b>${out}</b>.`;
   }
   $('#muxS').onclick=()=>{S^=1;render();};render();
 })();
@@ -706,10 +726,13 @@ const wc=v=>'w'+(v?' on1':'');
     h+=`<rect x="670" y="100" width="72" height="60" class="${r===0?'te':'bg2'}"/><text x="706" y="126" class="mid bd">Z = ${r===0?1:0}</text><text x="706" y="146" class="mid xs">zero flag</text>`;
     h+=`<text x="575" y="186" class="mid sm">8-bit result (wraps mod 256)</text>`;
     $('#aluSvg').innerHTML=h;
+    const sym={ADD:'+',SUB:'−',AND:'AND',OR:'OR',XOR:'XOR'}[op],bad=['#aluA','#aluB'].filter(id=>{const v=$(id).value;return v!==''&&(!/^\d+$/.test(v)||+v>255);});
+    $('#aluOut').innerHTML=`${op}: ${A} ${sym} ${B} = <b>${r}</b> (${bin(r,8)}), zero flag ${r===0?1:0}.${bad.length?` <span style="color:var(--bad)">Inputs are 8-bit whole numbers 0–255; the ALU is using ${A} and ${B}.</span>`:''}`;
     $$('[data-op]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.op===op));
   }
   $$('[data-op]').forEach(b=>b.onclick=()=>{op=b.dataset.op;render();});
-  $('#aluA').oninput=render;$('#aluB').oninput=render;render();
+  $('#aluA').oninput=render;$('#aluB').oninput=render;
+  ['#aluA','#aluB'].forEach(id=>$(id).addEventListener('change',()=>{const v=Math.max(0,Math.min(255,Math.round(+$(id).value)||0));$(id).value=v;render();}));render();
 })();
 
 /* ---------- Lesson 3: timing diagram ---------- */
@@ -764,7 +787,8 @@ const wc=v=>'w'+(v?' on1':'');
   const PROGS={
     add:{mem:[0x18,0x39,0x2A,0xF0,0,0,0,0,23,19,0,0,0,0,0,0],code:[0,1,2,3],d:'M[10] ← M[8] + M[9]'},
     count:{mem:[0x18,0x49,0x28,0x65,0x51,0xF0,0,0,3,1,0,0,0,0,0,0],code:[0,1,2,3,4,5],d:'count M[8] down to zero'},
-    mul:{mem:[0x1C,0x3D,0x2C,0x1E,0x4F,0x2E,0x68,0x50,0xF0,0,0,0,0,6,3,1],code:[0,1,2,3,4,5,6,7,8],d:'M[12] ← M[13] × M[14], by repeated addition'}
+    mul:{mem:[0x1C,0x3D,0x2C,0x1E,0x4F,0x2E,0x68,0x50,0xF0,0,0,0,0,6,3,1],code:[0,1,2,3,4,5,6,7,8],d:'M[12] ← M[13] × M[14], by repeated addition'},
+    ex:{mem:[0x18,0x39,0x64,0x2A,0xF0,0,0,0,250,6,99,0,0,0,0,0],code:[0,1,2,3,4],d:'the transfer exercise: LOAD 8, ADD 9, JZ 4, STORE 10, HALT'}
   };
   const NAMES={1:'LOAD',2:'STORE',3:'ADD',4:'SUB',5:'JMP',6:'JZ'};
   const mn=v=>{const o=v>>4,a=v&15;return NAMES[o]?`${NAMES[o]} ${a}`:o===15?'HALT':null;};
@@ -772,10 +796,13 @@ const wc=v=>'w'+(v?' on1':'');
   const cells=[];
   const memg=$('#memg');
   for(let i=0;i<16;i++){const d=document.createElement('div');d.className='cell';d.innerHTML=`<div class="ad">${i}</div><input type="text" maxlength="2" aria-label="memory address ${i}" spellcheck="false"><div class="dc"></div>`;memg.appendChild(d);cells.push(d);
-    d.querySelector('input').addEventListener('change',e=>{const v=parseInt(e.target.value,16);if(isNaN(v)||v<0||v>255){render();return;}base[i]=v;reset();});}
+    d.querySelector('input').addEventListener('change',e=>{const t=e.target.value.trim();
+      if(!/^[0-9a-fA-F]{1,2}$/.test(t)){$('#memNote').innerHTML=`<span style="color:var(--bad)"><b>"${NOTES.esc(t)}" isn't a hex byte.</b> Type one or two hex digits (0–9, A–F). Address ${i} keeps its value, ${hex(s.mem[i])}.</span>`;render();return;}
+      base[i]=parseInt(t,16);reset();$('#memNote').textContent=`Address ${i} set to ${hex(base[i])}; the machine was reset with the edited memory.`;});}
   function fresh(){return {mem:base.slice(),pc:0,ir:null,acc:0,phase:0,halted:false,ticks:0,instrs:0,ifetch:0,dreads:0,dwrites:0};}
   function reset(){stop();s=fresh();ev=null;hist=[];log=[];render();}
-  function load(p){prog=p;base=PROGS[p].mem.slice();reset();}
+  function load(p){prog=p;base=PROGS[p].mem.slice();reset();$('#memNote').textContent='';}
+  window.NIB8_LOAD=()=>{prog='ex';base=PROGS.ex.mem.slice();reset();$('#memNote').textContent='Loaded the transfer-exercise program. Tick through it and compare with your prediction.';};
   function tick(){
     if(s.halted)return false;
     hist.push({s:JSON.stringify(s),ev,log:log.length});if(hist.length>3000)hist.shift();
@@ -832,6 +859,7 @@ const wc=v=>'w'+(v?' on1':'');
     timer=setInterval(()=>{const fast=s.ticks>150;let k=fast?30:1;while(k--&&tick());render();if(s.halted){stop();render();}},220);};
   $$('[data-prog]').forEach(b=>b.onclick=()=>load(b.dataset.prog));
   load('add');
+  $('#exLoad').onclick=()=>{window.NIB8_LOAD();document.getElementById('memg').scrollIntoView({block:'center',behavior:RM?'auto':'smooth'});};
 })();
 })();
 </script>

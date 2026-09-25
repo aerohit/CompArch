@@ -29,7 +29,7 @@
 <a class="skip" href="#main">Skip to content</a>
 <header class="topbar"><div class="in">
   <a class="brand" href="index.html">Gates <span>→</span> GPUs · Notes</a>
-  <nav class="unitnav" aria-label="Units"><a href="index.html">Course map</a><a href="unit-01-build-a-computer.html">1 · Build a computer</a><a href="unit-02-registers-programs-contexts.html">2 · Programs &amp; contexts</a><a href="unit-03-faster-core.html">3 · A faster core</a><a href="unit-04-parallelism.html">4 · Parallelism</a><a href="unit-05-gpus.html" aria-current="page">5 · GPUs</a><a href="cs149/index.html">CS149 lectures</a></nav>
+  <nav class="unitnav" aria-label="Units"><a href="index.html">Course map</a><a href="unit-01-build-a-computer.html">1 · Build a computer</a><a href="unit-02-registers-programs-contexts.html">2 · Programs &amp; contexts</a><a href="unit-03-faster-core.html">3 · A faster core</a><a href="unit-04-parallelism.html">4 · Parallelism</a><a href="unit-05-gpus.html" aria-current="page">5 · GPUs</a><a href="unit-06-modern-systems.html">6 · Systems</a><a href="cs149/index.html">CS149 lectures</a></nav>
   <button class="themebtn" type="button">☾ Dark</button>
 </div></header>
 
@@ -415,9 +415,9 @@
     <tr><td>What does a tile change?</td><td>Reuse, shared storage, registers, synchronization</td></tr>
     <tr><td>What would prove it helped?</td><td>Correctness, a predicted metric change, and a timing with a stated interval</td></tr>
   </table></div>
-  <p>The through-line from Unit 4 holds: each mechanism helps only when the program supplies what it needs. SIMT needs many independent threads; latency hiding needs enough <i>eligible</i> warps; lanes need coherent branches; the memory system needs neighbouring addresses; and the arithmetic units need enough reuse per byte. For the same ideas from a programmer's angle, see the <a href="cs149/lecture-02-modern-multicore.html">CS149 Lecture 2 companion</a>. Unit 6 will add matrix hardware and number formats, then follow data through whole systems of chips.</p>
+  <p>The through-line from Unit 4 holds: each mechanism helps only when the program supplies what it needs. SIMT needs many independent threads; latency hiding needs enough <i>eligible</i> warps; lanes need coherent branches; the memory system needs neighbouring addresses; and the arithmetic units need enough reuse per byte. For the same ideas from a programmer's angle, see the <a href="cs149/lecture-02-modern-multicore.html">CS149 Lecture 2 companion</a>. <a href="unit-06-modern-systems.html">Unit 6</a> adds matrix hardware and number formats, then follows data through whole systems of chips.</p>
   <p class="credit">Inspired by the Unit 5 outline and worked answers in <code>chatgpt-reference/</code>, rewritten and redrawn here. Every model on this page is an original teaching construction with its assumptions stated. The 8-lane groups, 8-bank shared memory, teaching-SM capacities and the 10 TFLOP/s device are invented for legibility; none describes a shipping GPU. For real details see NVIDIA's CUDA programming guide and AMD's ROCm architecture documentation.</p>
-  <div class="nextunit"><a href="unit-04-parallelism.html"><small>← Unit 4</small>Add parallelism</a><a href="index.html"><small>Back to</small>Course map →</a></div>
+  <div class="nextunit"><a href="unit-04-parallelism.html"><small>← Unit 4</small>Add parallelism</a><a href="unit-06-modern-systems.html"><small>Next</small>Unit 6 · Connect the modern system →</a></div>
 </section>
 
 </main>

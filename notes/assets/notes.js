@@ -11,6 +11,11 @@
     bin: (v,w=8)=>(v>>>0).toString(2).padStart(w,'0').slice(-w)
   };
   document.addEventListener('DOMContentLoaded',()=>{
+    /* Announce explorer results to screen readers: every text result line (.msg, or a readout with an id)
+       becomes a polite live region. Decorative SVG redraws are not announced. */
+    document.querySelectorAll('main .msg, main .readout[id]').forEach(el=>{
+      if(!el.hasAttribute('aria-live')){el.setAttribute('aria-live','polite');el.setAttribute('aria-atomic','true');}
+    });
     const btn=document.querySelector('.themebtn');
     if(btn){
       const label=()=>{const d=root.getAttribute('data-theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');btn.textContent=d==='dark'?'☀ Light':'☾ Dark';};
