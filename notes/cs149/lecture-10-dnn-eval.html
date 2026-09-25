@@ -1,0 +1,745 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CS149 Lecture 10 · Efficiently Evaluating DNNs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../assets/notes.css">
+<script src="../assets/notes.js"></script>
+<style>
+.calc{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;align-items:end}
+.stat{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:12px}
+.stat div{background:var(--panel2);border-radius:4px;padding:6px 10px;font:500 11px var(--mono);color:var(--mute)}
+.stat b{display:block;font-size:17px;color:var(--ink)}
+.bytes{display:grid;grid-template-columns:repeat(16,minmax(0,1fr));gap:3px;font:500 11px var(--mono)}
+.bytes div{text-align:center;padding:4px 0;border-radius:3px;background:var(--panel2)}
+.bytes div small{display:block;font-size:9px;color:var(--mute)}
+.bytes div.l0{box-shadow:inset 0 -3px 0 var(--te)} .bytes div.l1{box-shadow:inset 0 -3px 0 var(--pl)} .bytes div.l2{box-shadow:inset 0 -3px 0 var(--cu)} .bytes div.l3{box-shadow:inset 0 -3px 0 var(--warn)}
+.bytes div.cur{outline:2px solid var(--ink)}
+.bytes div.inc{background:var(--te-soft)}
+.slots{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.slots div{border:1px solid var(--line);border-radius:4px;padding:6px 12px;font:500 13px var(--mono);min-width:120px;background:var(--panel)}
+.slots div small{display:block;font-size:10px;color:var(--mute)}
+.slots div.fill{background:var(--cu-soft);border-color:var(--cu)}
+.slots div.hit{background:var(--ok-soft);border-color:var(--ok)}
+.strip{display:flex;flex-wrap:wrap;gap:3px;margin-top:10px}
+.strip span{min-width:40px;padding:3px 4px;border-radius:3px;font:600 11px var(--mono);text-align:center}
+.strip small{display:block;font-weight:500;font-size:9px}
+.strip .h{background:var(--ok-soft);color:var(--ok)} .strip .c{background:var(--bad-soft);color:var(--bad)} .strip .p{background:var(--warn-soft);color:var(--warn)} .strip .n{background:var(--panel2);color:var(--mute)} .strip .cur{outline:2px solid var(--ink)}
+.lanes{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:4px}
+.lanes button{height:54px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font:600 13px var(--mono)}
+.lanes button small{font-size:10px;font-weight:500}
+.lanes button.T{background:var(--te-soft);border-color:var(--te);color:var(--ink)}
+.lanes button.F{background:var(--pl-soft);border-color:var(--pl);color:var(--ink)}
+.cfg{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.cfg > div{display:flex;flex-direction:column;gap:4px}
+.cfg .readout{font-size:11.5px}
+.cfg input[type=number]{width:100%;box-sizing:border-box}
+.glossary{display:grid;grid-template-columns:minmax(150px,max-content) 1fr;gap:6px 18px;font-size:15px}
+.glossary dt{font:600 13px var(--mono);color:var(--te);padding-top:2px}
+.glossary dd{margin:0}
+@media (max-width:560px){.glossary{grid-template-columns:1fr}.glossary dd{margin-bottom:8px}}
+
+.pmx{display:grid;grid-template-columns:120px repeat(3,minmax(0,1fr));gap:8px;align-items:stretch}
+@media (max-width:760px){.pmx{grid-template-columns:repeat(1,minmax(0,1fr))}.pmx .rh,.pmx .ch{display:none}}
+.pmx .ch{font:600 11px var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--mute);text-align:center;align-self:end;padding-bottom:4px}
+.pmx .rh{font-size:13px;display:flex;flex-direction:column;justify-content:center;gap:2px;padding-right:6px}
+.pmx .rh b{font-family:var(--display);font-size:18px}
+.pmx .rh small{color:var(--mute);font:500 11px var(--mono)}
+.pcard{background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:8px 10px;cursor:pointer;text-align:left;font:inherit;color:var(--ink);display:flex;flex-direction:column;gap:4px}
+.pcard:hover{border-color:var(--cu)}
+.pcard[aria-pressed="true"]{border-color:var(--cu);box-shadow:0 0 0 3px var(--cu-soft);background:var(--panel)}
+.pcard svg{width:100%;height:auto;min-width:0}
+.pcard .pk{font:600 11px var(--mono);color:var(--cu)}
+.pcard .need{font-size:12.5px;line-height:1.4;color:var(--ink)}
+.pcard .need i{font-style:normal;color:var(--mute)}
+.chk{display:grid;gap:6px;margin-top:12px}
+.chk div{display:grid;grid-template-columns:26px 1fr;gap:8px;align-items:start;padding:7px 10px;border-radius:4px;font-size:14px;background:var(--panel2)}
+.chk div.ok{background:var(--ok-soft)} .chk div.no{background:var(--bad-soft)} .chk div.na{opacity:.6}
+.chk div > span:first-child{font:700 15px var(--mono)}
+.chk div.ok > span:first-child{color:var(--ok)} .chk div.no > span:first-child{color:var(--bad)}
+.recipe{counter-reset:r}
+
+/* slide-style architecture drawings */
+.sl-core{fill:var(--panel2);stroke:var(--mute);stroke-width:1.2}
+.sl-mem{fill:var(--panel);stroke:var(--ink);stroke-width:1.4}
+.sl-cache{fill:#bdbdbd;stroke:#6f6f6f;stroke-width:1.2}
+.sl-fd{fill:#d9763a;stroke:#8f4718;stroke-width:1.2}
+.sl-alu{fill:#f3c24c;stroke:#a87a12;stroke-width:1.2}
+.sl-ctx{fill:#8e9bba;stroke:#3d4a6b;stroke-width:1.4}
+.sl-reg{fill:#b9c5e2;stroke:#7d8bb0;stroke-width:.6}
+svg text.sd{fill:#1b1b1b!important}
+svg text.sw{fill:#fff!important}
+.pmx .pcard svg{background:transparent}
+.sl-pale{fill:#e6e6e6;stroke:#9a9a9a;stroke-width:1}
+.sl-row{fill:#ececec} .sl-row-on{fill:#d9763a}
+.tsrc{width:100%;min-height:190px;box-sizing:border-box;font:500 13px/1.5 var(--mono);background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:8px 10px;resize:vertical}
+.tref{font-size:13.5px;line-height:1.6;color:var(--mute)} .tref b{color:var(--ink)}
+.tedit summary{cursor:pointer;font:600 12.5px var(--mono);color:var(--cu);margin-top:12px}
+.s0a{stroke:var(--te);stroke-width:2.4;fill:none} .s0h{fill:none;stroke:var(--te);stroke-width:3} .s0dim{opacity:.35}
+.sm-ws{fill:#f1ddd0;stroke:#b98a6a;stroke-width:1} .sm-fp32{fill:#f3c24c;stroke:#a87a12;stroke-width:.8} .sm-int{fill:#ee8a60;stroke:#a8502a;stroke-width:.8} .sm-fp64{fill:#b07a86;stroke:#6e4450;stroke-width:.8} .sm-ten{fill:#bf2f1f;stroke:#7a1a10;stroke-width:.8} .sm-ls{fill:#5d9a3c;stroke:#355f1f;stroke-width:.8} .sm-reg{fill:#c9d6f2;stroke:#6c7fae;stroke-width:.8}
+
+.partbar{margin-top:90px;padding:14px 18px;border-radius:5px;background:var(--ink);color:var(--panel)}
+.partbar .kicker{color:var(--cu-soft)}
+.partbar h2{font-family:var(--display);font-size:clamp(32px,5vw,44px);line-height:1;margin:4px 0 4px;color:var(--panel)}
+.partbar p{margin:0;color:var(--panel);opacity:.8;max-width:68ch}
+.code{font:500 13px/1.55 var(--mono);background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:12px 16px;overflow-x:auto;margin:16px 0;white-space:pre;color:var(--ink)}
+.code .u{color:var(--pl);font-weight:600} .code .k{color:var(--cu);font-weight:600}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar"><div class="in">
+  <a class="brand" href="../index.html">Gates <span>→</span> GPUs · Notes</a>
+  <nav class="unitnav" aria-label="Sections"><a href="../index.html">Course map</a><a href="../unit-01-build-a-computer.html">1 · Build a computer</a><a href="../unit-02-registers-programs-contexts.html">2 · Programs &amp; contexts</a><a href="../unit-03-faster-core.html">3 · A faster core</a><a href="../unit-04-parallelism.html">4 · Parallelism</a><a href="../unit-05-gpus.html">5 · GPUs</a><a href="../unit-06-modern-systems.html">6 · Systems</a><a href="index.html" aria-current="page">CS149 lectures</a></nav>
+  <button class="themebtn" type="button">☾ Dark</button>
+</div>
+<nav class="subnav" aria-label="CS149 lectures"><span class="sl">CS149</span><a href="index.html">All lectures</a><a href="lecture-01-why-parallelism.html">L1 · Why parallelism?</a><a href="lecture-02-modern-multicore.html">L2 · A modern multi-core processor</a><a href="lecture-03-bandwidth-spmd.html">L3 · Bandwidth &amp; SPMD</a><a href="lecture-07-gpu-cuda.html">L7 · GPUs &amp; CUDA</a><a href="lecture-10-dnn-eval.html" aria-current="page">L10 · Evaluating DNNs</a></nav>
+</header>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk"/></marker>
+  <marker id="ahc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkc"/></marker>
+  <marker id="aht" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkt"/></marker>
+  <marker id="ahp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkp"/></marker>
+  <marker id="ahb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkb"/></marker>
+</defs></svg>
+
+<div class="wrap">
+<nav class="toc" aria-label="On this page"></nav>
+<main id="main">
+
+<header class="hero">
+  <div class="kicker">Stanford CS149 · Lecture 10 companion</div>
+  <h1>Efficiently evaluating <em>deep neural networks</em></h1>
+  <p class="lede">A trained neural network is just a program: a long chain of layers, most of which are big, regular loops of multiply-adds. This lecture asks how to run that program fast. The answers come from three directions at once: design networks that need less work, schedule the work well on the hardware (blocking, fusion, clever algorithms), and build hardware whose instructions do more useful math per unit of overhead.</p>
+  <dl class="outcome">
+    <dt>You'll be able to</dt><dd>Explain what a fully connected layer, a convolution layer, ReLU and pooling compute, and count their cost. Explain why depthwise separable convolutions (MobileNet) are cheaper. Map a convolution onto a matrix multiplication, explicitly (im2col) or implicitly, and explain the cost of each. Explain how blocking raises arithmetic intensity. Explain how operator fusion saves memory traffic, including the chunked-softmax trick behind fused attention. Explain why tensor cores and DNN accelerators exist.</dd>
+    <dt>Background</dt><dd><a href="lecture-03-bandwidth-spmd.html">Lecture 3</a> (arithmetic intensity, bandwidth-bound execution) and <a href="lecture-07-gpu-cuda.html">Lecture 7</a> (GPUs, CUDA, shared memory). Unit 5 of these notes covers the roofline model, tiling and number formats in more depth.</dd>
+    <dt>Source</dt><dd>Follows the structure and examples of Stanford CS149 <i>Parallel Computing</i>, Fall 2023, Lecture 10, "Efficiently Evaluating DNNs" (Kayvon Fatahalian and Kunle Olukotun). Lectures 8–9 aren't covered here yet. The explanations, diagrams and explorers are original study material, not a copy of the slides.</dd>
+  </dl>
+  <div class="insight">The recurring question in this lecture: <b>for this operation, what limits the speed — arithmetic or data movement?</b> Convolutions and matrix multiplies do a lot of math per byte, so the job is to <i>keep</i> that intensity when implementing them (blocking, implicit GEMM). Element-wise operations do almost no math per byte, so the job is to stop them from making their own trips to memory (fusion).</div>
+</header>
+
+<!-- ================================ PART 1 ================================ -->
+<div class="partbar" id="p1"><div class="kicker">Part 1 · What a DNN computes</div><h2>Layers are loops of multiply-adds</h2><p>Just enough about neural networks to see the computation that has to run fast.</p></div>
+
+<section class="lesson" id="s1" data-toc="The efficiency challenge" data-n="1" style="margin-top:36px">
+  <div class="lesson-h"><div class="kicker">Section 1</div><h2>The efficiency challenge</h2></div>
+  <p>Deep neural networks (DNNs) come in many <b>topologies</b>: VGG, ResNet, Inception, MobileNet and hundreds of variants, each a different arrangement of layers of different shapes. And they have to run on many kinds of <b>device</b>: server GPUs, phone CPUs, phone neural-engine chips, custom accelerators. The practical problem is the product of the two: for every network and every device, how do you get an implementation that uses the device well?</p>
+  <p>The lecture groups the answers into three strategies, which structure this page:</p>
+  <ol>
+    <li><b>Better algorithms.</b> Design network topologies that reach the same accuracy with much less work (Section 4).</li>
+    <li><b>Better software.</b> Implement each layer efficiently: map it onto well-tuned matrix multiply, block it for the memory hierarchy, fuse operations together (Parts 2 and 3).</li>
+    <li><b>Better hardware, and approximation.</b> Use lower precision, and specialized instructions and chips that make the common operations cheap (Part 4).</li>
+  </ol>
+  <p>This lecture is about <b>evaluation</b> (also called <b>inference</b>): running an already-trained network on new input. Training runs the same layers forward, then backward, and has similar computational character.</p>
+</section>
+
+<section class="lesson" id="s2" data-toc="Neurons and fully connected layers" data-n="2">
+  <div class="lesson-h"><div class="kicker">Section 2</div><h2>Neurons, layers and matrix-vector products</h2></div>
+  <p>A DNN is a big expression: a graph of simple operations. The lecture's warm-up example is a tiny one, <code>max(max(0, a·b + c·d) + e·f + g·h, i·j)</code>. Every node is a multiply, an add, or a max. Real networks are the same kind of thing, only with millions of nodes arranged regularly.</p>
+  <p>The basic unit is a <b>neuron</b>. It takes inputs <i>x<sub>i</sub></i>, computes a weighted sum plus a bias, and applies a simple nonlinear function <i>f</i>:</p>
+  <pre class="code">out = f( Σ<sub>i</sub> x<sub>i</sub>·w<sub>i</sub> + b )        <span class="u">// f is often ReLU: f(v) = max(0, v)</span></pre>
+  <p>The weights <i>w</i> and bias <i>b</i> are the <b>parameters</b> learned in training; for evaluation they're constants. Older networks used a sigmoid for <i>f</i>; modern ones mostly use <b>ReLU</b> (rectified linear unit), which just zeroes negative values.</p>
+  <p>A <b>fully connected layer</b> is a column of neurons that each see every input. Put each neuron's weights in one row of a matrix and the whole layer is one matrix-vector product:</p>
+  <figure class="fig"><div class="sc"><svg id="fcSvg" viewBox="0 0 760 200" role="img" aria-label="Three inputs, each connected to all four neurons of a fully connected layer, and the equivalent formula: f of a 4 by 3 weight matrix times the input vector plus a bias vector" style="min-width:560px"></svg></div>
+    <figcaption><b>A fully connected layer is a matrix-vector product.</b> 3 inputs and 4 neurons give a 4 × 3 weight matrix: 12 multiply-adds and 12 parameters. Evaluate a whole batch of inputs at once and the matrix-vector product becomes a <b>matrix-matrix</b> product, which is where the arithmetic intensity comes from.</figcaption></figure>
+  <p>The number of weights in a fully connected layer is (inputs × outputs). Connect every pixel of a 224 × 224 × 3 image to even 1,000 neurons and that's 150 million weights for one layer. That's why image networks use a different kind of layer.</p>
+</section>
+
+<section class="lesson" id="s3" data-toc="Convolution" data-n="3">
+  <div class="lesson-h"><div class="kicker">Section 3</div><h2>Convolution: local connections with shared weights</h2></div>
+  <p>Two observations about images shrink the layer dramatically:</p>
+  <ul>
+    <li><b>Locality.</b> A useful feature at a pixel (an edge, a corner) depends on the pixels near it. So each output only needs to connect to a small window of the input, say 3 × 3. That's a <b>locally connected</b> layer.</li>
+    <li><b>Translation invariance.</b> An edge looks the same wherever it is. So every output location can use the <i>same</i> weights. That's a <b>convolution</b>: a locally connected layer with shared weights. The weights are called the <b>filter</b> (or kernel).</li>
+  </ul>
+  <p>Here is the lecture's 3 × 3 convolution of a single-channel image, written as plain C. With every weight 1/9, it's a box blur:</p>
+  <pre class="code"><span class="k">int</span> WIDTH = 1024, HEIGHT = 1024;
+<span class="k">float</span> input[(WIDTH+2) * (HEIGHT+2)];   <span class="u">// 1-pixel border so the window never runs off</span>
+<span class="k">float</span> output[WIDTH * HEIGHT];
+<span class="k">float</span> weights[] = {1/9., 1/9., 1/9.,
+                   1/9., 1/9., 1/9.,
+                   1/9., 1/9., 1/9.};
+
+<span class="k">for</span> (int j=0; j&lt;HEIGHT; j++)
+  <span class="k">for</span> (int i=0; i&lt;WIDTH; i++) {
+    float tmp = 0.f;
+    <span class="k">for</span> (int jj=0; jj&lt;3; jj++)
+      <span class="k">for</span> (int ii=0; ii&lt;3; ii++)
+        tmp += input[(j+jj)*(WIDTH+2) + (i+ii)] * weights[jj*3 + ii];
+    output[j*WIDTH + i] = tmp;
+  }</pre>
+  <p>Different weights detect different things. The classic <b>Sobel</b> filters respond to horizontal or vertical changes in brightness, that is, to edges. Try them:</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 8px"><span class="readout">Filter:</span><div class="seg" role="group" aria-label="Filter"><button data-cf="blur" aria-pressed="true">blur (all 1/9)</button><button data-cf="sx">Sobel x (vertical edges)</button><button data-cf="sy">Sobel y (horizontal edges)</button><button data-cf="sharp">sharpen</button></div>
+      <div class="seg" role="group" aria-label="Apply ReLU"><button data-cr="0" aria-pressed="true">no ReLU</button><button data-cr="1">then ReLU</button></div></div>
+    <div class="sc" style="padding:0"><svg id="cvSvg" viewBox="0 0 760 300" role="img" aria-label="A 12 by 12 input image, the 3 by 3 filter, and the 10 by 10 output; click an output pixel to see its window" style="min-width:560px"></svg></div>
+    <p class="msg" id="cvMsg"></p>
+  </div><figcaption><b>Click any output pixel.</b> Its value is the sum of the nine input pixels under the window, each multiplied by the filter weight in the same position. Teal is positive, orange is negative. The input is a bright square on a dark background; blur softens its edges, the Sobel filters light up its left/right or top/bottom edges with opposite signs, and ReLU keeps only the positive responses.</figcaption></figure>
+  <h3>Convolution layers in a real network</h3>
+  <p>Real inputs have several <b>channels</b> (3 for RGB; later layers have 64, 128, 512…). A filter spans all input channels, so a 3 × 3 filter on 64 channels is a 3 × 3 × 64 block of weights, and it produces one output channel. A layer applies <i>K</i> such filters, producing <i>K</i> output channels. The first layer of the 2012 AlexNet network, for example, applies 96 filters of size 11 × 11 × 3 to the image.</p>
+  <p>A layer's output is typically followed by ReLU and then <b>pooling</b>, which shrinks each channel, for example by taking the max of every 2 × 2 region (W × H becomes W/2 × H/2):</p>
+  <figure class="fig"><div class="sc"><svg id="pipeSvg" viewBox="0 0 760 170" role="img" aria-label="Pipeline: input W by H by C, convolution with K filters to W by H by K, ReLU to W by H by K, 2 by 2 max pool to W/2 by H/2 by K" style="min-width:560px"></svg></div>
+    <figcaption><b>The basic building block: conv → ReLU → pool.</b> Networks stack dozens of these. Pooling halves the width and height, so later layers work on smaller images with more channels. All the tensors in between are called <b>activations</b>.</figcaption></figure>
+  <p>The costs follow directly from the loops. For an output of <i>H</i> × <i>W</i> pixels with <i>K</i> channels, from <i>C</i> input channels with <i>R</i> × <i>S</i> filters:</p>
+  <pre class="code">multiply-adds = H · W · K · C · R · S         <span class="u">// every output pixel, every filter, every weight</span>
+parameters    = K · C · R · S (+ K biases)    <span class="u">// independent of the image size</span></pre>
+</section>
+
+<section class="lesson" id="s4" data-toc="Cheaper topologies" data-n="4">
+  <div class="lesson-h"><div class="kicker">Section 4</div><h2>Approach 1: design topologies that need less work</h2></div>
+  <p>The first way to make evaluation fast is to change the network. Between 2014 and 2017 researchers found topologies that reach similar ImageNet accuracy with far less computation. The lecture's comparison (MADDs are multiply-adds per image):</p>
+  <div class="tbl"><table>
+    <tr><th>Network</th><th class="m">Year</th><th class="m">Top-1 accuracy</th><th class="m">Parameters</th><th class="m">MADDs per image</th></tr>
+    <tr><td>VGG-16</td><td class="m">2014</td><td class="m">71.5%</td><td class="m">138 M</td><td class="m">15 B</td></tr>
+    <tr><td>GoogLeNet</td><td class="m">2015</td><td class="m">70%</td><td class="m">6.8 M</td><td class="m">1.5 B</td></tr>
+    <tr><td>ResNet-18</td><td class="m">2016</td><td class="m">73%*</td><td class="m">11.7 M</td><td class="m">1.8 B</td></tr>
+    <tr class="hl"><td>MobileNet-224</td><td class="m">2017</td><td class="m">70.5%</td><td class="m">4.2 M</td><td class="m">0.6 B</td></tr>
+  </table></div>
+  <p class="xs" style="font-size:13px;color:var(--mute)">* 10-crop result; ResNet's single-crop results are similar to the other networks'.</p>
+  <p>That's about a <b>25× reduction in cost at similar accuracy</b> (15 B / 0.6 B) in three years. For comparison, hardware roughly doubled in performance over the same period. ResNet's contribution was <b>residual</b> (skip) connections, which made deep networks trainable; its 34-layer version needs 3.6 billion FLOPs where VGG-19 needs 19.6 billion.</p>
+  <h3>MobileNet's trick: depthwise separable convolution</h3>
+  <p>A standard 3 × 3 convolution with <i>C</i> input and <i>K</i> output channels mixes space and channels in one step: every one of the <i>K</i> filters looks at a 3 × 3 × <i>C</i> window. MobileNet factors that into two cheaper steps:</p>
+  <ol>
+    <li><b>Depthwise:</b> <i>C</i> separate 3 × 3 × 1 filters, one per input channel. Spatial filtering, no channel mixing.</li>
+    <li><b>Pointwise:</b> <i>K</i> filters of size 1 × 1 × <i>C</i>. Channel mixing, no spatial extent.</li>
+  </ol>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 8px"><span class="readout">Layer:</span><div class="seg" role="group" aria-label="Layer preset"><button data-lc="0" aria-pressed="true">14×14, 512 → 512</button><button data-lc="1">112×112, 32 → 64</button><button data-lc="2">56×56, 128 → 128</button><button data-lc="3">7×7, 1024 → 1024</button></div></div>
+    <div class="cfg">
+      <div><span class="readout">Output size H × W: <b id="lcHv"></b></span><input type="range" id="lcH" min="0" max="5" step="1" aria-label="Output height and width"></div>
+      <div><span class="readout">Input channels C: <b id="lcCv"></b></span><input type="range" id="lcC" min="0" max="6" step="1" aria-label="Input channels"></div>
+      <div><span class="readout">Output channels K: <b id="lcKv"></b></span><input type="range" id="lcK" min="0" max="6" step="1" aria-label="Output channels"></div>
+      <div><span class="readout">Filter size R × S: <b id="lcRv"></b></span><input type="range" id="lcR" min="0" max="3" step="1" aria-label="Filter size"></div>
+    </div>
+    <div class="sc" style="padding:10px 0 0"><svg id="lcSvg" viewBox="0 0 760 150" role="img" aria-label="Bars comparing multiply-adds for a standard convolution and a depthwise separable one, split into depthwise and pointwise parts" style="min-width:560px"></svg></div>
+    <div class="stat" id="lcStat"></div>
+  </div><figcaption><b>The pointwise part dominates.</b> The depthwise separable cost divided by the standard cost is exactly 1/<i>K</i> + 1/(<i>R</i>·<i>S</i>). With 3 × 3 filters and hundreds of channels that's about 1/9: 8–9 times less work. And the remaining work is almost all in the 1 × 1 convolutions.</figcaption></figure>
+  <p>MobileNet's paper reports that <b>about 95% of its multiply-adds are in 1 × 1 convolutions</b> (which also hold 75% of its parameters; most of the rest are in the final fully connected layer). That matters for the next part: a 1 × 1 convolution <i>is</i> a matrix multiply with no rearrangement, and matrix multiply is the most optimized routine in numerical computing.</p>
+  <div class="pitfall">Fewer FLOPs isn't automatically less time. Depthwise convolutions do very little arithmetic per byte they read (each weight is used for one channel only), so on a GPU they tend to be bandwidth-bound. Count bytes as well as FLOPs.</div>
+</section>
+
+<!-- ================================ PART 2 ================================ -->
+<div class="partbar" id="p2"><div class="kicker">Part 2 · Making convolution fast</div><h2>Approach 2: implement layers efficiently</h2><p>Turn convolution into matrix multiply, then make matrix multiply use the memory hierarchy well.</p></div>
+
+<section class="lesson" id="s5" data-toc="The direct loop nest" data-n="5" style="margin-top:36px">
+  <div class="lesson-h"><div class="kicker">Section 5</div><h2>The direct implementation: seven nested loops</h2></div>
+  <p>A convolution layer applied to a batch of images, written directly (stride 1, no padding logic shown):</p>
+  <pre class="code"><span class="k">float</span> input[BATCH][IN_H][IN_W][IN_DEPTH];          <span class="u">// input activations</span>
+<span class="k">float</span> output[BATCH][IN_H][IN_W][NUM_FILTERS];      <span class="u">// output activations</span>
+<span class="k">float</span> weights[NUM_FILTERS][FILTER_Y][FILTER_X][IN_DEPTH];
+<span class="k">float</span> biases[NUM_FILTERS];
+
+<span class="k">for</span> (int img=0; img&lt;BATCH; img++)
+  <span class="k">for</span> (int j=0; j&lt;IN_H; j++)
+    <span class="k">for</span> (int i=0; i&lt;IN_W; i++)
+      <span class="k">for</span> (int f=0; f&lt;NUM_FILTERS; f++) {
+        float tmp = biases[f];
+        <span class="k">for</span> (int kk=0; kk&lt;IN_DEPTH; kk++)      <span class="u">// sum over input channels</span>
+          <span class="k">for</span> (int jj=0; jj&lt;FILTER_Y; jj++)    <span class="u">// spatial convolution (Y)</span>
+            <span class="k">for</span> (int ii=0; ii&lt;FILTER_X; ii++)  <span class="u">// spatial convolution (X)</span>
+              tmp += weights[f][jj][ii][kk] * input[img][j+jj][i+ii][kk];
+        output[img][j][i][f] = tmp;
+      }</pre>
+  <p>(The slide's version initializes <code>tmp</code> from <code>biases[NUM_FILTERS]</code>, one past the end; it means <code>biases[f]</code>.) There's a lot of <b>reuse</b> in this loop nest: every filter weight is used at every pixel of every image, and every input value is used by every filter and by up to 9 neighboring windows. Reuse is an opportunity: a value loaded into fast storage once can feed many multiply-adds. But the naive loop order doesn't exploit it well, and writing a fast version of seven loops for every layer shape by hand is hard. The standard move is to turn the problem into one that's already been solved.</p>
+</section>
+
+<section class="lesson" id="s6" data-toc="Convolution as matrix multiply (im2col)" data-n="6">
+  <div class="lesson-h"><div class="kicker">Section 6</div><h2>Convolution as matrix multiplication ("explicit GEMM")</h2></div>
+  <p><b>GEMM</b> (general matrix-matrix multiply) has had decades of tuning on every platform. To use it, rewrite the convolution: for each output pixel, copy the 3 × 3 window of input it needs into one row of a new matrix. Then every output pixel is a dot product of its row with the filter's 9 weights, and the whole convolution is a matrix-vector product. This rearrangement is called <b>im2col</b> ("image to columns"):</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 8px"><span class="readout">Click an output pixel or a row of the matrix.</span></div>
+    <div class="sc" style="padding:0"><svg id="icSvg" viewBox="0 0 760 420" role="img" aria-label="A 4 by 4 input with a zero border, and its 16 by 9 im2col matrix; each row holds one output pixel's 3 by 3 window" style="min-width:560px"></svg></div>
+    <p class="msg" id="icMsg"></p>
+  </div><figcaption><b>im2col on a 4 × 4 image with zero padding.</b> Each of the 16 output pixels gets a row of 9 values: its window, read left to right, top to bottom; positions outside the image are 0. Every interior input value appears in 9 different rows. Multiply this 16 × 9 matrix by the 9 filter weights and you get all 16 outputs.</figcaption></figure>
+  <p>With more filters, the weight vector becomes a matrix with one column per filter. With more input channels, each row gets 9 values <i>per channel</i>, because a filter sums its response over all channels. The general mapping, using NVIDIA's symbols (batch <i>N</i>, input <i>H</i> × <i>W</i> × <i>C</i>, <i>K</i> filters of <i>R</i> × <i>S</i> × <i>C</i>, output <i>P</i> × <i>Q</i> × <i>K</i>):</p>
+  <figure class="fig"><div class="sc"><svg id="gmSvg" viewBox="0 0 760 230" role="img" aria-label="Convolution mapped to GEMM: the convolution matrix of size NPQ by RSC times the filter matrix of size RSC by K gives the output matrix of size NPQ by K" style="min-width:560px"></svg></div>
+    <figcaption><b>Conv layer → one GEMM.</b> A[NPQ × RSC] holds one row per output pixel of every image; B[RSC × K] holds one column per filter; C = A·B is the output, one row per pixel and one column per output channel.</figcaption></figure>
+  <p>The catch is the size of A. Each input value is copied into about <i>R</i> × <i>S</i> rows, so materializing A <b>increases memory traffic by roughly a factor of R × S</b> (9 for 3 × 3 filters) and needs a lot of extra storage. For the lecture's big example (<i>N</i> = 32, 256 × 256 images, 128 channels, 3 × 3 filters), the activations are 1 GiB in fp32, and the im2col matrix is 9 GiB.</p>
+  <p>A 1 × 1 convolution is the exception: its "window" is a single pixel, so A is just the activation tensor viewed as an (NHW × C) matrix, with no copying. That's why MobileNet's heavy use of 1 × 1 convolutions maps so well onto GEMM.</p>
+</section>
+
+<section class="lesson" id="s7" data-toc="Blocking matrix multiply" data-n="7">
+  <div class="lesson-h"><div class="kicker">Section 7</div><h2>Making GEMM fast: blocking</h2></div>
+  <p>So how does a good GEMM work? Start with the obvious version:</p>
+  <pre class="code"><span class="k">float</span> A[M][K], B[K][N], C[M][N];
+<span class="u">// compute C += A * B</span>
+#pragma omp parallel for
+<span class="k">for</span> (int j=0; j&lt;M; j++)
+  <span class="k">for</span> (int i=0; i&lt;N; i++)
+    <span class="k">for</span> (int k=0; k&lt;K; k++)
+      C[j][i] += A[j][k] * B[k][i];</pre>
+  <p>It has plenty of parallelism. Its problem is <b>low arithmetic intensity</b>: it doesn't exploit temporal locality. Every element of A is used N times and every element of B is used M times, but by the time the loop comes back to a value, it's long gone from the cache. For large matrices each multiply-add ends up fetching its operands from memory: 2 FLOPs for every 8 bytes, 0.25 FLOPs per byte.</p>
+  <p>The fix is <b>blocking</b> (tiling): compute a partial result for one block of C while the blocks of A and B it needs stay in cache.</p>
+  <pre class="code"><span class="k">for</span> (int jblock=0; jblock&lt;M; jblock+=BLOCKSIZE_J)
+  <span class="k">for</span> (int iblock=0; iblock&lt;N; iblock+=BLOCKSIZE_I)
+    <span class="k">for</span> (int kblock=0; kblock&lt;K; kblock+=BLOCKSIZE_K)
+      <span class="u">// multiply one block of A by one block of B, accumulate into one block of C</span>
+      <span class="k">for</span> (int j=0; j&lt;BLOCKSIZE_J; j++)
+        <span class="k">for</span> (int i=0; i&lt;BLOCKSIZE_I; i++)
+          <span class="k">for</span> (int k=0; k&lt;BLOCKSIZE_K; k++)
+            C[jblock+j][iblock+i] += A[jblock+j][kblock+k] * B[kblock+k][iblock+i];</pre>
+  <p>With square b × b blocks, each block step loads 2b² values of A and B and does b³ multiply-adds: every value loaded is used b times. So the arithmetic intensity grows in proportion to the block size, roughly <b>b/4 FLOPs per byte</b> in fp32. The block size is limited by how much fits in fast storage.</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 8px"><span class="readout">Arithmetic:</span><div class="seg" role="group" aria-label="Arithmetic"><button data-bm="fp32" aria-pressed="true">fp32 ALUs (15.7 TFLOP/s)</button><button data-bm="tc">fp16 tensor cores (125 TFLOP/s)</button></div></div>
+    <div class="cfg">
+      <div><span class="readout">Fast storage for the blocks: <b id="bkZv"></b></span><input type="range" id="bkZ" min="0" max="12" step="1" aria-label="Fast storage size"></div>
+    </div>
+    <div class="sc" style="padding:10px 0 0"><svg id="bkSvg" viewBox="0 0 760 270" role="img" aria-label="Roofline chart: attainable throughput versus arithmetic intensity, with the blocked matrix multiply's position" style="min-width:560px"></svg></div>
+    <div class="stat" id="bkStat"></div>
+    <p class="msg" id="bkMsg"></p>
+  </div><figcaption><b>A roofline for blocked GEMM.</b> The machine is V100-like: 900 GB/s of memory bandwidth and either 15.7 TFLOP/s of fp32 or 125 TFLOP/s of fp16 tensor-core math. The model: three b × b blocks (A, B and C) must fit in the fast storage; a large 8192 × 8192 multiply is done block by block. Below the ridge point the multiply is bandwidth-bound; above it, compute-bound. (A teaching model: real kernels block at several levels at once and never get the full storage for one block.)</figcaption></figure>
+  <p>That answers the lecture's self-check, "do you want as big a BLOCKSIZE as possible?" You want blocks <b>big enough to get above the ridge point</b>, and no bigger: the blocks must fit (with room for everything else in the cache), bigger blocks mean fewer independent blocks to spread across cores, and more padding waste at the edges of matrices whose sizes aren't multiples of the block. Notice also that the faster tensor-core arithmetic moves the ridge point right: the faster the math, the more reuse you need.</p>
+  <h3>Blocking at every level, and vectorizing the block</h3>
+  <p>A real implementation blocks <b>hierarchically</b>: blocks sized for the L2 cache, sub-blocks for L1, and finally tiny blocks held in <b>registers</b>. Each loop level matches one level of the memory hierarchy.</p>
+  <p>Inside the innermost block the code must also use SIMD. The lecture shows three ways, and the right one depends on the block's shape:</p>
+  <ol>
+    <li><b>Vectorize the i loop</b> (across a row of C). Broadcast one element of A to all lanes (<code>splat</code>), multiply by a vector of B's row, accumulate into a vector of C. Good spatial locality in B, but the working set grows by the SIMD width. Needs a wide i dimension.</li>
+    <li><b>Vectorize the k loop</b> (a dot product). If the i dimension is small, pre-transpose the block of B so that a row of A and a "row" of Bᵀ are both contiguous, then use SIMD dot products.</li>
+    <li><b>Compute a SIMD_WIDTH × SIMD_WIDTH tile of C</b> in registers, with pre-transposed A and C blocks, so the innermost operations are independent of each other (no serial dependency on one accumulator).</li>
+  </ol>
+  <p>Now look back at MobileNet's layer list: the matrix shapes change from layer to layer (112 × 112 images with 32 channels at the start, 7 × 7 images with 1,024 channels at the end). <b>Different layers of one network may need different schedules</b>, which is exactly why writing DNN libraries is hard work.</p>
+</section>
+
+<section class="lesson" id="s8" data-toc="Implicit GEMM and enough work" data-n="8">
+  <div class="lesson-h"><div class="kicker">Section 8</div><h2>Implicit GEMM, and giving the GPU enough work</h2></div>
+  <p>Explicit GEMM pays for its convenience with that R × S blow-up in memory traffic. <b>Implicit GEMM</b> avoids it: the kernel is written as a GEMM over the <i>virtual</i> matrix A, but it computes each element's address in the activation tensor on the fly instead of reading a materialized copy.</p>
+  <ul>
+    <li>A naive implicit GEMM just indexes into the input and weight tensors directly, with no blocking. Correct, but slow.</li>
+    <li>A good one materializes only <b>one sub-block of the convolution matrix at a time, in the GPU's on-chip shared memory</b>, then runs a well-tuned shared-memory GEMM on it. No extra off-chip storage, and no extra DRAM traffic: each input value is read from DRAM once per block and duplicated only inside shared memory.</li>
+  </ul>
+  <p>This is Lecture 7's convolution example (load the tile plus its border into shared memory once, then compute from it) scaled up. NVIDIA's <b>CUTLASS</b> library provides the building blocks for writing such kernels: fast shared-memory GEMMs, warp-level GEMMs, iterators for loading blocks and indexing tensors, and reductions. It's for layers whose sizes haven't been heavily tuned in NVIDIA's cuDNN library.</p>
+  <h3>A GPU needs a lot of parallel work</h3>
+  <p>Recall the V100: 80 SMs, each running many warps, with tensor cores, a 6 MB L2 and 900 GB/s from 16 GB of HBM. To fill it, a layer needs lots of independent outputs. The lecture compares two convolution problems with 128 filters:</p>
+  <div class="tbl"><table>
+    <tr><th>Case</th><th class="m">Outputs</th><th class="m">Output data (fp32)</th></tr>
+    <tr><td>N = 1 image, P = Q = 64</td><td class="m">64 × 64 × 128 × 1 = 524,288</td><td class="m">2 MB</td></tr>
+    <tr><td>N = 32 images, P = Q = 256</td><td class="m">256 × 256 × 128 × 32 = 268 M</td><td class="m">1 GB</td></tr>
+  </table></div>
+  <p>Measured throughput tells the story. With small images and one image at a time the V100 reaches only about 20 TFLOPS on these convolutions; with larger images or bigger batches it climbs to around 85, and flattens there. Throughput also climbs with the number of input channels, and 1 × 1 filters stay well below larger filters: less work per output means less reuse. <b>Batching</b> is one of the most effective optimizations for inference throughput, at the price of latency, since you must wait for a batch of requests to arrive.</p>
+</section>
+
+<section class="lesson" id="s9" data-toc="Winograd and FFT" data-n="9">
+  <div class="lesson-h"><div class="kicker">Section 9</div><h2>Algorithmic improvements: FFT and Winograd</h2></div>
+  <p>Blocking changes how data moves; these change <i>how much arithmetic</i> is done.</p>
+  <ul>
+    <li><b>FFT convolution.</b> Convolution in space is element-wise multiplication in the Fourier domain. The overhead is the FFT of the inputs and the inverse FFT of the outputs (O(N log N) each). The inverse transform is amortized over all input channels, since the channel sum can happen in the Fourier domain. Best for large filters.</li>
+    <li><b>Winograd convolution.</b> A work-efficient way to compute several outputs of a small filter with fewer multiplies, by sharing partial products.</li>
+  </ul>
+  <p>The lecture's 1D example: two outputs of a 3-tap filter, <i>y</i><sub>0</sub> = <i>x</i><sub>0</sub><i>w</i><sub>0</sub> + <i>x</i><sub>1</sub><i>w</i><sub>1</sub> + <i>x</i><sub>2</sub><i>w</i><sub>2</sub> and <i>y</i><sub>1</sub> = <i>x</i><sub>1</sub><i>w</i><sub>0</sub> + <i>x</i><sub>2</sub><i>w</i><sub>1</sub> + <i>x</i><sub>3</sub><i>w</i><sub>2</sub>. Direct: 6 multiplies and 4 adds. Winograd's F(2, 3) algorithm:</p>
+  <pre class="code">m1 = (x0 − x2) · w0
+m2 = (x1 + x2) · (w0 + w1 + w2)/2      <span class="u">// the filter factors depend only on w:</span>
+m3 = (x2 − x1) · (w0 − w1 + w2)/2      <span class="u">// precompute them once per filter</span>
+m4 = (x1 − x3) · w2
+y0 = m1 + m2 + m3
+y1 = m2 − m3 − m4</pre>
+  <p>4 multiplies and 8 additions (4 to form the <i>m</i>'s, 4 to combine them). Trading multiplies for adds pays off because multiplies are the more expensive operation, and the savings grow in 2D: for a 2 × 2 block of outputs of a 3 × 3 filter, Winograd needs 16 multiplies instead of 36, <b>2.25× fewer</b>.</p>
+  <figure class="fig"><div class="widget">
+    <div class="cfg" id="wgIn"></div>
+    <div class="ctrl" style="margin:10px 0 0"><div class="seg" role="group" aria-label="Which m1"><button data-wm="0" aria-pressed="true">m1 = (x0 − x2)·w0</button><button data-wm="1">m1 = (x0 − x1)·w0, as printed on the slide</button></div></div>
+    <div class="stat" id="wgStat"></div>
+    <p class="msg" id="wgMsg"></p>
+  </div><figcaption><b>Check it with your own numbers.</b> Change any input or weight: Winograd's two outputs always match the direct ones. The slide prints the first product as (x0 − x1)·w0, which is a typo; switch to it and y0 comes out wrong unless x1 happens to equal x2.</figcaption></figure>
+  <div class="pitfall">The additions in the transforms aren't free, and they change rounding. Winograd with larger output blocks saves more multiplies but loses numerical accuracy, especially in low precision. It's a trade-off, not a free lunch.</div>
+  <h3>Libraries pick the algorithm for you</h3>
+  <p>Vendors ship libraries with high-performance implementations of the key DNN layers: NVIDIA's <b>cuDNN</b>, Intel's oneDNN, Apple's and ARM's equivalents. cuDNN offers several algorithms for the same convolution (implicit GEMM, precomputed implicit GEMM, explicit GEMM, direct, FFT, tiled FFT, Winograd), because the fastest one depends on the layer's shape, and it can benchmark them to pick one.</p>
+</section>
+
+<!-- ================================ PART 3 ================================ -->
+<div class="partbar" id="p3"><div class="kicker">Part 3 · Beyond one layer</div><h2>Stop sending intermediate results through memory</h2><p>Operator fusion, the fused-attention trick, and compilers that schedule for you.</p></div>
+
+<section class="lesson" id="s10" data-toc="Operator fusion" data-n="10" style="margin-top:36px">
+  <div class="lesson-h"><div class="kicker">Section 10</div><h2>Memory traffic between operations: fusion</h2></div>
+  <p>Consider a common sequence: <b>convolution</b>, then a per-element <b>scale and bias</b>, then a 2 × 2 <b>max pool</b>. Run as three separate library calls, each operation writes its whole output to memory and the next one reads it back. For the big example, that's a gigabyte written and read between each step.</p>
+  <p>But the scale-and-bias can be applied to each element right after the convolution computes it, and the max-pool output can be computed as soon as each 2 × 2 region of the conv output is done. <b>Fusing</b> the three into one kernel means the only memory traffic is the conv's input and the pool's output:</p>
+  <pre class="code">        ...
+        output[img][j][i][f] = tmp*scale + bias;   <span class="u">// scale+bias fused: applied before the store</span></pre>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 8px"><span class="readout">Layer:</span><div class="seg" role="group" aria-label="Layer"><button data-fl="3" aria-pressed="true">3×3 conv</button><button data-fl="1">1×1 conv</button></div>
+      <span class="readout">Math:</span><div class="seg" role="group" aria-label="Arithmetic"><button data-fm="fp32" aria-pressed="true">fp32 (15.7 TFLOP/s)</button><button data-fm="tc">tensor cores (125 TFLOP/s)</button></div></div>
+    <div class="sc" style="padding:10px 0 0"><svg id="fuSvg" viewBox="0 0 760 250" role="img" aria-label="Timelines for the unfused sequence of three kernels and the fused single kernel, split into compute-bound and memory-bound time" style="min-width:560px"></svg></div>
+    <div class="stat" id="fuStat"></div>
+    <p class="msg" id="fuMsg"></p>
+  </div><figcaption><b>How much does fusion save?</b> The lecture's big layer: N = 32 images of 256 × 256, 128 input channels, 128 filters, fp32 activations (1 GiB in, 1 GiB out of the conv), on a V100-like GPU with 900 GB/s. Model: each kernel takes max(compute time, memory time); weights are negligible. Orange is time spent limited by arithmetic, teal by memory traffic.</figcaption></figure>
+  <p>The explorer shows why fusion matters more every year. With slow fp32 arithmetic, the 3 × 3 convolution takes so long that the extra element-wise passes add only about 10%. Speed up the math with tensor cores, or use 1 × 1 convolutions with less math per byte, and those "cheap" element-wise kernels become a large share, or most, of the time. The faster the arithmetic, the more the data movement between operations dominates.</p>
+  <div class="predict"><div class="ph"><b>Exercise</b><span>from the lecture</span></div><ol>
+    <li>How would you fuse the 2 × 2 max pool into the conv loop nest?
+      <details><summary>Show one answer</summary><div class="ans"><p>Reorder the loops so each iteration produces a 2 × 2 group of output pixels for a filter (step <code>j</code> and <code>i</code> by 2 and compute four <code>tmp</code> values). Take the max of the four (after scale and bias) and store one value into a half-size output array. The full-size conv output is never written to memory. In a blocked GPU kernel, make each tile's width and height even, so every pooling window lies inside one tile.</p></div></details></li>
+  </ol></div>
+</section>
+
+<section class="lesson" id="s11" data-toc="Fused attention" data-n="11">
+  <div class="lesson-h"><div class="kicker">Section 11</div><h2>A fusion trick for attention</h2></div>
+  <p>Transformers, the sequence models behind large language models, take a sequence of tokens in and produce a sequence out (for example, predicting the next word). Their core is the <b>attention</b> module. With <i>N</i> tokens, each represented by a <i>d</i>-dimensional vector, the queries Q, keys K and values V are each <i>N</i> × <i>d</i>:</p>
+  <pre class="code">S = Q Kᵀ            <span class="u">// N × N: how much each token attends to each other token</span>
+P = softmax(S)      <span class="u">// softmax along each row of S</span>
+O = P V             <span class="u">// N × d</span></pre>
+  <p>The trouble is S and P: they're <b>N × N</b>. For long sequences (thousands of tokens) the naive implementation needs N² space, and it writes S to memory, reads it back for the softmax, writes P, and reads it back for PV. Two matrix multiplies are fusion candidates, but the softmax in between looks like it's in the way: to normalize a row you need the max and the sum over the <i>entire</i> row.</p>
+  <p>For a row <b>x</b>, the numerically safe softmax is:</p>
+  <pre class="code">m(x) = max<sub>i</sub> x<sub>i</sub>                   <span class="u">// subtract the max so exp never overflows</span>
+f(x) = [ e^(x<sub>1</sub> − m(x)), …, e^(x<sub>B</sub> − m(x)) ]
+l(x) = Σ<sub>i</sub> f(x)<sub>i</sub>
+softmax(x) = f(x) / l(x)</pre>
+  <p>The key observation: <b>softmax can be computed in chunks</b>. Split x into [x<sup>(1)</sup> x<sup>(2)</sup>]. If you've processed chunk 1 and kept only its m and l, then when chunk 2 arrives:</p>
+  <pre class="code">m(x) = max( m(x<sup>(1)</sup>), m(x<sup>(2)</sup>) )
+l(x) = e^(m(x<sup>(1)</sup>) − m(x))·l(x<sup>(1)</sup>) + e^(m(x<sup>(2)</sup>) − m(x))·l(x<sup>(2)</sup>)</pre>
+  <p>The old partial sum is just <b>rescaled</b> by e<sup>(old max − new max)</sup>. Step through it:</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 8px"><span class="readout">Chunk size:</span><div class="seg" role="group" aria-label="Chunk size"><button data-sc="2">2</button><button data-sc="4" aria-pressed="true">4</button><button data-sc="8">8 (whole row)</button></div>
+      <button id="smStep" class="pri">Next chunk</button><button id="smReset">Reset</button><button id="smRand">New row</button></div>
+    <div class="sc" style="padding:0"><svg id="smSvg" viewBox="0 0 760 250" role="img" aria-label="A row of 8 scores processed in chunks; the running max and running sum after each chunk; the final softmax compared with the direct one" style="min-width:560px"></svg></div>
+    <p class="msg" id="smMsg"></p>
+  </div><figcaption><b>Online softmax.</b> After each chunk, only two numbers survive: the running max m and the running sum l. When a chunk brings a bigger max, the old sum is multiplied by e<sup>(old m − new m)</sup> before the chunk's own terms are added. After the last chunk, the result equals the direct softmax, but the whole row never had to exist at once.</figcaption></figure>
+  <h3>Fused attention</h3>
+  <p>Now fuse all three steps. Process Q in blocks of rows and K, V in blocks of columns/rows. For each pair of blocks: load Q<sub>i</sub>, Kᵀ<sub>j</sub>, V<sub>j</sub>; compute the block S<sub>ij</sub> = Q<sub>i</sub>Kᵀ<sub>j</sub>; compute its row maxes, exponentials and row sums; multiply P<sub>ij</sub>V<sub>j</sub> and accumulate into the output block O<sub>i</sub>, rescaling what's already there by the same e<sup>(old m − new m)</sup> factors.</p>
+  <figure class="fig"><div class="sc"><svg id="faSvg" viewBox="0 0 760 230" role="img" aria-label="Fused attention: a block of Q rows, a block of K transpose columns, a block of V rows and the output block O, all small enough to stay on chip" style="min-width:560px"></svg></div>
+    <figcaption><b>Only blocks are ever on chip.</b> The N × N matrices S and P are never materialized in memory. Each step reads three blocks (from Q, K and V), does two small matrix multiplies and a few row reductions, and accumulates into an O block that stays resident. High arithmetic intensity, O(N) memory instead of O(N²).</figcaption></figure>
+  <p>The memory saving is large. With N = 4,096 tokens, one attention head's S matrix is 4,096² ≈ 16.8 million values, 64 MiB in fp32, and a model has many heads and a batch of sequences. The price is a little <b>extra computation</b>: the output block must be rescaled each time the running max changes. Trading a few extra FLOPs for much less memory traffic is almost always a good deal on modern hardware. This is the idea behind FlashAttention (Dao et al., 2022).</p>
+</section>
+
+<section class="lesson" id="s12" data-toc="Fusion in frameworks; low precision" data-n="12">
+  <div class="lesson-h"><div class="kicker">Section 12</div><h2>Fusion in frameworks, and lower precision</h2></div>
+  <p>The old approach to fusion was for library writers to <b>hard-code</b> a few popular fused operations (TensorFlow shipped a fused batch-norm, for example). That can't keep up with the number of possible operation sequences. Modern systems let a <b>compiler generate</b> the fused implementation: cuDNN's "backend" API accepts a graph of operations and produces a single kernel for it, without runtime overhead or passing intermediate results through memory. If you've seen Halide, this is its <code>compute_at</code> scheduling directive: compute a producer's values inside the consumer's loop, just where they're needed. Many research and production compilers (TVM, XLA, Triton-based compilers, and others) try to schedule DNN operations automatically.</p>
+  <h3>Low precision</h3>
+  <p>Another trick is to use <b>fewer bits</b> for weights and activations. 16-bit and 8-bit values are common; research has gone as far as 1-bit (binary) networks. Halving the bits halves the memory traffic and storage, and lets hardware pack more arithmetic units into the same area and energy. Unit 5 of these notes covers the formats (fp16, bf16, int8) and what quantization does to accuracy.</p>
+  <h3>Summary of the optimization techniques</h3>
+  <div class="tbl"><table>
+    <tr><th>Technique</th><th>Examples</th><th>Who does it</th></tr>
+    <tr><td><b>Better algorithms</b>: better ML models</td><td>depth, filter width, number of filters per layer, stride; residual connections; depthwise separable convolutions</td><td>Designed manually, and increasingly by automatic search over topologies</td></tr>
+    <tr><td><b>Software optimization</b>: good schedules</td><td>loop blocking/tiling, fusion, implicit GEMM, Winograd</td><td>Typically tuned manually by experts; lots of research on automating it</td></tr>
+    <tr><td><b>Approximation</b>: compressing models</td><td>lower bit precision; automatic sparsification and pruning (not covered in this lecture)</td><td>Tools plus retraining</td></tr>
+  </table></div>
+</section>
+
+<!-- ================================ PART 4 ================================ -->
+<div class="partbar" id="p4"><div class="kicker">Part 4 · Hardware</div><h2>Hardware built for DNNs</h2><p>Why GPUs are good at this, why they aren't ideal, and what specialized hardware changes.</p></div>
+
+<section class="lesson" id="s13" data-toc="Why GPUs, and why not" data-n="13" style="margin-top:36px">
+  <div class="lesson-h"><div class="kicker">Section 13</div><h2>Why a GPU is a good platform, and why it isn't the ideal one</h2></div>
+  <p><b>Why a GPU is good for DNNs.</b> The heavy layers behave like dense matrix-matrix multiplication: high arithmetic intensity, massive data parallelism, regular SIMD-friendly control flow. GPUs are flop-rich, have high memory bandwidth for the parts that aren't compute-bound, and come with heavily optimized kernel libraries (cuDNN).</p>
+  <p><b>Why a GPU might be sub-optimal.</b> A GPU is still a general-purpose programmable processor. For every multiply-add, it fetches and decodes an instruction, reads operands from a large register file, and manages warps. For a workload that is almost entirely multiply-adds, that's overhead you'd like to eliminate.</p>
+  <p>The first answer is to make each instruction do <b>more work</b>, amortizing the cost of instruction-stream processing over many operations:</p>
+  <ul>
+    <li>fused multiply-add: <code>a·x + b</code>, 2 operations per instruction;</li>
+    <li>4-component dot product: 8 operations;</li>
+    <li>4 × 4 matrix multiply-accumulate <code>A·B + C</code>: 64 multiply-adds, 128 operations.</li>
+  </ul>
+  <figure class="fig"><div class="sc"><svg id="amSvg" viewBox="0 0 760 200" role="img" aria-label="Bar chart: estimated overhead of programmability relative to the arithmetic, 2000% for a half-precision FMA, 500% for a 4-wide dot product, 27% for a 4 by 4 matrix multiply-accumulate" style="min-width:560px"></svg></div>
+    <figcaption><b>Estimated energy overhead of programmability</b> (instruction fetch, decode, control, operand delivery) relative to the useful arithmetic, for half-precision instructions. Estimates by Bill Dally (SysML talk, February 2018), from academic numbers. With a plain FMA, the overhead costs 20 times as much energy as the math. A 4 × 4 matrix instruction makes it a minor cost.</figcaption></figure>
+</section>
+
+<section class="lesson" id="s14" data-toc="Tensor cores and accelerators" data-n="14">
+  <div class="lesson-h"><div class="kicker">Section 14</div><h2>Tensor cores, and dedicated DNN accelerators</h2></div>
+  <p>NVIDIA's version of the big-instruction idea is the <b>tensor core</b>: a unit that executes a small matrix multiply-accumulate <code>D = A·B + C</code> as one warp instruction, with A and B in fp16 and accumulation in fp32. The A100 (Ampere) numbers from the lecture:</p>
+  <div class="tbl"><table>
+    <tr><th>Per SM</th><th class="m">Whole GA100 GPU (108 SMs)</th><th class="m">Peak at 1.41 GHz</th></tr>
+    <tr><td>64 fp32 multiply-add ALUs</td><td class="m">6,912 ALUs</td><td class="m">6,912 × 2 × 1.41 G = <b>19.5 TFLOP/s</b></td></tr>
+    <tr><td>32 int32 ALUs</td><td class="m">3,456</td><td class="m"></td></tr>
+    <tr class="hl"><td>4 tensor cores</td><td class="m">432 tensor cores</td><td class="m"><b>312 TFLOP/s</b> (fp16 in, fp32 accumulate)</td></tr>
+  </table></div>
+  <p>Divide it out: 312 T / (432 × 1.41 G) ≈ 512 FLOPs per tensor core per clock, that is <b>256 multiply-adds per clock</b>, the size of one 8 × 4 by 4 × 8 matrix multiply (8 × 8 × 4 = 256). The tensor cores deliver <b>16 times</b> the fp32 ALUs' peak: one instruction starts 256 multiply-adds instead of 32, so far less of the energy goes to instruction processing, and the fp16 operands are half the width. (As Unit 5 stresses, the peak assumes matrix shapes and precisions that fit the unit; real layers get less.)</p>
+  <h3>Going all the way: accelerators</h3>
+  <p>If DNN evaluation is mostly matrix multiply, why keep general-purpose cores at all? A wave of <b>DNN accelerators</b> answers "mostly don't": Google's TPU, Apple's Neural Engine, the NPU in Huawei's Kirin phone chips, Graphcore's IPU, Intel's inference accelerators, Cerebras's wafer-scale engine, SambaNova's Cardinal. They differ widely, but share the lecture's themes: large arrays of low-precision multiply-add units, lots of on-chip storage to keep operands close (reuse!), and control that is coarse-grained rather than one instruction per operation. GPUs, meanwhile, have become accelerators themselves: Ampere-class and later GPUs devote a large share of their math throughput to tensor cores.</p>
+  <div class="insight">The whole lecture in one line: <b>DNN evaluation is fast when every value brought on chip is used many times, and every instruction does a lot of math.</b> Topology design reduces the math; blocking, implicit GEMM and fusion reduce the data movement; tensor cores and accelerators reduce the per-operation overhead.</div>
+</section>
+
+<section class="lesson" id="s15" data-toc="Check yourself" data-n="15">
+  <div class="lesson-h"><div class="kicker">Section 15</div><h2>Check yourself</h2></div>
+  <div class="predict"><div class="ph"><b>Questions</b><span>answer before revealing</span></div><ol>
+    <li>A convolution layer produces a 56 × 56 × 128 output from 64 input channels with 3 × 3 filters. How many multiply-adds and parameters (ignoring biases)?
+      <details><summary>Show answer</summary><div class="ans"><p>Multiply-adds: 56 × 56 × 128 × 64 × 9 = <b>231,211,008</b> (about 231 M). Parameters: 128 × 64 × 9 = <b>73,728</b>. The parameter count doesn't depend on the image size.</p></div></details></li>
+    <li>By what factor does a depthwise separable convolution reduce the work of a 3 × 3 convolution with 256 output channels?
+      <details><summary>Show answer</summary><div class="ans"><p>The cost ratio is 1/K + 1/(R·S) = 1/256 + 1/9 ≈ 0.115, so about <b>8.7×</b> less work.</p></div></details></li>
+    <li>Why does explicit im2col increase DRAM traffic, and how does implicit GEMM avoid it?
+      <details><summary>Show answer</summary><div class="ans"><p>im2col copies each input value into about R × S rows of the convolution matrix and writes that matrix to memory, then GEMM reads it: roughly R × S times the traffic. Implicit GEMM builds only one sub-block of that matrix at a time, in on-chip shared memory, so the duplication never reaches DRAM.</p></div></details></li>
+    <li>In the blocked-GEMM model, three b × b fp32 blocks fit in 96 KB. What's the largest b, and the approximate arithmetic intensity?
+      <details><summary>Show answer</summary><div class="ans"><p>3 × b² × 4 bytes ≤ 98,304 gives b² ≤ 8,192, so <b>b = 90</b> (90² = 8,100). Intensity ≈ b/4 ≈ <b>22 FLOPs per byte</b>, just above the V100's fp32 ridge point of about 17.</p></div></details></li>
+    <li>Use Winograd F(2, 3) with x = (1, 2, 3, 4) and w = (1, 1, 1). What are m1…m4 and the outputs?
+      <details><summary>Show answer</summary><div class="ans"><p>m1 = (1 − 3)·1 = −2; m2 = (2 + 3)·3/2 = 7.5; m3 = (3 − 2)·1/2 = 0.5; m4 = (2 − 4)·1 = −2. y0 = −2 + 7.5 + 0.5 = <b>6</b> = 1 + 2 + 3; y1 = 7.5 − 0.5 + 2 = <b>9</b> = 2 + 3 + 4.</p></div></details></li>
+    <li>A row is processed in two chunks. Chunk 1 has m = 3 and l = 2.0. Chunk 2 has m = 5 and l = 1.5. What are the combined m and l?
+      <details><summary>Show answer</summary><div class="ans"><p>m = 5. l = e<sup>3 − 5</sup> × 2.0 + e<sup>0</sup> × 1.5 = 0.1353 × 2.0 + 1.5 ≈ <b>1.771</b>.</p></div></details></li>
+    <li>Why does fusing an element-wise operation into a convolution matter more when the convolution runs on tensor cores?
+      <details><summary>Show answer</summary><div class="ans"><p>The element-wise pass costs the same memory time either way (read and write the whole tensor). Tensor cores shrink the conv's compute time, so the unfused memory passes become a larger fraction of the total, and can dominate it.</p></div></details></li>
+  </ol></div>
+  <p class="credit">Based on Stanford CS149 (Fall 2023), Lecture 10, "Efficiently Evaluating DNNs", by Kayvon Fatahalian and Kunle Olukotun. The explanations, diagrams and interactive models on this page are original study material; the network statistics, V100/A100 figures and energy estimates are as presented in the lecture, which cites Howard et al. 2017 (MobileNet), Canziani et al. 2017, NVIDIA, and Bill Dally. Fused attention follows Dao et al., "FlashAttention" (2022). For the course's own slides and videos, see the <a href="https://gfxcourses.stanford.edu/cs149/fall23">CS149 course site</a>.</p>
+  <div class="nextunit"><a href="lecture-07-gpu-cuda.html"><small>← Previous companion</small>Lecture 7 · GPUs &amp; CUDA</a><a href="index.html"><small>Back to</small>All CS149 lectures →</a></div>
+</section>
+
+</main>
+</div>
+<script>
+(function(){
+const {$,$$,RM}=NOTES;
+document.querySelector('svg defs').insertAdjacentHTML('beforeend','<pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--panel2)"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--mute);stroke-width:1.2;opacity:.45"/></pattern>');
+const B=(x,y,w,h,c,t1,t2,o={})=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="${c}" ${o.rx?`rx="${o.rx}"`:''}/>`+(t1?`<text x="${x+w/2}" y="${y+h/2+(t2?-3:4)}" class="mid ${o.big?'hd':'bd'}" style="${o.fs?`font-size:${o.fs}px`:''}">${t1}</text>`:'')+(t2?`<text x="${x+w/2}" y="${y+h/2+12}" class="mid xs">${t2}</text>`:'');
+const A=(d,c='w',m='ah')=>`<path d="${d}" class="${c}" marker-end="url(#${m})"/>`;
+const set=(id,h)=>{const e=document.getElementById(id);if(e)e.innerHTML=h;};
+
+/* ---- slide-style primitives ---- */
+const tS=(x,y,t,fs=11,w=600,anch='mid',cls='sd')=>`<text x="${x}" y="${y}" class="${anch} ${cls}" style="font-size:${fs}px;font-weight:${w}">${t}</text>`;
+const tT=(x,y,t,fs=11,w=600,anch='mid')=>`<text x="${x}" y="${y}" class="${anch}" style="font-size:${fs}px;font-weight:${w}">${t}</text>`;
+const slFD=(x,y,w=64,h=40,fs=11)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-fd"/>`+(h>=26?tS(x+w/2,y+h/2-2,'Fetch/',fs)+tS(x+w/2,y+h/2+fs,'Decode',fs):tS(x+w/2,y+h/2+3.5,'Fetch/Decode',Math.min(fs,9)));
+const slALU=(x,y,w,h,l1='ALU',l2,fs=11)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-alu"/>`+(l1?tS(x+w/2,y+h/2+(l2?-2:fs/3),l1,fs):'')+(l2?tS(x+w/2,y+h/2+11,l2,Math.min(9,fs)):'');
+const slVec=(x,y,cw=30,ch=20,num=false,fs)=>{let v='';for(let k=0;k<8;k++){const ax=x+(k%4)*cw,ay=y+Math.floor(k/4)*ch;v+=`<rect x="${ax}" y="${ay}" width="${cw}" height="${ch}" class="sl-alu"/>`;if(ch>=12)v+=tS(ax+cw/2,ay+ch/2+3.5,num?`ALU ${k}`:'ALU',fs||(num?10:8.5));}return v;};
+const slCtx=(x,y,w,h,title,regs,fs=10.5)=>{let s=`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-ctx"/>`+(title?tS(x+w/2,y+Math.min(14,h/2+4),title,fs):'');
+  if(regs&&regs.length){const rw=(w-12)/2,n=Math.ceil(regs.length/2),top=y+(title?33:8),rh=Math.min(10,(y+h-4-top)/n);s+=`<rect x="${x+w/2-18}" y="${top-12}" width="36" height="9" class="sl-reg"/>`+tS(x+w/2,top-4.5,'PC',7);
+    regs.forEach((r,i)=>{const c=i<n?0:1,row=i%n,rx=x+6+c*rw,ry=top+row*rh;s+=`<rect x="${rx}" y="${ry}" width="${rw}" height="${rh}" class="sl-reg"/>`+(rh>=7?tS(rx+rw/2,ry+rh-2,r,Math.min(7.5,rh-1.5)):'');});}
+  return s;};
+const slCache=(x,y,w,h,t1,t2,fs=11)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-cache"/>`+tS(x+w/2,y+h/2+(t2?-2:4),t1,fs)+(t2?tS(x+w/2,y+h/2+11,t2,Math.min(10,fs),500):'');
+const slMem=(x,y,w,h,t='Memory',t2)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-mem"/>`+tT(x+w/2,y+h/2+(t2?-3:5),t,13)+(t2?`<text x="${x+w/2}" y="${y+h/2+12}" class="mid sm">${t2}</text>`:'');
+const slCore=(x,y,w,h,label,fs=12)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-core"/>`+(label?tT(x+8,y+15,label,fs,700,'start'):'');
+const slBar=(x,y,w,h,t='instruction selection',fs=9.5)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-fd"/>`+tS(x+w/2,y+h/2+3.5,t,fs);
+const slPale=(x,y,w,h,t,fs=10.5)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-pale"/>`+tS(x+w/2,y+h/2+4,t,fs);
+const slStream=(x,y,w,lines,cur,title)=>{let s=title?tT(x+w/2,y-8,title,13,700):'';lines.forEach((l,i)=>{s+=`<rect x="${x}" y="${y+i*22}" width="${w}" height="20" class="${i===cur?'sl-row-on':'sl-row'}"/><text x="${x+8}" y="${y+i*22+14}" class="${i===cur?'sw':'sd'}" style="font-size:11px">${l}</text>`;});
+  if(cur>=0)s+=`<polygon points="${x-24},${y+cur*22} ${x-4},${y+cur*22+10} ${x-24},${y+cur*22+20}" style="fill:#d9763a"/>`;return s;};
+const setVB=(id,w,h,html)=>{const e=document.getElementById(id);if(!e)return;e.setAttribute('viewBox',`0 0 ${w} ${h}`);e.innerHTML=html;};
+/* a small generic core: F/D, execution (scalar ALU or 8-wide grid), contexts */
+const fitL=(lab,wd,maxfs,alt)=>{let fs=Math.min(maxfs,wd/(lab.length*0.64));if(fs<7&&alt){lab=alt;fs=Math.min(maxfs,wd/(lab.length*0.64));}return fs<5.5?null:[lab,fs];};
+function miniCore(x,y,w,h,o={}){const p=Math.max(3,w*0.05);let s=slCore(x,y,w,h,o.label,o.lfs||10);const top=y+(o.label?20:p);
+  const fdH=h*0.2,exH=h*0.3,cxH=h-(top-y)-fdH-exH-p*3;
+  s+=`<rect x="${x+p}" y="${top}" width="${w-2*p}" height="${fdH}" class="sl-fd"/>`+((f=>f&&fdH>=11?tS(x+w/2,top+fdH/2+f[1]*0.35,f[0],f[1]):'')(fitL('Fetch/Decode',w-2*p-4,Math.min(10,fdH*0.6),'F/D')));
+  const ey=top+fdH+p;
+  if(o.simd){const cw=(w-2*p)/4,ch=exH/2;s+=slVec(x+p,ey,cw,ch,false,Math.min(8.5,ch*0.55));}
+  else s+=`<rect x="${x+p}" y="${ey}" width="${w-2*p}" height="${exH}" class="sl-alu"/>`+((f=>f&&exH>=11?tS(x+w/2,ey+exH/2+f[1]*0.35,f[0],f[1]):'')(fitL(o.alu||'ALU',w-2*p-4,Math.min(11,exH*0.5))));
+  const cy=ey+exH+p,nc=o.ctx||1,cw2=(w-2*p-(nc-1)*2)/nc;
+  for(let i=0;i<nc;i++)s+=`<rect x="${x+p+i*(cw2+2)}" y="${cy}" width="${cw2}" height="${cxH}" class="sl-ctx"/>`+((f=>nc===1&&f&&cxH>=11?tS(x+w/2,cy+cxH/2+f[1]*0.35,f[0],f[1]):'')(fitL(o.ctxLabel||'Execution Context',w-2*p-4,Math.min(10,cxH*0.45),'Exec. ctx')));
+  return s;}
+/* ---- slide-style chip drawing (CS149 lecture 2 conventions) ---- */
+const SD={A:{W:1,alu:'S',reg:'R'},B:{W:2,alu:'SS',reg:'R'},C:{W:1,alu:'V',reg:'V'},D:{W:2,alu:'SV',reg:'RV'}};
+function slideCore(x,y,d,T,label,ctx0){const D=SD[d],cw=96,g=8,ctot=T*cw+(T-1)*g,w=Math.max(ctot+24,280),cx=x+w/2;let s='',cy=y+10;
+  const tx=(X,Y,t,cls,fs)=>`<text x="${X}" y="${Y}" class="mid ${cls||'sd'}" style="font-size:${fs||11}px;font-weight:600">${t}</text>`;
+  if(label)s+=`<text x="${x+10}" y="${y+22}" class="bd" style="font-size:14px">${label}</text>`;
+  s+=`<rect x="${cx-70}" y="${cy}" width="140" height="38" class="sl-cache"/>`+tx(cx,cy+16,'Data')+tx(cx,cy+30,'Cache');cy+=46;
+  if(D.W>1){s+=`<rect x="${cx-70}" y="${cy}" width="140" height="16" class="sl-fd"/>`+tx(cx,cy+12,'instruction selection','sd',9.5);cy+=22;}
+  const fw=64,ft=D.W*fw+(D.W-1)*8;for(let i=0;i<D.W;i++){const fx=cx-ft/2+i*(fw+8);s+=`<rect x="${fx}" y="${cy}" width="${fw}" height="40" class="sl-fd"/>`+tx(fx+fw/2,cy+17,'Fetch/')+tx(fx+fw/2,cy+31,'Decode');}cy+=50;
+  const vec=(vx,vy)=>{let v='';for(let k=0;k<8;k++){const ax=vx+(k%4)*30,ay=vy+Math.floor(k/4)*20;v+=`<rect x="${ax}" y="${ay}" width="30" height="20" class="sl-alu"/>`+tx(ax+15,ay+14,'ALU','sd',8.5);}return v;};
+  if(D.alu==='S'){s+=`<rect x="${cx-50}" y="${cy}" width="100" height="42" class="sl-alu"/>`+tx(cx,cy+18,'ALU')+tx(cx,cy+32,'(Execution unit)','sd',9);cy+=50;}
+  else if(D.alu==='SS'){[-1,1].forEach(k=>{const ax=cx+(k<0?-68:4);s+=`<rect x="${ax}" y="${cy}" width="64" height="42" class="sl-alu"/>`+tx(ax+32,cy+26,'ALU');});cy+=50;}
+  else if(D.alu==='V'){s+=vec(cx-60,cy)+tx(cx,cy+52,'(8-wide vector ALU)','',9);cy+=60;}
+  else{s+=`<rect x="${cx-100}" y="${cy}" width="50" height="40" class="sl-alu"/>`+tx(cx-75,cy+25,'ALU')+tx(cx-75,cy+52,'(scalar ALU)','',9)+vec(cx-36,cy)+tx(cx+24,cy+52,'(8-wide vector ALU)','',9);cy+=60;}
+  for(let t=0;t<T;t++){const bx=cx-ctot/2+t*(cw+g);s+=`<rect x="${bx}" y="${cy}" width="${cw}" height="84" class="sl-ctx"/>`+tx(bx+cw/2,cy+13,'Execution','sd',10)+tx(bx+cw/2,cy+25,`Context ${(ctx0||0)+t}`,'sd',10)+
+      `<rect x="${bx+cw/2-18}" y="${cy+30}" width="36" height="9" class="sl-reg"/>`+tx(bx+cw/2,cy+37.5,'PC','sd',7);
+    for(let r=0;r<8;r++){const col=r<4?0:1,row=r%4,rx=bx+6+col*((cw-12)/2),ry=cy+43+row*9.5,nm=D.reg==='RV'?(col?'V':'R')+(row+ (col?0:0)):D.reg+r;
+      s+=`<rect x="${rx}" y="${ry}" width="${(cw-12)/2}" height="9.5" class="sl-reg"/>`+tx(rx+(cw-12)/4,ry+7.5,D.reg==='RV'?(col?'V'+row:'R'+row):D.reg+r,'sd',6.5);}}
+  cy+=92;return {svg:`<rect x="${x}" y="${y}" width="${w}" height="${cy-y}" class="sl-core"/>`+s,w,h:cy-y};}
+function slideChip(d,T,C){const probe=slideCore(0,0,d,T,'',0),cw=probe.w,ch=probe.h;let s='',W,H;const mw=200,mh=36;
+  const tx=(X,Y,t,fs,cls)=>`<text x="${X}" y="${Y}" class="mid ${cls||''}" style="font-size:${fs||13}px;font-weight:600">${t}</text>`;
+  if(C===1){W=cw+20;const mx=W/2;s+=`<rect x="${mx-mw/2}" y="6" width="${mw}" height="${mh}" class="sl-mem"/>`+tx(mx,29,'Memory')+`<path d="M${mx} ${6+mh+2} V${6+mh+18}" class="w" marker-start="url(#ah)" marker-end="url(#ah)"/>`;
+    s+=slideCore(10,6+mh+22,d,T,'',0).svg;H=6+mh+22+ch+8;}
+  else if(C===2){W=2*cw+34;const mx=W/2;s+=`<rect x="${mx-mw/2}" y="6" width="${mw}" height="${mh}" class="sl-mem"/>`+tx(mx,29,'Memory')+`<path d="M${mx} ${44} V${60}" class="w" marker-start="url(#ah)" marker-end="url(#ah)"/>`;
+    s+=`<rect x="${mx-cw*0.8}" y="64" width="${cw*1.6}" height="24" class="sl-cache"/>`+tx(mx,81,'Shared Data Cache',12,'sd');
+    s+=slideCore(10,96,d,T,'Core 0',0).svg+slideCore(24+cw,96,d,T,'Core 1',T).svg;H=96+ch+8;}
+  else{W=cw+44;const mx=(cw+20)/2;s+=`<rect x="${mx-mw/2}" y="6" width="${mw}" height="${mh}" class="sl-mem"/>`+tx(mx,29,'Memory')+`<path d="M${mx} 44 V60" class="w" marker-start="url(#ah)" marker-end="url(#ah)"/>`;
+    s+=`<rect x="10" y="64" width="${cw+24}" height="24" class="sl-cache"/>`+tx(10+(cw+24)/2,81,'Shared Data Cache',12,'sd');
+    for(let k=2;k>=1;k--)s+=`<rect x="${10+k*12}" y="${96+k*8}" width="${cw}" height="${ch}" class="sl-core" style="opacity:.8"/>`;
+    s+=slideCore(10,96,d,T,`Core 0 of ${C}`,0).svg;H=96+ch+30;s+=`<text x="${10+cw/2}" y="${H-6}" class="mid sm">+ ${C-1} more identical cores (${C*T} contexts in total)</text>`;}
+  return {svg:s,W,H};}
+
+
+const hatchR=(x,y,w,h)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" style="fill:url(#hatch);stroke:var(--mute);stroke-width:.5"/>`;
+
+
+const fmt=(v,d=0)=>v.toLocaleString('en-US',{maximumFractionDigits:d,minimumFractionDigits:d});
+const big=v=>v>=1e9?fmt(v/1e9,2)+' B':v>=1e6?fmt(v/1e6,2)+' M':v>=1e3?fmt(v/1e3,1)+' K':fmt(v);
+const tx=(x,y,t,cls='mid xs',st='')=>`<text x="${x}" y="${y}" class="${cls}"${st?` style="${st}"`:''}>${t}</text>`;
+
+/* 2 fully connected layer */
+(function(){let s='';const ix=60,nx=190,iy=[50,95,140],ny=[35,75,115,155];
+  iy.forEach(y=>ny.forEach(v=>{s+=`<path d="M${ix+22} ${y} L${nx-2} ${v}" class="wc" style="stroke-width:1;opacity:.7"/>`;}));
+  iy.forEach((y,k)=>{s+=`<rect x="${ix-22}" y="${y-14}" width="44" height="28" class="bx"/>`+tx(ix,y+4,`x${k}`,'mid sm');});
+  ny.forEach((y,k)=>{s+=`<rect x="${nx}" y="${y-13}" width="40" height="26" class="cu"/>`+tx(nx+20,y+4,`n${k}`,'mid sm')+A(`M${nx+42} ${y} H${nx+66}`);});
+  s+=tx(ix,22,'inputs','mid xs bd')+tx(nx+20,14,'neurons','mid xs bd')+tx(nx+20,190,'fully connected layer','mid xs');
+  const mx=330,brk=(x,y,h,o)=>`<path d="M${x+o} ${y} H${x} V${y+h} H${x+o}" class="w" style="stroke:var(--ink)"/>`;
+  s+=tx(mx,106,'f','mid','font-size:26px;font-style:italic')+tx(mx+18,108,'(','mid','font-size:60px;font-weight:200');
+  const m0=mx+34;s+=brk(m0,34,132,6)+brk(m0+190,34,132,-6);
+  for(let r=0;r<4;r++)for(let c=0;c<3;c++)s+=tx(m0+30+c*62,60+r*30,`w<tspan dy="4" style="font-size:10px">${r}${c}</tspan>`,'mid','font-size:15px');
+  const v0=m0+206;s+=brk(v0,49,102,6)+brk(v0+44,49,102,-6);for(let r=0;r<3;r++)s+=tx(v0+22,76+r*30,`x<tspan dy="4" style="font-size:10px">${r}</tspan>`,'mid','font-size:15px');
+  s+=tx(v0+66,106,'+','mid','font-size:22px');const b0=v0+84;s+=brk(b0,34,132,6)+brk(b0+44,34,132,-6);for(let r=0;r<4;r++)s+=tx(b0+22,60+r*30,`b<tspan dy="4" style="font-size:10px">${r}</tspan>`,'mid','font-size:15px');
+  s+=tx(b0+62,108,')','mid','font-size:60px;font-weight:200');
+  s+=tx(m0+95,186,'4 × 3 weights','mid xs')+tx(v0+22,186,'input','mid xs')+tx(b0+22,186,'bias','mid xs');
+  set('fcSvg',s);})();
+
+/* 3 convolution explorer */
+(function(){const N=12,O=10;const img=[];for(let j=0;j<N;j++){img.push([]);for(let i=0;i<N;i++)img[j].push(j>=3&&j<=8&&i>=3&&i<=8?8:1);}
+  const F={blur:{w:[[1,1,1],[1,1,1],[1,1,1]].map(r=>r.map(v=>v/9)),lab:[['1/9','1/9','1/9'],['1/9','1/9','1/9'],['1/9','1/9','1/9']]},
+    sx:{w:[[-1,0,1],[-2,0,2],[-1,0,1]]},sy:{w:[[-1,-2,-1],[0,0,0],[1,2,1]]},sharp:{w:[[0,-1,0],[-1,5,-1],[0,-1,0]]}};
+  let f='blur',relu=0,sel={j:2,i:1};
+  const out=(j,i)=>{let t=0;for(let a=0;a<3;a++)for(let b=0;b<3;b++)t+=img[j+a][i+b]*F[f].w[a][b];return relu?Math.max(0,t):t;};
+  const nf=v=>f==='blur'?(Math.abs(v-Math.round(v))<1e-9?String(Math.round(v)):v.toFixed(1)):String(Math.round(v));
+  function draw(){const c=22,x0=20,y0=36,fx=318,fc=34,ox=480;let s='';
+    s+=tx(x0+N*c/2,22,'input image (12 × 12)','mid xs bd')+tx(fx+fc*1.5,22,'filter (3 × 3)','mid xs bd')+tx(ox+O*c/2,22,'output (10 × 10)','mid xs bd');
+    for(let j=0;j<N;j++)for(let i=0;i<N;i++){const v=img[j][i],inw=j>=sel.j&&j<sel.j+3&&i>=sel.i&&i<sel.i+3;
+      s+=`<rect x="${x0+i*c}" y="${y0+j*c}" width="${c}" height="${c}" style="fill:rgb(${40+v*25},${40+v*25},${40+v*25});stroke:#777;stroke-width:.5"/>`+tx(x0+i*c+c/2,y0+j*c+c/2+3.5,v,'mid',`font-size:9px;fill:${v>4?'#111':'#eee'}!important`);}
+    s+=`<rect x="${x0+sel.i*c}" y="${y0+sel.j*c}" width="${3*c}" height="${3*c}" style="fill:none;stroke:var(--cu);stroke-width:2.6"/>`;
+    const W=F[f].w;for(let a=0;a<3;a++)for(let b=0;b<3;b++){const v=W[a][b],lab=F[f].lab?F[f].lab[a][b]:String(v);
+      s+=`<rect x="${fx+b*fc}" y="${y0+60+a*fc}" width="${fc}" height="${fc}" class="${v>0?'te':v<0?'cu':'bx'}"/>`+tx(fx+b*fc+fc/2,y0+60+a*fc+fc/2+4,lab,'mid',`font-size:${lab.length>2?10:12}px;font-weight:600`);}
+    s+=A(`M${x0+N*c+6} ${y0+N*c/2} H${fx-8}`)+A(`M${fx+3*fc+8} ${y0+N*c/2} H${ox-8}`);
+    let mx=0;for(let j=0;j<O;j++)for(let i=0;i<O;i++)mx=Math.max(mx,Math.abs(out(j,i)));
+    for(let j=0;j<O;j++)for(let i=0;i<O;i++){const v=out(j,i),a=mx?Math.abs(v)/mx:0,on=j===sel.j&&i===sel.i;
+      s+=`<rect x="${ox+i*c}" y="${y0+j*c}" width="${c}" height="${c}" data-j="${j}" data-i="${i}" style="cursor:pointer;fill:${v>=0?'var(--te)':'var(--cu)'};fill-opacity:${0.05+a*0.7};stroke:${on?'var(--ink)':'var(--line)'};stroke-width:${on?2.4:.5}"/>`+tx(ox+i*c+c/2,y0+j*c+c/2+3.5,nf(v),'mid',`font-size:${nf(v).length>2?7.5:8.5}px;pointer-events:none`);}
+    s+=tx(ox+O*c/2,y0+O*c+18,'click any output pixel','mid xs');
+    set('cvSvg',s);
+    const W2=F[f].w,terms=[];let t=0;for(let a=0;a<3;a++)for(let b=0;b<3;b++){const w=W2[a][b],v=img[sel.j+a][sel.i+b];t+=w*v;if(w!==0)terms.push(`${F[f].lab?'1/9':w}×${v}`);}
+    $('#cvMsg').innerHTML=`Output (${sel.i}, ${sel.j}) = ${terms.join(' + ').replace(/\+ -/g,'− ').replace(/^-/,'−')} = <b>${nf(t).replace('-','−')}</b>${relu?`, then ReLU: max(0, ${nf(t).replace('-','−')}) = <b>${nf(Math.max(0,t))}</b>`:''}.`;
+    $$('[data-cf]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.cf===f));$$('[data-cr]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.cr===relu));}
+  $('#cvSvg').addEventListener('click',e=>{const r=e.target.closest('[data-j]');if(!r)return;sel={j:+r.dataset.j,i:+r.dataset.i};draw();});
+  $$('[data-cf]').forEach(b=>b.onclick=()=>{f=b.dataset.cf;draw();});$$('[data-cr]').forEach(b=>b.onclick=()=>{relu=+b.dataset.cr;draw();});draw();})();
+
+/* 3 conv -> relu -> pool pipeline */
+(function(){let s='';const box=(x,y,w,h,d,cls,l1,l2)=>{let r='';for(let k=2;k>=1;k--)r+=`<rect x="${x+k*d}" y="${y-k*d}" width="${w}" height="${h}" class="${cls}" style="opacity:.55"/>`;
+    return r+`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="${cls}"/>`+tx(x+w/2+d,y+h+22,l1,'mid sm bd')+(l2?tx(x+w/2+d,y+h+38,l2,'mid xs'):'');};
+  s+=box(20,40,80,80,6,'bx','W × H × C','input');
+  s+=A('M120 80 H200')+tx(160,68,'conv','mid xs bd')+tx(160,100,'K filters','mid xs')+tx(160,113,'3 × 3 × C','mid xs');
+  s+=box(210,40,80,80,6,'te','W × H × K','conv output');
+  s+=A('M310 80 H390')+tx(350,70,'ReLU','mid xs bd')+tx(350,100,'max(0, v)','mid xs');
+  s+=box(400,40,80,80,6,'te','W × H × K','after ReLU');
+  s+=A('M500 80 H580')+tx(540,70,'max pool','mid xs bd')+tx(540,100,'2 × 2','mid xs');
+  s+=box(595,60,40,40,6,'pl','W/2 × H/2 × K','pooled');
+  set('pipeSvg',s);})();
+
+/* 4 layer cost calculator */
+(function(){const HS=[7,14,28,56,112,224],CS=[16,32,64,128,256,512,1024],RS=[1,3,5,7];
+  const P=[[1,5,5,1],[4,1,2,1],[3,3,3,1],[0,6,6,1]];let st=[...P[0]],pre=0;
+  function draw(){const H=HS[st[0]],C=CS[st[1]],K=CS[st[2]],R=RS[st[3]];
+    $('#lcH').value=st[0];$('#lcC').value=st[1];$('#lcK').value=st[2];$('#lcR').value=st[3];
+    $('#lcHv').textContent=`${H} × ${H}`;$('#lcCv').textContent=C;$('#lcKv').textContent=K;$('#lcRv').textContent=`${R} × ${R}`;
+    const std=H*H*K*C*R*R,dw=H*H*C*R*R,pw=H*H*C*K,sep=dw+pw,pstd=K*C*R*R,psep=C*R*R+C*K,mx=Math.max(std,sep),L=150,Wd=500,sc=Wd/mx;
+    let s=tx(L-10,42,'standard','end sm bd')+tx(L-10,98,'separable','end sm bd');
+    s+=`<rect x="${L}" y="24" width="${Math.max(1,std*sc)}" height="30" class="pl"/>`+tx(L+Math.max(1,std*sc)+6,44,big(std),'xs bd');
+    s+=`<rect x="${L}" y="80" width="${Math.max(1,dw*sc)}" height="30" class="te"/><rect x="${L+dw*sc}" y="80" width="${Math.max(1,pw*sc)}" height="30" class="cu"/>`+tx(L+sep*sc+6,100,big(sep),'xs bd');
+    s+=`<rect x="${L}" y="126" width="12" height="10" class="te"/>`+tx(L+18,135,'depthwise (R·S per channel)','xs')+`<rect x="${L+220}" y="126" width="12" height="10" class="cu"/>`+tx(L+238,135,'pointwise (1 × 1 × C, K filters)','xs');
+    set('lcSvg',s);
+    const ratio=sep/std;
+    $('#lcStat').innerHTML=`<div>standard MACs<b>${big(std)}</b></div><div>separable MACs<b>${big(sep)}</b></div><div>work ratio<b>${fmt(ratio,3)}</b></div><div>speedup<b>${ratio<1?fmt(1/ratio,1)+'×':'none ('+fmt(1/ratio,2)+'×)'}</b></div><div>pointwise share<b>${fmt(100*pw/sep,1)}%</b></div><div>params: std → sep<b>${big(pstd)} → ${big(psep)}</b></div>`;
+    $$('[data-lc]').forEach(b=>b.setAttribute('aria-pressed',P[+b.dataset.lc].every((v,k)=>v===st[k])));}
+  [['lcH',0],['lcC',1],['lcK',2],['lcR',3]].forEach(([id,k])=>$('#'+id).oninput=e=>{st[k]=+e.target.value;draw();});
+  $$('[data-lc]').forEach(b=>b.onclick=()=>{st=[...P[+b.dataset.lc]];draw();});draw();})();
+
+/* 6 im2col explorer */
+(function(){let p=5;
+  const val=(r,c)=>r<0||r>3||c<0||c>3?null:`x${r}${c}`;
+  function draw(){const pr=Math.floor(p/4),pc=p%4;let s='';const c=30,x0=30,y0=40;
+    s+=tx(x0+3*c,24,'input with zero border','mid xs bd');
+    for(let r=-1;r<=4;r++)for(let q=-1;q<=4;q++){const v=val(r,q),X=x0+(q+1)*c,Y=y0+(r+1)*c,inw=r>=pr-1&&r<=pr+1&&q>=pc-1&&q<=pc+1;
+      s+=v?`<rect x="${X}" y="${Y}" width="${c}" height="${c}" class="${inw?'lit':'bx'}"/>`+tx(X+c/2,Y+c/2+4,v,'mid','font-size:10px'):hatchR(X,Y,c,c)+(inw?`<rect x="${X}" y="${Y}" width="${c}" height="${c}" style="fill:none;stroke:var(--cu);stroke-width:1.5"/>`:'')+tx(X+c/2,Y+c/2+4,'0','mid xs');}
+    s+=`<rect x="${x0+pc*c}" y="${y0+pr*c}" width="${3*c}" height="${3*c}" style="fill:none;stroke:var(--cu);stroke-width:2.6"/>`;
+    const oc=28,oy=y0+6*c+44;s+=tx(x0+3*c,oy-10,'output pixels (4 × 4)','mid xs bd');
+    for(let r=0;r<4;r++)for(let q=0;q<4;q++){const k=r*4+q,X=x0+c-oc/2+q*oc+15,Y=oy+r*oc;s+=`<rect x="${X}" y="${Y}" width="${oc}" height="${oc}" data-p="${k}" class="${k===p?'cu':'bx'}" style="cursor:pointer;${k===p?'stroke-width:2.4':''}"/>`+tx(X+oc/2,Y+oc/2+4,`y${r}${q}`,'mid','font-size:9.5px;pointer-events:none');}
+    const mx=290,cw=46,rh=22,my=40;s+=tx(mx+4.5*cw,24,'im2col matrix: 16 rows (one per output) × 9 columns','mid xs bd');
+    for(let k=0;k<16;k++){const r=Math.floor(k/4),q=k%4,on=k===p;
+      s+=`<rect x="${mx-40}" y="${my+k*rh}" width="${9*cw+40}" height="${rh}" data-p="${k}" style="cursor:pointer;fill:${on?'var(--cu-soft)':'transparent'};stroke:${on?'var(--cu)':'none'};stroke-width:1.5"/>`+tx(mx-8,my+k*rh+15,`y${r}${q}`,'end xs','pointer-events:none');
+      for(let t=0;t<9;t++){const v=val(r-1+Math.floor(t/3),q-1+t%3);s+=`<rect x="${mx+t*cw}" y="${my+k*rh}" width="${cw}" height="${rh}" style="fill:none;stroke:var(--line);stroke-width:.6;pointer-events:none"/>`+tx(mx+t*cw+cw/2,my+k*rh+15,v||'0','mid',`font-size:10px;pointer-events:none;${v?'':'fill:var(--mute)'}`);}}
+    s+=tx(mx+4.5*cw,my+16*rh+18,'× the filter\'s 9 weights (w0 … w8) = the 16 outputs','mid xs');
+    set('icSvg',s);
+    const r=Math.floor(p/4),q=p%4,row=[];let n=0;for(let t=0;t<9;t++){const v=val(r-1+Math.floor(t/3),q-1+t%3);row.push(v||'0');if(v)n++;}
+    const uses=(()=>{let u=0;for(let k=0;k<16;k++){const rr=Math.floor(k/4),qq=k%4;if(Math.abs(rr-r)<=1&&Math.abs(qq-q)<=1)u++;}return u;})();
+    $('#icMsg').innerHTML=`Row for output y${r}${q}: [${row.join(', ')}]: <b>${n}</b> real input values and ${9-n} padding zeros. y${r}${q} = this row · (w0 … w8). The input value x${r}${q} itself is copied into <b>${uses}</b> rows of the matrix. Over the whole matrix: 144 entries built from 16 input values (100 real copies plus 44 zeros).`;}
+  $('#icSvg').addEventListener('click',e=>{const t=e.target.closest('[data-p]');if(!t)return;p=+t.dataset.p;draw();});draw();})();
+
+/* 6 conv to GEMM mapping */
+(function(){let s='';
+  s+=`<rect x="30" y="80" width="26" height="110" class="bx"/>`+tx(43,72,'C','mid xs')+tx(22,140,'NHW','mid xs','writing-mode:vertical-rl')+tx(43,210,'activations','mid xs')+tx(43,223,'x[N,H,W,C]','mid xs');
+  s+=`<path d="M60 135 H176" class="wc dash" marker-end="url(#ahc)"/>`+tx(118,126,'im2col (copy)','mid xs bd');
+  s+=`<rect x="182" y="70" width="160" height="130" class="cu"/>`+tx(262,62,'RSC','mid xs bd')+tx(172,140,'NPQ','mid xs bd','writing-mode:vertical-rl')+tx(262,132,'A','mid bd')+tx(262,150,'convolution matrix','mid xs');
+  s+=tx(368,140,'×','mid','font-size:22px');
+  s+=`<rect x="396" y="40" width="100" height="160" class="te"/>`+tx(446,32,'K','mid xs bd')+tx(386,125,'RSC','mid xs bd','writing-mode:vertical-rl')+tx(446,118,'B','mid bd')+tx(446,136,'filters','mid xs')+tx(446,150,'one per column','mid xs');
+  s+=tx(522,140,'=','mid','font-size:22px');
+  s+=`<rect x="552" y="70" width="100" height="130" class="pl"/>`+tx(602,62,'K','mid xs bd')+tx(542,140,'NPQ','mid xs bd','writing-mode:vertical-rl')+tx(602,132,'C','mid bd')+tx(602,150,'output','mid xs');
+  s+=tx(700,110,'y[N,P,Q,K]','mid xs')+tx(700,124,'viewed as','mid xs')+tx(700,138,'a matrix','mid xs');
+  set('gmSvg',s);})();
+
+/* 7 blocked GEMM roofline */
+(function(){let m='fp32',z=5;const BW=900e9,NN=8192;
+  const zb=i=>4096*2**i,zl=v=>v>=1048576?fmt(v/1048576)+' MB':fmt(v/1024)+' KB';
+  function draw(){const e=m==='fp32'?4:2,PK=m==='fp32'?15.7e12:125e12,Z=zb(z),b=Math.floor(Math.sqrt(Z/(3*e)));
+    const I=2*NN**3/(e*(2*NN**3/b+2*NN*NN)),att=Math.min(PK,BW*I),I0=2/(2*e),ridge=PK/BW;
+    $('#bkZ').value=z;$('#bkZv').textContent=zl(Z);
+    const X0=70,X1=730,Y0=230,Y1=20,lx=v=>X0+(Math.log10(v)+1)/4*(X1-X0),ly=v=>Y0-(Math.log10(v/1e12)+1)/3.5*(Y0-Y1);
+    let s='';[0.1,1,10,100,1000].forEach(v=>{s+=`<path d="M${lx(v)} ${Y1} V${Y0}" class="w" style="opacity:.25"/>`+tx(lx(v),Y0+16,v,'mid xs');});
+    [0.1,1,10,100].forEach(v=>{const y=ly(v*1e12);s+=`<path d="M${X0} ${y} H${X1}" class="w" style="opacity:.25"/>`+tx(X0-6,y+4,v,'end xs');});
+    s+=tx((X0+X1)/2,Y0+32,'arithmetic intensity (FLOPs per byte of memory traffic)','mid xs')+tx(16,(Y0+Y1)/2,'TFLOP/s','mid xs','writing-mode:vertical-rl');
+    const xr=lx(ridge);s+=`<path d="M${X0} ${ly(BW*0.1)} L${xr} ${ly(PK)} H${X1}" class="wt" style="stroke-width:2.6"/>`+tx(xr-10,ly(PK)-10,`ridge point ≈ ${fmt(ridge,1)}`,'end xs bd')+`<path d="M${xr} ${ly(PK)-4} V${Y0}" class="wt dash" style="stroke-width:1;opacity:.6"/>`;
+    s+=`<circle cx="${lx(I0)}" cy="${ly(Math.min(PK,BW*I0))}" r="6" class="bad"/>`+tx(lx(I0)+10,ly(Math.min(PK,BW*I0))+16,'no blocking','xs');
+    s+=`<circle cx="${lx(I)}" cy="${ly(att)}" r="7" class="cu" style="stroke-width:2.4"/>`+tx(lx(I)+(lx(I)>600?-12:12),ly(att)+(att>=PK*0.999?20:-10),`b = ${b}`,(lx(I)>600?'end':'')+' xs bd');
+    set('bkSvg',s);
+    $('#bkStat').innerHTML=`<div>block size b<b>${b} × ${b}</b></div><div>intensity<b>${fmt(I,1)} FLOP/B</b></div><div>ridge point<b>${fmt(ridge,1)} FLOP/B</b></div><div>attainable<b>${fmt(att/1e12,1)} TFLOP/s</b></div><div>% of peak<b>${fmt(100*att/PK,0)}%</b></div>`;
+    $('#bkMsg').innerHTML=I<ridge?`Bandwidth-bound: each byte brought from memory feeds only ${fmt(I,1)} FLOPs, and the machine needs ${fmt(ridge,1)} to keep its ALUs busy. Bigger blocks (more fast storage) would help.`:`Compute-bound: blocks of ${b} × ${b} reuse each value enough to exceed the ridge point. More storage no longer helps this multiply; the ALUs are the limit.`;
+    $$('[data-bm]').forEach(bt=>bt.setAttribute('aria-pressed',bt.dataset.bm===m));}
+  $('#bkZ').oninput=e=>{z=+e.target.value;draw();};$$('[data-bm]').forEach(bt=>bt.onclick=()=>{m=bt.dataset.bm;draw();});draw();})();
+
+/* 9 Winograd F(2,3) */
+(function(){let v={x0:3,x1:1,x2:4,x3:1,w0:2,w1:-1,w2:0.5},typo=0;
+  $('#wgIn').innerHTML=Object.keys(v).map(k=>`<div><span class="readout">${k}</span><input type="number" step="0.5" id="wg_${k}" value="${v[k]}" aria-label="${k}"></div>`).join('');
+  const n=x=>{const r=Math.round(x*1e6)/1e6;return String(r).replace('-','−');};
+  function draw(){const {x0,x1,x2,x3,w0,w1,w2}=v;const y0=x0*w0+x1*w1+x2*w2,y1=x1*w0+x2*w1+x3*w2;
+    const g1=(w0+w1+w2)/2,g2=(w0-w1+w2)/2,m1=typo?(x0-x1)*w0:(x0-x2)*w0,m2=(x1+x2)*g1,m3=(x2-x1)*g2,m4=(x1-x3)*w2,z0=m1+m2+m3,z1=m2-m3-m4;
+    const ok0=Math.abs(z0-y0)<1e-9,ok1=Math.abs(z1-y1)<1e-9;
+    $('#wgStat').innerHTML=`<div>direct y0<b>${n(y0)}</b></div><div>direct y1<b>${n(y1)}</b></div><div>m1 · m2<b>${n(m1)} · ${n(m2)}</b></div><div>m3 · m4<b>${n(m3)} · ${n(m4)}</b></div><div>Winograd y0<b style="color:var(--${ok0?'ok':'bad'})">${n(z0)}</b></div><div>Winograd y1<b style="color:var(--${ok1?'ok':'bad'})">${n(z1)}</b></div>`;
+    $('#wgMsg').innerHTML=`Direct: 6 multiplies, 4 adds. Winograd: 4 multiplies (m1…m4), 8 adds; the filter factors (w0+w1+w2)/2 = ${n(g1)} and (w0−w1+w2)/2 = ${n(g2)} are computed once per filter, not per output. ${ok0&&ok1?'<b>Both outputs match.</b>':`<b>Mismatch:</b> y0 is off by ${n(z0-y0)}, which is (x2 − x1)·w0.`}`;
+    $$('[data-wm]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.wm===typo));}
+  Object.keys(v).forEach(k=>$('#wg_'+k).oninput=e=>{const x=parseFloat(e.target.value);if(!isNaN(x)){v[k]=x;draw();}});
+  $$('[data-wm]').forEach(b=>b.onclick=()=>{typo=+b.dataset.wm;draw();});draw();})();
+
+/* 10 fusion */
+(function(){let R=3,m='fp32';const BW=900e9,N=32,H=256,C=128,K=128,GiB=2**30;
+  function draw(){const PK=m==='fp32'?15.7e12:125e12,inB=N*H*H*C*4,outB=N*H*H*K*4,fl=2*N*H*H*K*C*R*R;
+    const k=(name,f,b)=>{const tc=f/PK,tm=b/BW;return {name,t:Math.max(tc,tm),cb:tc>=tm,b};};
+    const un=[k('conv',fl,inB+outB),k('scale + bias',2*N*H*H*K,2*outB),k('max pool',3*N*H*H*K/4,outB*1.25)],fu=[k('conv + scale/bias + pool (fused)',fl,inB+outB/4)];
+    const tu=un.reduce((a,x)=>a+x.t,0),tf=fu[0].t,X0=150,Wd=560,sc=Wd/tu;let s='';
+    const row=(y,ks,lab)=>{let x=X0,r=tx(X0-10,y+22,lab,'end sm bd');ks.forEach(q=>{const w=q.t*sc;r+=`<rect x="${x}" y="${y}" width="${w}" height="34" class="${q.cb?'cu':'te'}"/>`+(w>70?tx(x+w/2,y+15,q.name,'mid xs bd')+tx(x+w/2,y+28,`${fmt(q.t*1e3,2)} ms`,'mid xs'):'');x+=w;});
+      return r;};
+    const brk=ks=>ks.length>1?ks.map(q=>`${q.name} ${fmt(q.t*1e3,2)}`).join(' + ')+' = ':'';
+    s+=row(30,un,'unfused')+row(110,fu,'fused');
+    s+=tx(X0,90,`${brk(un)}${fmt(tu*1e3,2)} ms · ${fmt(un.reduce((a,x)=>a+x.b,0)/GiB,2)} GiB moved`,'xs')+tx(X0,170,`${fmt(tf*1e3,2)} ms · ${fmt(fu[0].b/GiB,2)} GiB moved`,'xs');
+    s+=`<rect x="${X0}" y="206" width="12" height="10" class="cu"/>`+tx(X0+18,215,'limited by arithmetic','xs')+`<rect x="${X0+180}" y="206" width="12" height="10" class="te"/>`+tx(X0+198,215,'limited by memory traffic','xs');
+    set('fuSvg',s);
+    $('#fuStat').innerHTML=`<div>conv FLOPs<b>${fmt(fl/1e9,1)} G</b></div><div>unfused<b>${fmt(tu*1e3,2)} ms</b></div><div>fused<b>${fmt(tf*1e3,2)} ms</b></div><div>speedup from fusion<b>${fmt(tu/tf,2)}×</b></div><div>element-wise share (unfused)<b>${fmt(100*(un[1].t+un[2].t)/tu,0)}%</b></div>`;
+    $('#fuMsg').innerHTML=un[0].cb?`The convolution is compute-bound (${fmt(un[0].t*1e3,2)} ms of math), so the separate element-wise passes add ${fmt((un[1].t+un[2].t)*1e3,2)} ms on top: ${fmt(100*(un[1].t+un[2].t)/tu,0)}% of the unfused time.`:`The convolution itself is now limited by memory traffic, and the separate element-wise passes add ${fmt((un[1].t+un[2].t)*1e3,2)} ms more. Fusion removes 4 GiB of the 5.25 GiB of traffic.`;
+    $$('[data-fl]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.fl===R));$$('[data-fm]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.fm===m));}
+  $$('[data-fl]').forEach(b=>b.onclick=()=>{R=+b.dataset.fl;draw();});$$('[data-fm]').forEach(b=>b.onclick=()=>{m=b.dataset.fm;draw();});draw();})();
+
+/* 11 online softmax */
+(function(){let x=[2,1,5,3,0.5,4,7,1.5],cs=4,k=0;
+  const f3=v=>fmt(v,3);
+  function draw(){const n=x.length,nch=Math.ceil(n/cs),cw=80,x0=60;let s=tx(x0-10,50,'x','end sm bd');
+    let m=-Infinity,l=0;const log=[];
+    for(let c=0;c<k;c++){const ch=x.slice(c*cs,c*cs+cs),cm=Math.max(...ch),cl=ch.reduce((a,v)=>a+Math.exp(v-cm),0),nm=Math.max(m,cm),sOld=m===-Infinity?0:Math.exp(m-nm),sNew=Math.exp(cm-nm);
+      log.push({c,cm,cl,m,nm,sOld,sNew,l,nl:sOld*l+sNew*cl});l=sOld*l+sNew*cl;m=nm;}
+    for(let i=0;i<n;i++){const c=Math.floor(i/cs),done=c<k,cur=c===k;s+=`<rect x="${x0+i*cw}" y="30" width="${cw-4}" height="32" class="${cur?'cu':done?'te':'bx'}" style="${done?'opacity:.8':''}"/>`+tx(x0+i*cw+cw/2-2,51,fmt(x[i],1),'mid sm');}
+    for(let c=0;c<nch;c++)s+=tx(x0+(c*cs+cs/2)*cw-2,80,`chunk ${c+1}`,'mid xs');
+    log.forEach((g,i)=>{const y=108+i*24;s+=tx(x0,y,`after chunk ${g.c+1}: chunk m = ${fmt(g.cm,2)}, chunk l = ${f3(g.cl)} → m = ${fmt(g.nm,2)}, l = ${g.m===-Infinity?f3(g.cl):`${f3(g.sOld)}·${f3(g.l)} + ${f3(g.sNew)}·${f3(g.cl)}`} = ${f3(g.nl)}`,'sm'+(i===log.length-1?' bd':''));});
+    if(k===nch){const dm=Math.max(...x),dl=x.reduce((a,v)=>a+Math.exp(v-dm),0),y=215;s+=tx(x0-10,y,'softmax','end xs bd');
+      x.forEach((v,i)=>{const p=Math.exp(v-m)/l,d=Math.exp(v-dm)/dl;s+=`<rect x="${x0+i*cw}" y="${y-16}" width="${cw-4}" height="26" class="okf"/>`+tx(x0+i*cw+cw/2-2,y+2,fmt(p,4),'mid xs');});
+      $('#smMsg').innerHTML=`Done. Online: m = ${fmt(m,2)}, l = ${f3(l)}. Direct over the whole row: m = ${fmt(dm,2)}, l = ${f3(dl)}. The softmax values (green) are identical; they sum to 1.`;}
+    else $('#smMsg').innerHTML=k===0?`Nothing processed yet: m = −∞, l = 0. Press <b>Next chunk</b>.`:`Kept so far: m = ${fmt(m,2)} and l = ${f3(l)}, nothing else. ${log[k-1].sOld<1&&k>1?`This chunk raised the max, so the old sum was scaled by e<sup>${fmt(log[k-1].m,2)} − ${fmt(log[k-1].nm,2)}</sup> = ${f3(log[k-1].sOld)}.`:k>1?'This chunk didn\'t raise the max, so the old sum was kept as is (factor 1).':''}`;
+    set('smSvg',s);$('#smStep').disabled=k>=nch;$$('[data-sc]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.sc===cs));}
+  $('#smStep').onclick=()=>{k++;draw();};$('#smReset').onclick=()=>{k=0;draw();};
+  $('#smRand').onclick=()=>{x=x.map(()=>Math.round((Math.random()*10-2)*2)/2);k=0;draw();};
+  $$('[data-sc]').forEach(b=>b.onclick=()=>{cs=+b.dataset.sc;k=0;draw();});draw();})();
+
+/* 11 fused attention blocks */
+(function(){let s='';const blk=(x,y,w,h)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="cu" style="stroke-width:2"/>`;
+  s+=`<rect x="40" y="40" width="44" height="170" class="bx"/>`+blk(40,120,44,26)+tx(62,226,'Q: N × d','mid xs bd')+`<path d="M30 50 V200" class="w dash" marker-end="url(#ah)"/>`+tx(14,125,'i loop','mid xs','writing-mode:vertical-rl');
+  s+=`<rect x="130" y="40" width="260" height="36" class="bx"/>`+blk(300,40,34,36)+tx(260,94,'Kᵀ: d × N','mid xs bd')+`<path d="M140 28 H380" class="w dash" marker-end="url(#ah)"/>`+tx(260,20,'j loop','mid xs');
+  s+=`<rect x="440" y="40" width="44" height="170" class="bx"/>`+blk(440,80,44,26)+tx(462,226,'V: N × d','mid xs bd')+`<path d="M500 50 V200" class="w dash" marker-end="url(#ah)"/>`+tx(510,125,'j loop','mid xs','writing-mode:vertical-rl');
+  s+=`<rect x="560" y="40" width="44" height="170" class="bx"/>`+blk(560,120,44,26)+tx(582,226,'O = PV: N × d','mid xs bd');
+  s+=`<rect x="130" y="120" width="260" height="80" class="bg2"/>`+tx(260,140,'on chip, per step:','mid xs bd')+tx(260,158,'S = Qᵢ Kᵀⱼ (block only)','mid xs')+tx(260,174,'row max, exp, row sum','mid xs')+tx(260,190,'Oᵢ ← rescale(Oᵢ) + Pᵢⱼ Vⱼ','mid xs');
+  s+=tx(690,110,'S and P','mid xs bd')+tx(690,126,'(N × N) never','mid xs')+tx(690,142,'exist in memory','mid xs');
+  set('faSvg',s);})();
+
+/* 13 overhead of programmability */
+(function(){const D=[['half-precision FMA','2 ops',20],['half-precision DP4','8 ops',5],['half-precision 4×4 MMA','128 ops',0.27]];const X0=200,sc=520/21;let s='';
+  D.forEach(([l,o,ov],i)=>{const y=24+i*52;s+=tx(X0-10,y+14,l,'end sm bd')+tx(X0-10,y+29,o+' per instruction','end xs');
+    s+=`<rect x="${X0}" y="${y}" width="${sc}" height="30" class="te"/><rect x="${X0+sc}" y="${y}" width="${Math.max(1.5,ov*sc)}" height="30" class="cu"/>`+(ov>10?tx(X0+sc+ov*sc-8,y+20,`overhead = ${fmt(ov*100)}% of the math`,'end xs bd'):tx(X0+sc+ov*sc+8,y+20,`overhead = ${fmt(ov*100)}% of the math`,'xs bd'));});
+  s+=`<rect x="${X0}" y="182" width="12" height="10" class="te"/>`+tx(X0+18,191,'energy of the arithmetic itself','xs')+`<rect x="${X0+240}" y="182" width="12" height="10" class="cu"/>`+tx(X0+258,191,'overhead: fetch, decode, control, operand delivery','xs');
+  set('amSvg',s);})();
+})();
+</script>
+</body>
+</html>

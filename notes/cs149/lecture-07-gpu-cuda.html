@@ -1,0 +1,629 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CS149 Lecture 7 · GPU Architecture and CUDA</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../assets/notes.css">
+<script src="../assets/notes.js"></script>
+<style>
+.calc{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;align-items:end}
+.stat{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:12px}
+.stat div{background:var(--panel2);border-radius:4px;padding:6px 10px;font:500 11px var(--mono);color:var(--mute)}
+.stat b{display:block;font-size:17px;color:var(--ink)}
+.bytes{display:grid;grid-template-columns:repeat(16,minmax(0,1fr));gap:3px;font:500 11px var(--mono)}
+.bytes div{text-align:center;padding:4px 0;border-radius:3px;background:var(--panel2)}
+.bytes div small{display:block;font-size:9px;color:var(--mute)}
+.bytes div.l0{box-shadow:inset 0 -3px 0 var(--te)} .bytes div.l1{box-shadow:inset 0 -3px 0 var(--pl)} .bytes div.l2{box-shadow:inset 0 -3px 0 var(--cu)} .bytes div.l3{box-shadow:inset 0 -3px 0 var(--warn)}
+.bytes div.cur{outline:2px solid var(--ink)}
+.bytes div.inc{background:var(--te-soft)}
+.slots{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.slots div{border:1px solid var(--line);border-radius:4px;padding:6px 12px;font:500 13px var(--mono);min-width:120px;background:var(--panel)}
+.slots div small{display:block;font-size:10px;color:var(--mute)}
+.slots div.fill{background:var(--cu-soft);border-color:var(--cu)}
+.slots div.hit{background:var(--ok-soft);border-color:var(--ok)}
+.strip{display:flex;flex-wrap:wrap;gap:3px;margin-top:10px}
+.strip span{min-width:40px;padding:3px 4px;border-radius:3px;font:600 11px var(--mono);text-align:center}
+.strip small{display:block;font-weight:500;font-size:9px}
+.strip .h{background:var(--ok-soft);color:var(--ok)} .strip .c{background:var(--bad-soft);color:var(--bad)} .strip .p{background:var(--warn-soft);color:var(--warn)} .strip .n{background:var(--panel2);color:var(--mute)} .strip .cur{outline:2px solid var(--ink)}
+.lanes{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:4px}
+.lanes button{height:54px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font:600 13px var(--mono)}
+.lanes button small{font-size:10px;font-weight:500}
+.lanes button.T{background:var(--te-soft);border-color:var(--te);color:var(--ink)}
+.lanes button.F{background:var(--pl-soft);border-color:var(--pl);color:var(--ink)}
+.cfg{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.cfg > div{display:flex;flex-direction:column;gap:4px}
+.cfg .readout{font-size:11.5px}
+.glossary{display:grid;grid-template-columns:minmax(150px,max-content) 1fr;gap:6px 18px;font-size:15px}
+.glossary dt{font:600 13px var(--mono);color:var(--te);padding-top:2px}
+.glossary dd{margin:0}
+@media (max-width:560px){.glossary{grid-template-columns:1fr}.glossary dd{margin-bottom:8px}}
+
+.pmx{display:grid;grid-template-columns:120px repeat(3,minmax(0,1fr));gap:8px;align-items:stretch}
+@media (max-width:760px){.pmx{grid-template-columns:repeat(1,minmax(0,1fr))}.pmx .rh,.pmx .ch{display:none}}
+.pmx .ch{font:600 11px var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--mute);text-align:center;align-self:end;padding-bottom:4px}
+.pmx .rh{font-size:13px;display:flex;flex-direction:column;justify-content:center;gap:2px;padding-right:6px}
+.pmx .rh b{font-family:var(--display);font-size:18px}
+.pmx .rh small{color:var(--mute);font:500 11px var(--mono)}
+.pcard{background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:8px 10px;cursor:pointer;text-align:left;font:inherit;color:var(--ink);display:flex;flex-direction:column;gap:4px}
+.pcard:hover{border-color:var(--cu)}
+.pcard[aria-pressed="true"]{border-color:var(--cu);box-shadow:0 0 0 3px var(--cu-soft);background:var(--panel)}
+.pcard svg{width:100%;height:auto;min-width:0}
+.pcard .pk{font:600 11px var(--mono);color:var(--cu)}
+.pcard .need{font-size:12.5px;line-height:1.4;color:var(--ink)}
+.pcard .need i{font-style:normal;color:var(--mute)}
+.chk{display:grid;gap:6px;margin-top:12px}
+.chk div{display:grid;grid-template-columns:26px 1fr;gap:8px;align-items:start;padding:7px 10px;border-radius:4px;font-size:14px;background:var(--panel2)}
+.chk div.ok{background:var(--ok-soft)} .chk div.no{background:var(--bad-soft)} .chk div.na{opacity:.6}
+.chk div > span:first-child{font:700 15px var(--mono)}
+.chk div.ok > span:first-child{color:var(--ok)} .chk div.no > span:first-child{color:var(--bad)}
+.recipe{counter-reset:r}
+
+/* slide-style architecture drawings */
+.sl-core{fill:var(--panel2);stroke:var(--mute);stroke-width:1.2}
+.sl-mem{fill:var(--panel);stroke:var(--ink);stroke-width:1.4}
+.sl-cache{fill:#bdbdbd;stroke:#6f6f6f;stroke-width:1.2}
+.sl-fd{fill:#d9763a;stroke:#8f4718;stroke-width:1.2}
+.sl-alu{fill:#f3c24c;stroke:#a87a12;stroke-width:1.2}
+.sl-ctx{fill:#8e9bba;stroke:#3d4a6b;stroke-width:1.4}
+.sl-reg{fill:#b9c5e2;stroke:#7d8bb0;stroke-width:.6}
+svg text.sd{fill:#1b1b1b!important}
+svg text.sw{fill:#fff!important}
+.pmx .pcard svg{background:transparent}
+.sl-pale{fill:#e6e6e6;stroke:#9a9a9a;stroke-width:1}
+.sl-row{fill:#ececec} .sl-row-on{fill:#d9763a}
+.tsrc{width:100%;min-height:190px;box-sizing:border-box;font:500 13px/1.5 var(--mono);background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:8px 10px;resize:vertical}
+.tref{font-size:13.5px;line-height:1.6;color:var(--mute)} .tref b{color:var(--ink)}
+.tedit summary{cursor:pointer;font:600 12.5px var(--mono);color:var(--cu);margin-top:12px}
+.s0a{stroke:var(--te);stroke-width:2.4;fill:none} .s0h{fill:none;stroke:var(--te);stroke-width:3} .s0dim{opacity:.35}
+.sm-ws{fill:#f1ddd0;stroke:#b98a6a;stroke-width:1} .sm-fp32{fill:#f3c24c;stroke:#a87a12;stroke-width:.8} .sm-int{fill:#ee8a60;stroke:#a8502a;stroke-width:.8} .sm-fp64{fill:#b07a86;stroke:#6e4450;stroke-width:.8} .sm-ten{fill:#bf2f1f;stroke:#7a1a10;stroke-width:.8} .sm-ls{fill:#5d9a3c;stroke:#355f1f;stroke-width:.8} .sm-reg{fill:#c9d6f2;stroke:#6c7fae;stroke-width:.8}
+
+.partbar{margin-top:90px;padding:14px 18px;border-radius:5px;background:var(--ink);color:var(--panel)}
+.partbar .kicker{color:var(--cu-soft)}
+.partbar h2{font-family:var(--display);font-size:clamp(32px,5vw,44px);line-height:1;margin:4px 0 4px;color:var(--panel)}
+.partbar p{margin:0;color:var(--panel);opacity:.8;max-width:68ch}
+.code{font:500 13px/1.55 var(--mono);background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:12px 16px;overflow-x:auto;margin:16px 0;white-space:pre;color:var(--ink)}
+.code .u{color:var(--pl);font-weight:600} .code .k{color:var(--cu);font-weight:600}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar"><div class="in">
+  <a class="brand" href="../index.html">Gates <span>→</span> GPUs · Notes</a>
+  <nav class="unitnav" aria-label="Sections"><a href="../index.html">Course map</a><a href="../unit-01-build-a-computer.html">1 · Build a computer</a><a href="../unit-02-registers-programs-contexts.html">2 · Programs &amp; contexts</a><a href="../unit-03-faster-core.html">3 · A faster core</a><a href="../unit-04-parallelism.html">4 · Parallelism</a><a href="../unit-05-gpus.html">5 · GPUs</a><a href="../unit-06-modern-systems.html">6 · Systems</a><a href="index.html" aria-current="page">CS149 lectures</a></nav>
+  <button class="themebtn" type="button">☾ Dark</button>
+</div>
+<nav class="subnav" aria-label="CS149 lectures"><span class="sl">CS149</span><a href="index.html">All lectures</a><a href="lecture-01-why-parallelism.html">L1 · Why parallelism?</a><a href="lecture-02-modern-multicore.html">L2 · A modern multi-core processor</a><a href="lecture-03-bandwidth-spmd.html">L3 · Bandwidth &amp; SPMD</a><a href="lecture-07-gpu-cuda.html" aria-current="page">L7 · GPUs &amp; CUDA</a><a href="lecture-10-dnn-eval.html">L10 · Evaluating DNNs</a></nav>
+</header>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk"/></marker>
+  <marker id="ahc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkc"/></marker>
+  <marker id="aht" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkt"/></marker>
+  <marker id="ahp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkp"/></marker>
+  <marker id="ahb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkb"/></marker>
+</defs></svg>
+
+<div class="wrap">
+<nav class="toc" aria-label="On this page"></nav>
+<main id="main">
+
+<header class="hero">
+  <div class="kicker">Stanford CS149 · Lecture 7 companion</div>
+  <h1>GPU architecture and <em>CUDA</em> programming</h1>
+  <p class="lede">GPUs were built to draw triangles for video games. Because drawing means running the same small function on millions of pixels, they became enormously parallel, and then programmable enough to run almost anything data-parallel. This lecture traces that history, teaches <b>CUDA</b>, the language NVIDIA introduced in 2007 for programming GPUs directly, and then looks inside an NVIDIA V100 to see how CUDA's abstractions are actually implemented.</p>
+  <dl class="outcome">
+    <dt>You'll be able to</dt><dd>Explain why GPUs have many SIMD, multithreaded cores. Write and read CUDA kernels: grids, blocks, threads, <code>blockIdx</code>/<code>threadIdx</code>, the host/device split and the three device memory spaces. Explain why shared memory and <code>__syncthreads</code> make the convolution example faster. Describe a V100 SM, warps and SIMT execution. Trace how a GPU's work scheduler assigns thread blocks to cores under resource limits, and explain why some CUDA programs can deadlock.</dd>
+    <dt>Background</dt><dd><a href="lecture-02-modern-multicore.html">Lecture 2</a> (SIMD, multithreading, the V100 SM) and <a href="lecture-03-bandwidth-spmd.html">Lecture 3</a> (SPMD, ISPC gangs and tasks). Unit 5 of these notes (Understand GPUs) covers occupancy, coalescing and tiling in more depth.</dd>
+    <dt>Source</dt><dd>Follows the structure and examples of Stanford CS149 <i>Parallel Computing</i>, Fall 2023, Lecture 7, "GPU Architecture & CUDA Programming" (Kayvon Fatahalian and Kunle Olukotun). Lectures 4–6 aren't covered here yet. The explanations, diagrams and explorers are original study material, not a copy of the slides.</dd>
+  </dl>
+  <div class="insight">Keep asking the course's question: <b>what does the abstraction promise, and what does this implementation happen to do?</b> CUDA promises that thread blocks can run in any order, and that threads within a block run concurrently. NVIDIA GPUs implement that with a hardware block scheduler, and with <b>warps</b> of 32 threads executed in SIMD fashion. Warps aren't part of the CUDA programming model, but they decide performance.</div>
+</header>
+
+<!-- ================================ PART 1 ================================ -->
+<div class="partbar" id="p1"><div class="kicker">Part 1 · From graphics to compute</div><h2>How a graphics chip became a parallel computer</h2><p>Why rendering produced this kind of hardware, and how people first bent it to other uses.</p></div>
+
+<section class="lesson" id="s1" data-toc="What GPUs were built for" data-n="1" style="margin-top:36px">
+  <div class="lesson-h"><div class="kicker">Section 1</div><h2>What GPUs were originally designed to do: 3D rendering</h2></div>
+  <p>A renderer takes a description of a scene (3D surfaces as triangle meshes, surface materials, lights, a camera) and produces an image. Real-time graphics represents every surface as a mesh of <b>triangles</b>, each defined by three <b>vertices</b> (points in space). The whole workload fits in two sentences:</p>
+  <ul>
+    <li>Given a triangle, determine where it lies on screen, given the position of the virtual camera.</li>
+    <li>For every output pixel the triangle covers, compute the color of the surface at that pixel.</li>
+  </ul>
+  <p>The second step is where the work is. What a surface looks like at a point depends on its material and the lights, and the world is full of different materials. So the color computation is a small program, a <b>shader</b>, written in a shading language such as GLSL:</p>
+  <pre class="code"><span class="u">uniform</span> sampler2D myTexture;   // read-only, same for every pixel
+<span class="u">uniform</span> float3 lightDir;
+varying vec3 norm;              // different at every pixel:
+varying vec2 uv;                // think of these as the function's inputs
+
+void myShader() {
+  vec3 kd = texture2D(myTexture, uv);          // look up the surface color
+  kd *= clamp(dot(lightDir, norm), 0.0, 1.0);  // darken by light angle
+  return vec4(kd, 1.0);                        // this pixel's RGBA color
+}</pre>
+  <p>The syntax doesn't matter. What matters is that <b>a shader is a pure function, invoked independently on a stream of inputs</b>: once per pixel covered by a triangle, millions of times per frame, 60 or more frames per second. Pixels covered by several surfaces keep the output of the surface closest to the camera.</p>
+  <figure class="fig"><div class="sc"><svg id="gpuSvg" viewBox="0 0 760 240" role="img" aria-label="A GPU: many SIMD, multithreaded cores connected to high-bandwidth memory" style="min-width:560px"></svg></div>
+    <figcaption><b>Why GPUs have many high-throughput cores.</b> Running the same shader on millions of independent pixels is exactly what Lecture 2's ideas are for: many cores, SIMD execution within each core (one instruction, many pixels), and many hardware threads per core to hide the latency of memory, such as texture lookups. High-end GPUs pair this with memory delivering on the order of 1 TB/s.</figcaption></figure>
+</section>
+
+<section class="lesson" id="s2" data-toc="GPGPU and compute mode" data-n="2">
+  <div class="lesson-h"><div class="kicker">Section 2</div><h2>From a graphics hack to a compute interface</h2></div>
+  <p>Around 2001–2003, people noticed that GPUs were very fast processors for running the <i>same computation</i> in parallel on <i>large collections of data</i>. That's data parallelism, the model of the exotic supercomputers of the 1990s. And every year GPUs got faster, because more transistors meant more parallelism.</p>
+  <h3>The hack</h3>
+  <p>But the only way to run code on a GPU was to draw something. So, to run a function on every element of a 512 × 512 array:</p>
+  <ol>
+    <li>Set the output image size to 512 × 512, the array size.</li>
+    <li>Draw two triangles that exactly cover the screen.</li>
+    <li>Write your function as the fragment shader. The GPU runs it once per pixel, so once per array element.</li>
+  </ol>
+  <figure class="fig"><div class="sc"><svg id="hackSvg" viewBox="0 0 760 220" role="img" aria-label="Two triangles covering a 512 by 512 screen; the shader runs once per pixel, which is once per array element" style="min-width:560px"></svg></div>
+    <figcaption><b>A map over a 512 × 512 collection, disguised as drawing.</b> The fragment shader becomes the function being mapped; the output image becomes the result array. This "GPGPU" (general-purpose computing on GPUs) approach produced early work on fluid simulation, ray tracing and sparse matrix solvers.</figcaption></figure>
+  <p>Stanford's <b>Brook</b> language (2004) hid the hack behind a data-parallel abstraction: you wrote a <code>kernel</code> function over <b>streams</b>, and the Brook compiler translated it into graphics commands (like draw-triangles) and shader programs the GPUs of the day could run.</p>
+  <pre class="code">kernel void scale(float amount, float a&lt;&gt;, out float b&lt;&gt;) {
+  b = amount * a;
+}
+float input_stream&lt;1000&gt;;    // stream declarations
+float output_stream&lt;1000&gt;;
+scale(scale_amount, input_stream, output_stream);  // map the kernel over the streams</pre>
+
+  <h3>Compute mode</h3>
+  <p>Compare how programs reached the hardware before and after 2007:</p>
+  <figure class="fig"><div class="sc"><svg id="modeSvg" viewBox="0 0 760 260" role="img" aria-label="Before 2007: the application sends a draw command through the fixed graphics pipeline. With NVIDIA Tesla in 2007: the application allocates GPU buffers, copies data, and launches N instances of a kernel" style="min-width:560px"></svg></div>
+    <figcaption><b>Two interfaces to the same programmable cores.</b> Before 2007 the <b>graphics pipeline</b> was the only interface: supply shaders, pipeline parameters and a vertex buffer, then call <code>drawPrimitives</code>. The NVIDIA Tesla architecture (2007) added a <b>compute mode</b>: allocate buffers in GPU memory, copy data to and from them, and launch a single kernel as "run N instances of this". That's a far simpler operation than drawing.</figcaption></figure>
+  <p>It's the same way code runs on a CPU, where the OS loads a program, prepares an execution context and lets the processor fetch instructions, just with thousands of instances at once. <b>CUDA</b>, introduced with Tesla in 2007, is a C-like language for this compute interface. It's deliberately <b>low-level</b>: its abstractions closely match the capabilities and performance characteristics of GPUs (a small "abstraction distance").</p>
+</section>
+
+<!-- ================================ PART 2 ================================ -->
+<div class="partbar" id="p2"><div class="kicker">Part 2 · CUDA abstractions</div><h2>What a CUDA program means</h2><p>Threads, blocks and grids; host and device; three kinds of device memory; and synchronization.</p></div>
+
+<section class="lesson" id="s3" data-toc="The thread hierarchy" data-n="3" style="margin-top:36px">
+  <div class="lesson-h"><div class="kicker">Section 3</div><h2>A hierarchy of concurrent threads</h2></div>
+  <p>Keep four questions in mind through this part. Is CUDA a data-parallel programming model? Is it a shared-address-space model, or message passing? And can you draw analogies to ISPC instances and tasks, or to pthreads?</p>
+  <div class="pitfall"><b>"CUDA thread" doesn't mean what "thread" usually means.</b> A CUDA thread presents a similar <i>abstraction</i> to a pthread: a logical thread of control with its own local variables. Its <i>implementation</i> is completely different, as Part 3 shows. When this page says "thread" in a CUDA context, it means a CUDA thread.</div>
+  <p>A CUDA program launches a <b>grid</b> of <b>thread blocks</b>, each containing many <b>threads</b>. IDs can be up to three-dimensional, which is convenient for problems that are naturally 2D or 3D. The lecture's example adds two 12 × 6 matrices:</p>
+  <div class="grid2">
+    <pre class="code" style="margin:0">// host code (runs on the CPU)
+const int Nx = 12, Ny = 6;
+dim3 threadsPerBlock(4, 3);
+dim3 numBlocks(Nx/threadsPerBlock.x,
+               Ny/threadsPerBlock.y);
+// launches 72 CUDA threads:
+// 6 thread blocks of 12 threads each
+matrixAdd&lt;&lt;&lt;numBlocks, threadsPerBlock&gt;&gt;&gt;(A, B, C);</pre>
+    <pre class="code" style="margin:0">// device code (runs on the GPU)
+<span class="k">__global__</span> void matrixAdd(float A[Ny][Nx],
+                          float B[Ny][Nx],
+                          float C[Ny][Nx]) {
+  int i = <span class="k">blockIdx</span>.x * <span class="k">blockDim</span>.x + <span class="k">threadIdx</span>.x;
+  int j = <span class="k">blockIdx</span>.y * <span class="k">blockDim</span>.y + <span class="k">threadIdx</span>.y;
+  C[j][i] = A[j][i] + B[j][i];
+}</pre>
+  </div>
+  <p>The launch is a <b>bulk</b> launch of many threads, and the call returns when all of them have terminated. Each thread computes its overall position in the grid from its position in its block (<code>threadIdx</code>) and its block's position in the grid (<code>blockIdx</code>). <code>__global__</code> marks a kernel: device code that the host can launch.</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 8px"><span class="readout">Matrix:</span><div class="seg" role="group" aria-label="Matrix size"><button data-mx="12,6" aria-pressed="true">12 × 6 (fits exactly)</button><button data-mx="11,5">11 × 5 (needs a guard)</button></div>
+      <span class="readout" style="margin-left:8px">Click any thread.</span></div>
+    <div class="sc" style="padding:0"><svg id="mxSvg" viewBox="0 0 760 290" role="img" aria-label="The grid of thread blocks over the matrix, with each thread's cell; the selected thread's IDs are shown" style="min-width:560px"></svg></div>
+    <p class="msg" id="mxMsg"></p>
+  </div><figcaption><b>Blocks tile the matrix.</b> Each outlined rectangle is one 4 × 3 thread block; each small cell is one CUDA thread and the matrix element it computes. With an 11 × 5 matrix, the launch rounds up to the same 6 blocks and 72 threads (hatched cells have no element), so the kernel needs a guard: <code>if (i &lt; Nx &amp;&amp; j &lt; Ny)</code>. The number of CUDA threads is explicit in the program; it isn't determined by the size of a data collection, as a graphics <code>map</code> over pixels was.</figcaption></figure>
+  <p>The separation into host and device code is done <b>statically by the programmer</b>. Functions marked <code>__device__</code> (like a helper <code>doubleValue(x)</code>) run on the GPU and can be called from kernels; ordinary functions run on the CPU.</p>
+</section>
+
+<section class="lesson" id="s4" data-toc="The memory model" data-n="4">
+  <div class="lesson-h"><div class="kicker">Section 4</div><h2>The CUDA memory model</h2></div>
+  <p>The host and the device have <b>distinct address spaces</b>. Host code allocates device memory with <code>cudaMalloc</code> and moves data with <code>cudaMemcpy</code>:</p>
+  <pre class="code">float* A = new float[N];              // host memory
+for (int i = 0; i &lt; N; i++) A[i] = (float)i;
+float* deviceA;
+cudaMalloc(&amp;deviceA, sizeof(float) * N);    // device memory
+cudaMemcpy(deviceA, A, sizeof(float) * N, cudaMemcpyHostToDevice);
+// deviceA[i] = ... here would be invalid: deviceA is not a pointer
+// into the host's address space</pre>
+  <p>What does <code>cudaMemcpy</code> remind you of? It's <b>message passing</b>: explicit copies between separate address spaces. Inside the device, a kernel sees three more kinds of address space:</p>
+  <figure class="fig"><div class="sc"><svg id="memSvg" viewBox="0 0 760 270" role="img" aria-label="Host memory and device global memory connected by cudaMemcpy; inside the device, per-block shared memory and per-thread private memory" style="min-width:560px"></svg></div>
+    <figcaption><b>Different address spaces reflect different regions of locality.</b> <b>Per-thread private</b> memory is readable and writable only by its thread. <b>Per-block shared</b> memory is readable and writable by all threads in one block. <b>Device global</b> memory is readable and writable by all threads. This matters for efficiency: if you know which threads access the same variables, you can schedule them together.</figcaption></figure>
+</section>
+
+<section class="lesson" id="s5" data-toc="Example: 1D convolution" data-n="5">
+  <div class="lesson-h"><div class="kicker">Section 5</div><h2>Example: 1D convolution, and why shared memory helps</h2></div>
+  <p>Each output is the average of three neighbouring inputs: <code>output[i] = (input[i] + input[i+1] + input[i+2]) / 3</code>. Version 1 assigns one thread per output, and every thread reads its three inputs from global memory:</p>
+  <pre class="code">#define THREADS_PER_BLK 128
+<span class="k">__global__</span> void convolve(int N, float* input, float* output) {
+  int index = blockIdx.x * blockDim.x + threadIdx.x;  // thread-local
+  float result = 0.0f;                                 // thread-local
+  for (int i = 0; i &lt; 3; i++)
+    result += input[index + i];
+  output[index] = result / 3.f;
+}
+// host: N = 1024 * 1024 outputs, input has N + 2 elements
+convolve&lt;&lt;&lt;N/THREADS_PER_BLK, THREADS_PER_BLK&gt;&gt;&gt;(N, devInput, devOutput);</pre>
+  <p>Neighbouring threads read overlapping inputs: input[5] is read by the threads computing outputs 3, 4 and 5. Version 2 has each block load its <b>support region</b> (the 130 inputs its 128 outputs need) into <b>shared memory</b> once, cooperatively, then compute from there:</p>
+  <pre class="code"><span class="k">__global__</span> void convolve(int N, float* input, float* output) {
+  <span class="k">__shared__</span> float support[THREADS_PER_BLK+2];     // one copy per block
+  int index = blockIdx.x * blockDim.x + threadIdx.x;
+  support[threadIdx.x] = input[index];                 // each thread loads one
+  if (threadIdx.x &lt; 2)                                  // two threads load the extra 2
+    support[THREADS_PER_BLK + threadIdx.x] = input[index + THREADS_PER_BLK];
+  <span class="k">__syncthreads</span>();                                    // barrier: all loads done
+  float result = 0.0f;
+  for (int i = 0; i &lt; 3; i++)
+    result += support[threadIdx.x + i];
+  output[index] = result / 3.f;
+}</pre>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 8px"><span class="readout">Version:</span><div class="seg" role="group" aria-label="Version"><button data-cv="1" aria-pressed="true">1: every thread reads global memory</button><button data-cv="2">2: stage in shared memory</button></div></div>
+    <div class="sc" style="padding:0"><svg id="cvSvg" viewBox="0 0 760 250" role="img" aria-label="One block's inputs and outputs, showing which global loads each version performs" style="min-width:560px"></svg></div>
+    <div class="stat" id="cvStat"></div>
+    <p class="msg" id="cvMsg"></p>
+  </div><figcaption><b>One block of 128 threads.</b> Version 1 issues 3 × 128 = <b>384</b> global load instructions per block, most of them for inputs a neighbouring thread also loads. Version 2 issues <b>130</b>: one per support element, then all reads come from fast on-chip shared memory. The drawing shows the first 16 threads of the block for legibility; the counts are for all 128.</figcaption></figure>
+  <p>The <code>__syncthreads()</code> call is essential. Without it, a thread could read <code>support[threadIdx.x + 2]</code> before the thread responsible for that element had written it. It's a <b>barrier</b>: no thread in the block continues until all have reached it. Unit 5, Lesson 23 of these notes explores the same pattern for matrix multiplication, including why tiled code sometimes needs a second barrier.</p>
+
+  <h3>CUDA's synchronization constructs</h3>
+  <ul>
+    <li><b><code>__syncthreads()</code></b>: a barrier across all threads <i>in one block</i>.</li>
+    <li><b>Atomic operations</b>, such as <code>float atomicAdd(float* addr, float amount)</code>, on both global and shared memory addresses.</li>
+    <li><b>Host/device synchronization</b>: an implicit barrier across all threads when a kernel returns.</li>
+  </ul>
+  <div class="tbl"><table>
+    <tr><th>CUDA abstraction</th><th>What it provides</th></tr>
+    <tr><td>Execution</td><td>Bulk launch of many threads, in a two-level hierarchy: threads grouped into thread blocks</td></tr>
+    <tr><td>Address spaces</td><td>Distributed: host and device, with built-in memcpy between them. Three kinds on the device: per-thread, per-block (shared) and per-program (global)</td></tr>
+    <tr><td>Synchronization</td><td>Barriers within a block; atomics on shared and global variables</td></tr>
+  </table></div>
+</section>
+
+<!-- ================================ PART 3 ================================ -->
+<div class="partbar" id="p3"><div class="kicker">Part 3 · Implementation</div><h2>How a GPU actually runs CUDA</h2><p>Compilation, the thread-block scheduler, the V100 SM, warps, and what the scheduling rules allow and forbid.</p></div>
+
+<section class="lesson" id="s6" data-toc="A million threads?" data-n="6" style="margin-top:36px">
+  <div class="lesson-h"><div class="kicker">Section 6</div><h2>A million threads? What the implementation must decide</h2></div>
+  <p>The convolution launch creates over <b>1 million</b> CUDA threads in over <b>8,000</b> blocks. Will running it create a million copies of local variables and a million stacks? Eight thousand copies of the shared <code>support</code> array? Compare what <code>pthread_create()</code> or <code>std::thread</code> does: allocate a stack for the thread, and a control block so the OS can schedule it. Doing that a million times would be absurd.</p>
+  <p>Two more facts shape the answer. GPUs come in different sizes, from a mid-range part with 6 cores to a high-end one with dozens, and the <b>same CUDA program should run on all of them</b> unmodified. And none of the programs so far mention a number of cores. A CUDA launch is closer in spirit to a <code>forall</code> loop in a data-parallel model than to creating threads.</p>
+  <h3>What the compiler records</h3>
+  <p>A compiled CUDA device binary contains the program's instructions <i>and</i> its <b>resource requirements</b>. For the convolution kernel: 128 threads per block, B bytes of local data per thread, and 130 floats (520 bytes) of shared memory per block.</p>
+  <figure class="fig"><div class="sc"><svg id="schedSvg" viewBox="0 0 760 250" role="img" aria-label="A kernel launch command reaches the GPU's thread block scheduler, which assigns blocks from the grid to cores, each with its own shared memory, above device global memory" style="min-width:560px"></svg></div>
+    <figcaption><b>The thread-block scheduler is special hardware.</b> The host sends one command: run this kernel, with this many blocks. The scheduler hands blocks to cores as each core has room, respecting each block's resource requirements. The <b>major CUDA assumption</b> is that thread blocks can be executed in <b>any order</b>, because there are no dependencies between blocks.</figcaption></figure>
+  <p>This is another instance of a design pattern that appears throughout the course: a fixed <b>pool of workers</b> pulling tasks from a queue. The problem is decomposed into sub-problems (blocks), and the workers (cores) take them one at a time. ISPC's task launch works the same way (one pthread per hardware thread, kept alive for the program), and so does a web server's thread pool (the number of threads depends on the number of cores, not the number of pending requests).</p>
+</section>
+
+<section class="lesson" id="s7" data-toc="Inside a V100 SM" data-n="7">
+  <div class="lesson-h"><div class="kicker">Section 7</div><h2>Inside the NVIDIA V100: sub-cores, warps and SIMT</h2></div>
+  <p>A V100 core is called a <b>streaming multiprocessor</b> (SM), and each SM is split into four <b>sub-cores</b>. One sub-core holds:</p>
+  <figure class="fig"><div class="sc"><svg id="subSvg" viewBox="0 0 760 330" role="img" aria-label="A V100 SM sub-core: a warp selector with fetch/decode, 16 fp32 units, 16 int units, 8 fp64 units, tensor cores and load/store units, and a register file holding registers for many warps of 32 threads" style="min-width:560px"></svg></div>
+    <figcaption><b>One sub-core of a V100 SM</b> (after the lecture's diagram). 16 fp32 units and 16 int units, each group sharing control so it performs 16 multiply-adds per clock; 8 fp64 units; tensor cores; and load/store units. The register file holds 64 KB: scalar registers R0, R1, … for every thread, organized in groups of 32. A 32-wide operation runs on the 16 fp32 units in 2 clocks, and on the 8 fp64 units in 4 clocks.</figcaption></figure>
+  <h3>Warps</h3>
+  <p>A group of <b>32 threads</b> in a thread block is called a <b>warp</b>. Threads 0–31 of a block form one warp, 32–63 the next, and so on, so a 256-thread block becomes 8 warps. Each sub-core can hold up to 16 warps and interleave their execution, just like the hardware multithreading of Lecture 2.</p>
+  <p>Threads in a warp execute in <b>SIMD</b> fashion whenever they share the same next instruction. NVIDIA calls this <b>SIMT</b> (single instruction, multiple threads). If the 32 threads don't share an instruction (they took different branches), the warp executes the paths in turn with some threads masked off, and performance suffers: the <b>divergence</b> of Lecture 2.</p>
+  <div class="pitfall"><b>A warp is like an ISPC gang, with one important difference.</b> An ISPC gang is compiled into SIMD instructions ahead of time. CUDA code is compiled as <i>scalar</i> code for one thread; the GPU hardware <i>dynamically</i> checks whether the 32 threads of a warp share an instruction, and if so executes them together. Also, the warp isn't part of the CUDA programming model at all. It's an implementation detail of NVIDIA GPUs, though one that decides performance.</div>
+  <figure class="fig"><div class="sc"><svg id="warpSvg" viewBox="0 0 760 176" role="img" aria-label="Timeline: a sub-core fetches one warp instruction per clock; each fp32 or int32 instruction occupies its 16-wide unit for two clocks" style="min-width:560px"></svg></div>
+    <figcaption><b>One warp instruction per clock, each lasting two.</b> The warp's instruction stream is fp32 mul, int32 add, fp32 mul, all independent. Each instruction is run by all 32 threads, so on a 16-wide unit it takes 2 clocks. Because consecutive instructions use different units, the sub-core can still start one per clock: the int unit works while the fp32 unit finishes.</figcaption></figure>
+  <h3>The whole SM and the whole chip</h3>
+  <figure class="fig"><div class="sc"><svg id="smSvg" viewBox="0 0 760 280" role="img" aria-label="A V100 SM: four sub-cores, each with a warp selector and 16 warps' registers, sharing 128 KB of shared memory and L1 cache" style="min-width:560px"></svg></div>
+    <figcaption><b>One V100 SM.</b> Four sub-cores, each with its own warp selector and 64 KB of registers (256 KB per SM), holding up to 64 warps in total. Warp <i>w</i> lives in sub-core <i>w</i> mod 4. The four share 128 KB of storage used as shared memory and L1 cache. Each clock, each sub-core selects one runnable warp from its 16 and runs its next instruction, for all 32 threads or for the non-masked subset.</figcaption></figure>
+  <div class="tbl"><table>
+    <tr><th>V100 quantity</th><th>Value</th><th>Where it comes from</th></tr>
+    <tr><td>Clock</td><td class="m">1.245 GHz</td><td>As given in the lecture</td></tr>
+    <tr><td>SMs</td><td class="m">80</td><td>Cores per chip</td></tr>
+    <tr><td>fp32 mul-add ALUs</td><td class="m">5,120</td><td>80 SMs × 4 sub-cores × 16</td></tr>
+    <tr><td>Peak fp32</td><td class="m">≈ 12.7 TFLOP/s</td><td>5,120 × 2 FLOPs (a mul-add counts as 2) × 1.245 GHz</td></tr>
+    <tr><td>Interleaved warps</td><td class="m">5,120</td><td>80 SMs × 64 warps</td></tr>
+    <tr><td>Resident CUDA threads</td><td class="m">163,840</td><td>5,120 warps × 32 threads</td></tr>
+    <tr><td>Memory</td><td class="m">16 GB HBM at 900 GB/s; 6 MB L2</td><td>As given in the lecture</td></tr>
+  </table></div>
+  <p>Note the last two rows together: 163,840 threads can be resident at once, but a million-thread launch is fine, because blocks that don't fit simply wait for the scheduler.</p>
+</section>
+
+<section class="lesson" id="s8" data-toc="Running a kernel: the scheduler" data-n="8">
+  <div class="lesson-h"><div class="kicker">Section 8</div><h2>Running a kernel: the block scheduler, step by step</h2></div>
+  <p>The lecture traces the convolution kernel on a deliberately small, fictitious GPU with <b>two cores</b>. Each core can hold execution contexts for <b>384 threads</b> (12 warps) and has <b>1.5 KB</b> (1,536 bytes) of shared memory. Each block needs 128 threads' contexts and 520 bytes of shared memory, and N is large enough that the host launches thousands of blocks.</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 8px"><span class="readout">Kernel:</span><div class="seg" role="group" aria-label="Kernel version"><button data-kv="v2" aria-pressed="true">v2: 128 threads, 520 B shared</button><button data-kv="v1">v1: 128 threads, no shared memory</button><button data-kv="b256">256 threads, 1,032 B shared</button></div></div>
+    <div class="sc" style="padding:0"><svg id="gsSvg" viewBox="0 0 760 320" role="img" aria-label="The GPU work scheduler with its NEXT counter, and two cores showing which blocks occupy their execution contexts and shared memory" style="min-width:560px"></svg></div>
+    <div class="strip" id="gsStrip"></div>
+    <p class="msg" id="gsMsg"></p>
+    <div class="ctrl"><button id="gsBack">◀ Back</button><button id="gsNext" class="pri">Next event ▶</button><button id="gsReset">Reset</button><span class="readout" id="gsOut"></span></div>
+  </div><figcaption><b>Resources decide how many blocks share a core.</b> The scheduler hands out blocks in order (NEXT counts up), placing each on a core with enough free execution contexts <i>and</i> shared memory, alternating between cores (the interleaved mapping the lecture shows). With the v2 kernel, only <b>two</b> blocks fit per core: three would need 3 × 520 = 1,560 bytes of shared memory, more than 1,536. When a block finishes, its contexts and shared memory are freed, and the next block takes them. Block completion order here follows the lecture's example.</figcaption></figure>
+  <p>Notice that the program never mentioned cores. The same launch on a GPU with 80 larger cores would simply spread the blocks more widely. That's the payoff of the "blocks may run in any order" assumption: the <b>hardware</b> does the dynamic load balancing.</p>
+</section>
+
+<section class="lesson" id="s9" data-toc="Scheduling rules & deadlock" data-n="9">
+  <div class="lesson-h"><div class="kicker">Section 9</div><h2>What the scheduling rules allow, and what they forbid</h2></div>
+  <h3>Why must a whole block be resident at once?</h3>
+  <p>Imagine a block of 256 threads on a core with room for only 128 threads' worth of contexts. Why not run threads 0–127 to completion, then 128–255? Because <b>threads in a block may depend on each other</b>. The simplest example is <code>__syncthreads()</code>: threads 0–127 would wait at the barrier forever for threads 128–255, which can't start until the first group finishes. So CUDA's semantics are that <b>threads in a block run concurrently</b>: when a block starts, all its threads exist and have register state allocated, and any runnable thread will eventually run. That imposes a scheduling constraint on the implementation.</p>
+  <h3>Blocks: any order, but not necessarily independent</h3>
+  <p>CUDA never promised that blocks are <i>independent</i>, only that the system may <b>schedule them in any order</b>. A histogram kernel where every thread does <code>atomicAdd(&amp;counts[A[i]], 1)</code> on shared counters in global memory is perfectly valid: the atomics provide mutual exclusion, and the result is the same in any order. But what about this?</p>
+  <div class="grid2">
+    <pre class="code" style="margin:0">// thread block 0
+// do stuff here
+atomicAdd(&amp;myFlag, 1);</pre>
+    <pre class="code" style="margin:0">// thread block 1
+while (atomicAdd(&amp;myFlag, 0) == 0)
+  { }            // wait for block 0
+// do stuff here</pre>
+  </div>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 8px"><span class="readout">GPU has room for:</span><div class="seg" role="group" aria-label="Room"><button data-dr="1" aria-pressed="true">1 block at a time</button><button data-dr="2">2 blocks at a time</button></div>
+      <span class="readout" style="margin-left:8px">Scheduler starts:</span><div class="seg" role="group" aria-label="Order"><button data-do="0" aria-pressed="true">block 0 first</button><button data-do="1">block 1 first</button></div></div>
+    <div class="sc" style="padding:0"><svg id="dlSvg" viewBox="0 0 760 170" role="img" aria-label="Timeline of the two blocks under the chosen resources and order, ending in completion or deadlock" style="min-width:560px"></svg></div>
+    <p class="msg" id="dlMsg"></p>
+  </div><figcaption><b>Correct only under some schedules.</b> Block 1 waits for a flag that block 0 sets. If both can be resident, or block 0 happens to run first, the program finishes. If only one block fits and the scheduler starts block 1, block 1 spins forever while block 0 waits for a slot that never frees: <b>deadlock</b>. Since CUDA reserves the right to use any order, this program is incorrect.</figcaption></figure>
+  <h3>Persistent threads: taking scheduling into your own hands</h3>
+  <p>An advanced style, "persistent threads", launches <i>exactly</i> as many blocks as the GPU can run at once (for the V100 and 128-thread blocks, 80 SMs × (32 × 64 ÷ 128) = 1,280), and has each block loop, grabbing chunks of work from a global counter with <code>atomicInc</code> until the work runs out. This circumvents the hardware block scheduler, and lets the programmer think of <i>all</i> CUDA threads as running at once. The catch: it assumes things about the implementation that CUDA never promised (that every launched block really runs concurrently), and the code is tied to a particular GPU's size.</p>
+</section>
+
+<section class="lesson" id="s10" data-toc="Summary" data-n="10">
+  <div class="lesson-h"><div class="kicker">Section 10</div><h2>Summary: CUDA's semantics and its implementation</h2></div>
+  <div class="tbl"><table>
+    <tr><th></th><th>What CUDA promises</th><th>How NVIDIA GPUs implement it</th><th>ISPC analogy</th></tr>
+    <tr><td>Thread blocks</td><td>May be scheduled in any order; logically concurrent. Partitioning into blocks is machine-independent.</td><td>A hardware scheduler assigns blocks to SMs dynamically, as resources free up</td><td>Like ISPC tasks</td></tr>
+    <tr><td>Threads in a block</td><td>Run concurrently (they must, since they cooperate); SPMD with a shared address space</td><td>All warps of a block go on the same SM, so they communicate through fast shared memory</td><td>Like an ISPC gang's instances</td></tr>
+    <tr><td>Warp</td><td>Not in the programming model (apart from a few intra-warp operations such as vote and shuffle)</td><td>32 threads executed SIMT; divergence costs performance</td><td>Performs like a gang, but is formed by hardware, not the compiler</td></tr>
+    <tr><td>Memory</td><td>Distinct host and device spaces; per-thread, per-block and global spaces on the device</td><td>Registers, on-chip shared memory, and HBM behind an L2 cache</td><td>ISPC has one shared address space</td></tr>
+  </table></div>
+  <p>So, is CUDA data-parallel, shared-address-space, or message passing? A little of each: the <b>grid of blocks</b> is in the spirit of the data-parallel model; <b>inside a block</b> it's SPMD with a shared address space; and <b>host–device</b> transfers look like message passing. Whenever you meet a parallel programming system, ask which semantics apply where.</p>
+  <p>Two last points. This lecture covered CUDA on the GPU's programmable cores, where a kernel launch is mapped onto cores by the hardware work scheduler. The GPU also still has its graphics pipeline interface, and much of its non-programmable hardware exists to accelerate that pipeline; it's more or less turned off when CUDA runs. And the SM's <b>tensor cores</b>, which supply hundreds of TFLOP/s for deep learning, come later in the course (Unit 6 of these notes introduces matrix units).</p>
+</section>
+
+<section class="lesson" id="gloss" data-toc="Glossary & review" data-n="✓">
+  <div class="lesson-h"><div class="kicker">Review</div><h2>Terms to know, and questions to test yourself</h2></div>
+  <dl class="glossary">
+    <dt>Shader</dt><dd>A pure function run once per vertex or pixel in the graphics pipeline.</dd>
+    <dt>GPGPU</dt><dd>General-purpose computation on GPUs, originally by disguising it as rendering.</dd>
+    <dt>Compute mode</dt><dd>The non-graphics interface: allocate and copy buffers, then launch N instances of a kernel.</dd>
+    <dt>Kernel</dt><dd>A <code>__global__</code> function the host launches over a grid of threads.</dd>
+    <dt>Grid, block, thread</dt><dd>The launch's hierarchy: a grid of thread blocks, each containing threads, with 1–3D IDs.</dd>
+    <dt>Host, device</dt><dd>The CPU and its memory; the GPU and its memory, in a separate address space.</dd>
+    <dt>Shared memory</dt><dd>Fast on-chip memory shared by the threads of one block.</dd>
+    <dt>__syncthreads()</dt><dd>A barrier across all threads of a block.</dd>
+    <dt>SM, sub-core</dt><dd>A V100 core, split into four sub-cores that each issue one warp instruction per clock.</dd>
+    <dt>Warp, SIMT</dt><dd>32 threads the hardware executes together in SIMD fashion when they share an instruction.</dd>
+    <dt>Block scheduler</dt><dd>GPU hardware that assigns thread blocks to SMs as resources allow.</dd>
+    <dt>Persistent threads</dt><dd>Launching just enough blocks to fill the GPU and distributing work in software.</dd>
+  </dl>
+  <div class="predict"><div class="ph"><b>Test yourself</b><span>The lecture's questions, plus a few more.</span></div><ol>
+    <li>matrixAdd launches <code>&lt;&lt;&lt;(3,2), (4,3)&gt;&gt;&gt;</code>. How many threads, and which (i, j) does thread (1, 2) of block (2, 1) compute?
+      <details><summary>Show answer</summary><div class="ans"><p>6 blocks × 12 threads = <b>72</b>. i = 2 × 4 + 1 = <b>9</b>, j = 1 × 3 + 2 = <b>5</b>: element C[5][9].</p></div></details></li>
+    <li>In convolution version 2, how many global loads does one block issue, versus version 1?
+      <details><summary>Show answer</summary><div class="ans"><p><b>130</b> (128 + 2 support elements) versus 3 × 128 = <b>384</b>. The other reads hit shared memory.</p></div></details></li>
+    <li>Why does the v2 kernel fit only two blocks per core on the fictitious GPU, even though the core has contexts for three?
+      <details><summary>Show answer</summary><div class="ans"><p>Shared memory: 3 × 520 = 1,560 bytes &gt; 1,536 (1.5 KB). The threads would fit (3 × 128 = 384), but a block can't start without its shared allocation.</p></div></details></li>
+    <li>How long does one warp's fp64 instruction occupy the fp64 units of a V100 sub-core?
+      <details><summary>Show answer</summary><div class="ans"><p>32 threads on 8 fp64 units: <b>4 clocks</b>. (fp32: 32 on 16 units, 2 clocks.)</p></div></details></li>
+    <li>Why can't a GPU run a 256-thread block as two halves, one after the other?
+      <details><summary>Show answer</summary><div class="ans"><p>Threads in a block may synchronize with each other, for example with <code>__syncthreads()</code>. The first half would wait at the barrier for the second half, which could never start: deadlock. So CUDA guarantees all threads of a block are resident together.</p></div></details></li>
+    <li>Is the histogram-with-atomics kernel correct? Is the flag-spinning kernel?
+      <details><summary>Show answer</summary><div class="ans"><p>The histogram is <b>correct</b>: atomics give mutual exclusion and the result doesn't depend on block order. The flag program is <b>incorrect</b>: it works only if block 0 runs before, or at the same time as, block 1, and CUDA allows any order.</p></div></details></li>
+  </ol></div>
+  <p class="credit">Based on Stanford CS149 (Fall 2023), Lecture 7, "GPU Architecture & CUDA Programming", by Kayvon Fatahalian and Kunle Olukotun. The explanations, diagrams and interactive models on this page are original study material; the V100 figures and CUDA examples are as presented in the lecture. For CUDA's exact semantics see NVIDIA's <a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/">CUDA C++ Programming Guide</a>. For the course's own slides and videos, see the <a href="https://gfxcourses.stanford.edu/cs149/fall23">CS149 course site</a>.</p>
+  <div class="nextunit"><a href="lecture-03-bandwidth-spmd.html"><small>← Previous companion</small>Lecture 3 · Latency, bandwidth &amp; SPMD</a><a href="lecture-10-dnn-eval.html"><small>Next companion</small>Lecture 10 · Evaluating DNNs →</a></div>
+</section>
+
+</main>
+</div>
+<script>
+(function(){
+const {$,$$,RM}=NOTES;
+document.querySelector('svg defs').insertAdjacentHTML('beforeend','<pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--panel2)"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--mute);stroke-width:1.2;opacity:.45"/></pattern>');
+const B=(x,y,w,h,c,t1,t2,o={})=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="${c}" ${o.rx?`rx="${o.rx}"`:''}/>`+(t1?`<text x="${x+w/2}" y="${y+h/2+(t2?-3:4)}" class="mid ${o.big?'hd':'bd'}" style="${o.fs?`font-size:${o.fs}px`:''}">${t1}</text>`:'')+(t2?`<text x="${x+w/2}" y="${y+h/2+12}" class="mid xs">${t2}</text>`:'');
+const A=(d,c='w',m='ah')=>`<path d="${d}" class="${c}" marker-end="url(#${m})"/>`;
+const set=(id,h)=>{const e=document.getElementById(id);if(e)e.innerHTML=h;};
+
+/* ---- slide-style primitives ---- */
+const tS=(x,y,t,fs=11,w=600,anch='mid',cls='sd')=>`<text x="${x}" y="${y}" class="${anch} ${cls}" style="font-size:${fs}px;font-weight:${w}">${t}</text>`;
+const tT=(x,y,t,fs=11,w=600,anch='mid')=>`<text x="${x}" y="${y}" class="${anch}" style="font-size:${fs}px;font-weight:${w}">${t}</text>`;
+const slFD=(x,y,w=64,h=40,fs=11)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-fd"/>`+(h>=26?tS(x+w/2,y+h/2-2,'Fetch/',fs)+tS(x+w/2,y+h/2+fs,'Decode',fs):tS(x+w/2,y+h/2+3.5,'Fetch/Decode',Math.min(fs,9)));
+const slALU=(x,y,w,h,l1='ALU',l2,fs=11)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-alu"/>`+(l1?tS(x+w/2,y+h/2+(l2?-2:fs/3),l1,fs):'')+(l2?tS(x+w/2,y+h/2+11,l2,Math.min(9,fs)):'');
+const slVec=(x,y,cw=30,ch=20,num=false,fs)=>{let v='';for(let k=0;k<8;k++){const ax=x+(k%4)*cw,ay=y+Math.floor(k/4)*ch;v+=`<rect x="${ax}" y="${ay}" width="${cw}" height="${ch}" class="sl-alu"/>`;if(ch>=12)v+=tS(ax+cw/2,ay+ch/2+3.5,num?`ALU ${k}`:'ALU',fs||(num?10:8.5));}return v;};
+const slCtx=(x,y,w,h,title,regs,fs=10.5)=>{let s=`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-ctx"/>`+(title?tS(x+w/2,y+Math.min(14,h/2+4),title,fs):'');
+  if(regs&&regs.length){const rw=(w-12)/2,n=Math.ceil(regs.length/2),top=y+(title?33:8),rh=Math.min(10,(y+h-4-top)/n);s+=`<rect x="${x+w/2-18}" y="${top-12}" width="36" height="9" class="sl-reg"/>`+tS(x+w/2,top-4.5,'PC',7);
+    regs.forEach((r,i)=>{const c=i<n?0:1,row=i%n,rx=x+6+c*rw,ry=top+row*rh;s+=`<rect x="${rx}" y="${ry}" width="${rw}" height="${rh}" class="sl-reg"/>`+(rh>=7?tS(rx+rw/2,ry+rh-2,r,Math.min(7.5,rh-1.5)):'');});}
+  return s;};
+const slCache=(x,y,w,h,t1,t2,fs=11)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-cache"/>`+tS(x+w/2,y+h/2+(t2?-2:4),t1,fs)+(t2?tS(x+w/2,y+h/2+11,t2,Math.min(10,fs),500):'');
+const slMem=(x,y,w,h,t='Memory',t2)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-mem"/>`+tT(x+w/2,y+h/2+(t2?-3:5),t,13)+(t2?`<text x="${x+w/2}" y="${y+h/2+12}" class="mid sm">${t2}</text>`:'');
+const slCore=(x,y,w,h,label,fs=12)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-core"/>`+(label?tT(x+8,y+15,label,fs,700,'start'):'');
+const slBar=(x,y,w,h,t='instruction selection',fs=9.5)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-fd"/>`+tS(x+w/2,y+h/2+3.5,t,fs);
+const slPale=(x,y,w,h,t,fs=10.5)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="sl-pale"/>`+tS(x+w/2,y+h/2+4,t,fs);
+const slStream=(x,y,w,lines,cur,title)=>{let s=title?tT(x+w/2,y-8,title,13,700):'';lines.forEach((l,i)=>{s+=`<rect x="${x}" y="${y+i*22}" width="${w}" height="20" class="${i===cur?'sl-row-on':'sl-row'}"/><text x="${x+8}" y="${y+i*22+14}" class="${i===cur?'sw':'sd'}" style="font-size:11px">${l}</text>`;});
+  if(cur>=0)s+=`<polygon points="${x-24},${y+cur*22} ${x-4},${y+cur*22+10} ${x-24},${y+cur*22+20}" style="fill:#d9763a"/>`;return s;};
+const setVB=(id,w,h,html)=>{const e=document.getElementById(id);if(!e)return;e.setAttribute('viewBox',`0 0 ${w} ${h}`);e.innerHTML=html;};
+/* a small generic core: F/D, execution (scalar ALU or 8-wide grid), contexts */
+const fitL=(lab,wd,maxfs,alt)=>{let fs=Math.min(maxfs,wd/(lab.length*0.64));if(fs<7&&alt){lab=alt;fs=Math.min(maxfs,wd/(lab.length*0.64));}return fs<5.5?null:[lab,fs];};
+function miniCore(x,y,w,h,o={}){const p=Math.max(3,w*0.05);let s=slCore(x,y,w,h,o.label,o.lfs||10);const top=y+(o.label?20:p);
+  const fdH=h*0.2,exH=h*0.3,cxH=h-(top-y)-fdH-exH-p*3;
+  s+=`<rect x="${x+p}" y="${top}" width="${w-2*p}" height="${fdH}" class="sl-fd"/>`+((f=>f&&fdH>=11?tS(x+w/2,top+fdH/2+f[1]*0.35,f[0],f[1]):'')(fitL('Fetch/Decode',w-2*p-4,Math.min(10,fdH*0.6),'F/D')));
+  const ey=top+fdH+p;
+  if(o.simd){const cw=(w-2*p)/4,ch=exH/2;s+=slVec(x+p,ey,cw,ch,false,Math.min(8.5,ch*0.55));}
+  else s+=`<rect x="${x+p}" y="${ey}" width="${w-2*p}" height="${exH}" class="sl-alu"/>`+((f=>f&&exH>=11?tS(x+w/2,ey+exH/2+f[1]*0.35,f[0],f[1]):'')(fitL(o.alu||'ALU',w-2*p-4,Math.min(11,exH*0.5))));
+  const cy=ey+exH+p,nc=o.ctx||1,cw2=(w-2*p-(nc-1)*2)/nc;
+  for(let i=0;i<nc;i++)s+=`<rect x="${x+p+i*(cw2+2)}" y="${cy}" width="${cw2}" height="${cxH}" class="sl-ctx"/>`+((f=>nc===1&&f&&cxH>=11?tS(x+w/2,cy+cxH/2+f[1]*0.35,f[0],f[1]):'')(fitL(o.ctxLabel||'Execution Context',w-2*p-4,Math.min(10,cxH*0.45),'Exec. ctx')));
+  return s;}
+/* ---- slide-style chip drawing (CS149 lecture 2 conventions) ---- */
+const SD={A:{W:1,alu:'S',reg:'R'},B:{W:2,alu:'SS',reg:'R'},C:{W:1,alu:'V',reg:'V'},D:{W:2,alu:'SV',reg:'RV'}};
+function slideCore(x,y,d,T,label,ctx0){const D=SD[d],cw=96,g=8,ctot=T*cw+(T-1)*g,w=Math.max(ctot+24,280),cx=x+w/2;let s='',cy=y+10;
+  const tx=(X,Y,t,cls,fs)=>`<text x="${X}" y="${Y}" class="mid ${cls||'sd'}" style="font-size:${fs||11}px;font-weight:600">${t}</text>`;
+  if(label)s+=`<text x="${x+10}" y="${y+22}" class="bd" style="font-size:14px">${label}</text>`;
+  s+=`<rect x="${cx-70}" y="${cy}" width="140" height="38" class="sl-cache"/>`+tx(cx,cy+16,'Data')+tx(cx,cy+30,'Cache');cy+=46;
+  if(D.W>1){s+=`<rect x="${cx-70}" y="${cy}" width="140" height="16" class="sl-fd"/>`+tx(cx,cy+12,'instruction selection','sd',9.5);cy+=22;}
+  const fw=64,ft=D.W*fw+(D.W-1)*8;for(let i=0;i<D.W;i++){const fx=cx-ft/2+i*(fw+8);s+=`<rect x="${fx}" y="${cy}" width="${fw}" height="40" class="sl-fd"/>`+tx(fx+fw/2,cy+17,'Fetch/')+tx(fx+fw/2,cy+31,'Decode');}cy+=50;
+  const vec=(vx,vy)=>{let v='';for(let k=0;k<8;k++){const ax=vx+(k%4)*30,ay=vy+Math.floor(k/4)*20;v+=`<rect x="${ax}" y="${ay}" width="30" height="20" class="sl-alu"/>`+tx(ax+15,ay+14,'ALU','sd',8.5);}return v;};
+  if(D.alu==='S'){s+=`<rect x="${cx-50}" y="${cy}" width="100" height="42" class="sl-alu"/>`+tx(cx,cy+18,'ALU')+tx(cx,cy+32,'(Execution unit)','sd',9);cy+=50;}
+  else if(D.alu==='SS'){[-1,1].forEach(k=>{const ax=cx+(k<0?-68:4);s+=`<rect x="${ax}" y="${cy}" width="64" height="42" class="sl-alu"/>`+tx(ax+32,cy+26,'ALU');});cy+=50;}
+  else if(D.alu==='V'){s+=vec(cx-60,cy)+tx(cx,cy+52,'(8-wide vector ALU)','',9);cy+=60;}
+  else{s+=`<rect x="${cx-100}" y="${cy}" width="50" height="40" class="sl-alu"/>`+tx(cx-75,cy+25,'ALU')+tx(cx-75,cy+52,'(scalar ALU)','',9)+vec(cx-36,cy)+tx(cx+24,cy+52,'(8-wide vector ALU)','',9);cy+=60;}
+  for(let t=0;t<T;t++){const bx=cx-ctot/2+t*(cw+g);s+=`<rect x="${bx}" y="${cy}" width="${cw}" height="84" class="sl-ctx"/>`+tx(bx+cw/2,cy+13,'Execution','sd',10)+tx(bx+cw/2,cy+25,`Context ${(ctx0||0)+t}`,'sd',10)+
+      `<rect x="${bx+cw/2-18}" y="${cy+30}" width="36" height="9" class="sl-reg"/>`+tx(bx+cw/2,cy+37.5,'PC','sd',7);
+    for(let r=0;r<8;r++){const col=r<4?0:1,row=r%4,rx=bx+6+col*((cw-12)/2),ry=cy+43+row*9.5,nm=D.reg==='RV'?(col?'V':'R')+(row+ (col?0:0)):D.reg+r;
+      s+=`<rect x="${rx}" y="${ry}" width="${(cw-12)/2}" height="9.5" class="sl-reg"/>`+tx(rx+(cw-12)/4,ry+7.5,D.reg==='RV'?(col?'V'+row:'R'+row):D.reg+r,'sd',6.5);}}
+  cy+=92;return {svg:`<rect x="${x}" y="${y}" width="${w}" height="${cy-y}" class="sl-core"/>`+s,w,h:cy-y};}
+function slideChip(d,T,C){const probe=slideCore(0,0,d,T,'',0),cw=probe.w,ch=probe.h;let s='',W,H;const mw=200,mh=36;
+  const tx=(X,Y,t,fs,cls)=>`<text x="${X}" y="${Y}" class="mid ${cls||''}" style="font-size:${fs||13}px;font-weight:600">${t}</text>`;
+  if(C===1){W=cw+20;const mx=W/2;s+=`<rect x="${mx-mw/2}" y="6" width="${mw}" height="${mh}" class="sl-mem"/>`+tx(mx,29,'Memory')+`<path d="M${mx} ${6+mh+2} V${6+mh+18}" class="w" marker-start="url(#ah)" marker-end="url(#ah)"/>`;
+    s+=slideCore(10,6+mh+22,d,T,'',0).svg;H=6+mh+22+ch+8;}
+  else if(C===2){W=2*cw+34;const mx=W/2;s+=`<rect x="${mx-mw/2}" y="6" width="${mw}" height="${mh}" class="sl-mem"/>`+tx(mx,29,'Memory')+`<path d="M${mx} ${44} V${60}" class="w" marker-start="url(#ah)" marker-end="url(#ah)"/>`;
+    s+=`<rect x="${mx-cw*0.8}" y="64" width="${cw*1.6}" height="24" class="sl-cache"/>`+tx(mx,81,'Shared Data Cache',12,'sd');
+    s+=slideCore(10,96,d,T,'Core 0',0).svg+slideCore(24+cw,96,d,T,'Core 1',T).svg;H=96+ch+8;}
+  else{W=cw+44;const mx=(cw+20)/2;s+=`<rect x="${mx-mw/2}" y="6" width="${mw}" height="${mh}" class="sl-mem"/>`+tx(mx,29,'Memory')+`<path d="M${mx} 44 V60" class="w" marker-start="url(#ah)" marker-end="url(#ah)"/>`;
+    s+=`<rect x="10" y="64" width="${cw+24}" height="24" class="sl-cache"/>`+tx(10+(cw+24)/2,81,'Shared Data Cache',12,'sd');
+    for(let k=2;k>=1;k--)s+=`<rect x="${10+k*12}" y="${96+k*8}" width="${cw}" height="${ch}" class="sl-core" style="opacity:.8"/>`;
+    s+=slideCore(10,96,d,T,`Core 0 of ${C}`,0).svg;H=96+ch+30;s+=`<text x="${10+cw/2}" y="${H-6}" class="mid sm">+ ${C-1} more identical cores (${C*T} contexts in total)</text>`;}
+  return {svg:s,W,H};}
+
+
+const hatchR=(x,y,w,h)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" style="fill:url(#hatch);stroke:var(--mute);stroke-width:.5"/>`;
+
+/* 1 GPU overview */
+(function(){let s=slCore(20,14,500,212,'GPU');
+  for(let c=0;c<8;c++){const x=34+(c%4)*120,y=40+Math.floor(c/4)*92;s+=miniCore(x,y,110,84,{simd:true,ctx:4,label:''});}
+  s+=`<path d="M522 120 H578" class="wc" style="stroke-width:4" marker-start="url(#ahc)" marker-end="url(#ahc)"/><text x="550" y="108" class="mid bd xs">~1 TB/s</text>`;
+  s+=slMem(582,70,160,100,'Memory','GDDR6 DRAM, 10s of GB');
+  s+=`<text x="270" y="238" class="mid xs">many cores × SIMD execution × many hardware threads per core</text>`;
+  set('gpuSvg',s);})();
+
+/* 2 GPGPU hack */
+(function(){let s=`<rect x="40" y="20" width="180" height="180" class="bg2"/><path d="M40 20 L220 20 L220 200 Z" class="te" style="opacity:.6"/><path d="M40 20 L40 200 L220 200 Z" class="pl" style="opacity:.6"/>`;
+  s+=`<text x="40" y="14" class="xs">v0 = (0, 0)</text><text x="220" y="14" class="end xs">v1 = (512, 0)</text><text x="220" y="214" class="end xs">v2 = (512, 512)</text><text x="40" y="214" class="xs">v3 = (0, 512)</text>`;
+  s+=A('M232 110 H300','wc','ahc')+`<text x="266" y="100" class="mid xs">rasterize</text>`;
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++)s+=`<rect x="${310+c*22}" y="${22+r*22}" width="20" height="20" class="cu" style="opacity:${0.35+((r*8+c)%5)*0.12}"/>`;
+  s+=`<text x="398" y="214" class="mid xs">one shader run per pixel</text>`;
+  s+=A('M500 110 H560','wc','ahc')+`<text x="650" y="96" class="mid bd">result array</text><text x="650" y="114" class="mid xs">512 × 512 outputs of</text><text x="650" y="130" class="mid xs">f(input[i][j])</text>`;
+  set('hackSvg',s);})();
+
+/* 2 graphics pipeline vs compute mode */
+(function(){let s=`<text x="190" y="18" class="mid bd">Before 2007: graphics pipeline</text>`;
+  const st=['Vertex generation','Vertex processing','Primitive generation','Fragment generation (rasterization)','Fragment processing','Pixel operations'];
+  s+=`<text x="190" y="38" class="mid xs">drawPrimitives(vertex_buffer)</text>`;
+  st.forEach((t,i)=>{const y=46+i*32,prog=i===1||i===4;s+=`<rect x="70" y="${y}" width="240" height="24" class="${prog?'cu':'bx'}"/><text x="190" y="${y+16}" class="mid xs">${t}${prog?' (programmable)':''}</text>`;if(i<5)s+=`<path d="M190 ${y+24} V${y+32}" class="w"/>`;});
+  s+=`<text x="190" y="252" class="mid xs">input vertex buffer → output image</text>`;
+  s+=`<line x1="380" y1="14" x2="380" y2="250" class="w dash"/>`;
+  s+=`<text x="570" y="18" class="mid bd">2007 (NVIDIA Tesla): compute mode</text>`;
+  [['cudaMalloc: allocate GPU buffers','bx'],['cudaMemcpy: copy data in','bx'],['launch(myKernel, N): run N instances','cu'],['cudaMemcpy: copy results out','bx']].forEach(([t,c],i)=>{const y=46+i*50;s+=`<rect x="420" y="${y}" width="300" height="32" class="${c}"/><text x="570" y="${y+20}" class="mid xs">${t}</text>`;if(i<3)s+=A(`M570 ${y+32} V${y+48}`);});
+  s+=`<text x="570" y="252" class="mid xs">no triangles, no pixels: just a kernel and data</text>`;
+  set('modeSvg',s);})();
+
+/* 3 matrixAdd grid */
+(function(){let Nx=12,Ny=6,sel=null;const TB=[4,3],NB=[3,2];
+  function draw(){const x0=160,y0=30,cw=44,ch=34;let s='';
+    s+=`<text x="${x0+12*cw}" y="18" class="end xs">i (x) →</text><text x="${x0-10}" y="${y0+10}" class="end xs">j ↓</text>`;
+    for(let by=0;by<NB[1];by++)for(let bx=0;bx<NB[0];bx++){const X=x0+bx*TB[0]*cw,Y=y0+by*TB[1]*ch;
+      for(let ty=0;ty<TB[1];ty++)for(let tx=0;tx<TB[0];tx++){const i=bx*4+tx,j=by*3+ty,x=X+tx*cw,y=Y+ty*ch,ok=i<Nx&&j<Ny,on=sel&&sel.i===i&&sel.j===j;
+        s+=ok?`<rect x="${x+1}" y="${y+1}" width="${cw-2}" height="${ch-2}" class="${on?'cu':'sl-alu'}" data-i="${i}" data-j="${j}" style="cursor:pointer;${on?'':'opacity:.85'}"/><text x="${x+cw/2}" y="${y+ch/2+4}" class="mid sd" style="font-size:10px;pointer-events:none">(${tx},${ty})</text>`:hatchR(x+1,y+1,cw-2,ch-2).replace('/>',` data-i="${i}" data-j="${j}"/>`);}
+      s+=`<rect x="${X}" y="${Y}" width="${TB[0]*cw}" height="${TB[1]*ch}" style="fill:none;stroke:var(--ink);stroke-width:2"/><text x="${X+4}" y="${Y-3}" class="xs" style="font-weight:600">block (${bx},${by})</text>`;}
+    s+=`<text x="10" y="${y0+40}" class="xs">each cell: one</text><text x="10" y="${y0+54}" class="xs">CUDA thread,</text><text x="10" y="${y0+68}" class="xs">labelled with its</text><text x="10" y="${y0+82}" class="xs">threadIdx (x,y)</text>`;
+    s+=`<text x="${x0}" y="${y0+6*ch+22}" class="xs">matrix ${Nx} × ${Ny} · grid of ${NB[0]} × ${NB[1]} blocks of ${TB[0]} × ${TB[1]} threads = 72 threads</text>`;
+    set('mxSvg',s);
+    if(sel){const {i,j}=sel,bx=Math.floor(i/4),by=Math.floor(j/3),tx=i%4,ty=j%3,ok=i<Nx&&j<Ny;
+      $('#mxMsg').innerHTML=`blockIdx = (${bx}, ${by}), threadIdx = (${tx}, ${ty}). i = ${bx} × 4 + ${tx} = <b>${i}</b>, j = ${by} × 3 + ${ty} = <b>${j}</b>. ${ok?`This thread computes C[${j}][${i}].`:`${[i>=Nx?`i ≥ Nx (${Nx})`:'',j>=Ny?`j ≥ Ny (${Ny})`:''].filter(Boolean).join(' and ')}: without the guard it would access memory outside the arrays. The guard makes it do nothing.`}`;}
+    else $('#mxMsg').innerHTML=Nx===12?'The 12 × 6 matrix divides exactly into 6 blocks of 4 × 3 threads: every thread has an element.':'An 11 × 5 matrix needs ⌈11/4⌉ × ⌈5/3⌉ = 3 × 2 blocks, the same 72 threads, but 17 of them have no element (hatched). The kernel needs <code>if (i &lt; Nx &amp;&amp; j &lt; Ny)</code>.';
+    $$('[data-mx]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.mx===`${Nx},${Ny}`));}
+  $('#mxSvg').addEventListener('click',e=>{const r=e.target.closest('[data-i]');if(!r)return;sel={i:+r.dataset.i,j:+r.dataset.j};draw();});
+  $$('[data-mx]').forEach(b=>b.onclick=()=>{[Nx,Ny]=b.dataset.mx.split(',').map(Number);sel=null;draw();});draw();})();
+
+/* 4 memory model */
+(function(){let s=`<rect x="20" y="20" width="200" height="200" class="bg2"/><text x="120" y="42" class="mid bd">Host (CPU)</text><text x="120" y="60" class="mid xs">serial execution</text>`+slMem(40,80,160,120,'Host memory','address space');
+  s+=`<path d="M222 140 H300" class="wc" style="stroke-width:3" marker-start="url(#ahc)" marker-end="url(#ahc)"/><text x="261" y="130" class="mid bd xs">cudaMemcpy</text><text x="261" y="160" class="mid xs">(like messages)</text>`;
+  s+=`<rect x="302" y="20" width="440" height="236" class="bg2"/><text x="522" y="42" class="mid bd">CUDA device (GPU)</text>`;
+  s+=slMem(318,196,408,48,'Device global memory','readable and writable by all threads');
+  [0,1].forEach(b=>{const x=318+b*212;s+=`<rect x="${x}" y="54" width="196" height="130" class="cu" style="opacity:.35"/><text x="${x+98}" y="72" class="mid bd xs">thread block ${b}</text>`+`<rect x="${x+10}" y="80" width="176" height="30" class="pl"/><text x="${x+98}" y="99" class="mid xs">per-block shared memory</text>`;
+    for(let t=0;t<4;t++){s+=`<rect x="${x+10+t*44}" y="120" width="40" height="54" class="te"/><text x="${x+30+t*44}" y="142" class="mid xs">thread</text><text x="${x+30+t*44}" y="158" class="mid xs">private</text>`;}});
+  set('memSvg',s);})();
+
+/* 5 convolution explorer */
+(function(){let v=1;const T=16;
+  function draw(){const x0=60,cw=(740-x0)/(T+2);let s='';
+    s+=`<text x="${x0-6}" y="30" class="end xs">input</text>`;for(let i=0;i<T+2;i++)s+=`<rect x="${x0+i*cw+2}" y="16" width="${cw-4}" height="22" class="bx"/><text x="${x0+i*cw+cw/2}" y="31" class="mid xs">${i}</text>`;
+    if(v===2){s+=`<text x="${x0-6}" y="112" class="end xs">shared</text>`;for(let i=0;i<T+2;i++){s+=`<rect x="${x0+i*cw+2}" y="98" width="${cw-4}" height="22" class="pl"/><path d="M${x0+i*cw+cw/2} 38 V96" class="wt" marker-end="url(#aht)"/>`;}
+      s+=`<text x="${x0+(T+2)*cw/2}" y="86" class="mid xs tte">one global load per element (130 per real block)</text><rect x="${x0}" y="130" width="${(T+2)*cw}" height="10" class="bad" style="opacity:.5"/><text x="${x0+(T+2)*cw/2}" y="138" class="mid" style="font-size:8.5px;font-weight:700">__syncthreads()</text>`;}
+    s+=`<text x="${x0-6}" y="206" class="end xs">output</text>`;
+    for(let t=0;t<T;t++){s+=`<rect x="${x0+t*cw+2}" y="192" width="${cw-4}" height="22" class="cu"/><text x="${x0+t*cw+cw/2}" y="207" class="mid xs">${t}</text>`;
+      for(let k=0;k<3;k++){const sx=x0+(t+k)*cw+cw/2;s+=v===1?`<path d="M${sx} 40 L${x0+t*cw+cw/2} 190" class="wt" style="opacity:.45"/>`:`<path d="M${sx} 122 L${x0+t*cw+cw/2} 190" class="wc" style="opacity:.45"/>`;}}
+    s+=`<text x="${x0}" y="236" class="xs">${v===1?'teal: global-memory loads (3 per output thread)':'orange: reads from on-chip shared memory (3 per thread); teal: the only global loads'}</text>`;
+    set('cvSvg',s);
+    $('#cvStat').innerHTML=(v===1?[['global loads / block','384'],['shared-memory reads','0'],['barriers','0'],['shared memory / block','0 B']]:[['global loads / block','130'],['shared-memory reads','384'],['barriers','1'],['shared memory / block','520 B']]).map(([a,b])=>`<div>${a}<b>${b}</b></div>`).join('');
+    $('#cvMsg').innerHTML=v===1?'Every thread loads its three inputs from global memory, so most inputs are loaded three times by three different threads: <b>384</b> global loads for a 128-thread block.':'The block first loads its 130 support inputs into shared memory, one per thread plus two extra by threads 0 and 1: <b>130</b> global loads. After the barrier, each thread reads its three inputs from fast on-chip shared memory. The cost: 520 bytes of shared memory per block, and a barrier.';
+    $$('[data-cv]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.cv===v));}
+  $$('[data-cv]').forEach(b=>b.onclick=()=>{v=+b.dataset.cv;draw();});draw();})();
+
+/* 6 block scheduler figure */
+(function(){let s=`<rect x="20" y="16" width="220" height="60" class="bg2"/><text x="130" y="36" class="mid bd xs">grid of 8K convolve blocks</text>`;
+  for(let k=0;k<14;k++)s+=`<rect x="${30+k*14.5}" y="46" width="12" height="20" class="cu"/>`;s+=`<text x="130" y="90" class="mid xs">each: 128 threads, 520 B shared</text>`;
+  s+=A('M242 46 H300','wc','ahc')+`<text x="271" y="38" class="mid xs">launch</text>`;
+  s+=`<rect x="302" y="22" width="200" height="46" class="sl-fd"/>`+tS(402,44,'Thread block scheduler',11)+tS(402,59,'(special hardware)',9,500);
+  for(let c=0;c<4;c++){const x=40+c*178;s+=A(`M402 70 L${x+80} 116`)+`<rect x="${x}" y="118" width="160" height="72" class="sl-core"/>`+tT(x+80,136,`core ${c}`,11,700)+`<rect x="${x+10}" y="146" width="140" height="34" class="sl-cache"/>`+tS(x+80,168,'shared mem (on-chip)',10,600);}
+  s+=slMem(40,206,698,34,'Device global memory (DRAM)');
+  set('schedSvg',s);})();
+
+/* 7 sub-core */
+(function(){let s=`<rect x="440" y="10" width="300" height="46" style="fill:#f1ddd0;stroke:#b98a6a"/>`+tS(590,26,'Warp Selector',10,700)+`<rect x="530" y="30" width="120" height="22" class="sl-fd"/>`+tS(590,45,'Fetch/Decode',10);
+  for(let r=0;r<8;r++){const y=64+r*20;s+=`<rect x="440" y="${y}" width="32" height="16" class="sm-fp32"/><rect x="476" y="${y}" width="32" height="16" class="sm-fp32"/><rect x="512" y="${y}" width="30" height="16" class="sm-int"/><rect x="546" y="${y}" width="30" height="16" class="sm-int"/><rect x="580" y="${y}" width="30" height="16" class="sm-fp64"/><rect x="614" y="${y}" width="80" height="16" class="sm-ten"/><rect x="698" y="${y}" width="42" height="16" class="sm-ls"/>`;}
+  s+=`<rect x="440" y="230" width="300" height="92" style="fill:#c9d4ee;stroke:#7d8bb0"/>`;
+  for(let g=0;g<3;g++){const y=236+g*28;s+=`<text x="446" y="${y+9}" class="sd" style="font-size:8px">R0 R1 R2 …</text>`;for(let t=0;t<16;t++)s+=`<rect x="${500+t*14.5}" y="${y}" width="13" height="22" style="fill:#b9c5e2;stroke:#7d8bb0;stroke-width:.5"/>`;}
+  s+=tS(590,318,'registers: thread 0 … 31 of each warp',8.5,600);
+  const L=[['sm-fp32','SIMD fp32 units: 16, shared control','16 mul-adds per clock (a 32-wide op every 2 clocks)'],['sm-int','SIMD int units: 16, shared control','16 mul/adds per clock'],['sm-fp64','SIMD fp64 units: 8, shared control','a 32-wide op every 4 clocks'],['sm-ten','Tensor core units','matrix math for deep learning'],['sm-ls','Load/store units','memory operations']];
+  L.forEach(([c,a,b],i)=>{const y=24+i*48;s+=`<rect x="20" y="${y}" width="18" height="18" class="${c}"/><text x="46" y="${y+12}" class="bd xs">${a}</text><text x="46" y="${y+28}" class="xs">${b}</text>`;});
+  s+=`<text x="20" y="276" class="bd xs">Register file: 64 KB per sub-core</text><text x="20" y="292" class="xs">R0, R1, … for each thread, 32 threads</text><text x="20" y="306" class="xs">per warp, up to 16 warps per sub-core</text>`;
+  set('subSvg',s);})();
+
+/* 7 warp instruction timing */
+(function(){let s='';const x0=150,cw=90;for(let c=0;c<6;c++)s+=`<text x="${x0+c*cw+cw/2}" y="16" class="mid xs">clock ${c+1}</text>`;
+  const rows=[['00  fp32 mul r0 r1 r2','fp32',0],['01  int32 add r3 r4 r5','int32',1],['02  fp32 mul r6 r7 r8','fp32',2]];
+  rows.forEach(([t,u,c],i)=>{const y=26+i*40;s+=`<text x="${x0-8}" y="${y+20}" class="end xs">${t}</text><rect x="${x0+c*cw+2}" y="${y}" width="${cw-4}" height="30" class="sl-fd"/>`+tS(x0+c*cw+cw/2,y+19,'fetch',10)+`<rect x="${x0+(c+1)*cw+2}" y="${y}" width="${2*cw-4}" height="30" class="${u==='fp32'?'sm-fp32':'sm-int'}"/>`+tS(x0+(c+2)*cw,y+14,`${u} unit`,10)+tS(x0+(c+2)*cw,y+26,'threads 0–15, then 16–31',8.5,500);});
+  s+=`<text x="${x0}" y="152" class="xs">One warp instruction issued per clock; each occupies a 16-wide unit</text><text x="${x0}" y="166" class="xs">for 2 clocks, because all 32 threads of the warp run it.</text>`;
+  set('warpSvg',s);})();
+
+/* 7 full SM */
+(function(){let s=`<rect x="10" y="10" width="740" height="262" class="sl-core"/>`+tT(24,28,'NVIDIA V100 streaming multiprocessor (SM)',12,700,'start');
+  for(let k=0;k<4;k++){const x=24+k*182;s+=`<rect x="${x}" y="40" width="170" height="162" class="sl-pale"/>`+`<rect x="${x+8}" y="48" width="154" height="20" style="fill:#f1ddd0;stroke:#b98a6a"/>`+tS(x+85,62,'warp selector + fetch/decode',8.5,600);
+    for(let r=0;r<4;r++)for(let u=0;u<10;u++)s+=`<rect x="${x+8+u*15.4}" y="${76+r*12}" width="13" height="10" class="${u<4?'sm-fp32':u<6?'sm-int':u<7?'sm-fp64':u<9?'sm-ten':'sm-ls'}"/>`;
+    s+=`<rect x="${x+8}" y="128" width="154" height="66" style="fill:#c9d4ee;stroke:#7d8bb0"/>`+tS(x+85,146,'64 KB registers',10)+tS(x+85,162,`warps ${k}, ${k+4}, ${k+8}, …, ${k+60}`,9,500)+tS(x+85,178,'(16 warps)',9,500);}
+  s+=`<rect x="24" y="212" width="712" height="46" class="sl-cache"/>`+tS(380,232,'"Shared" memory + L1 cache storage: 128 KB',11)+tS(380,248,'shared by all four sub-cores',9.5,500);
+  set('smSvg',s);})();
+
+/* 8 GPU block scheduler explorer */
+(function(){const K={v2:{T:128,S:520,n:'v2'},v1:{T:128,S:0,n:'v1'},b256:{T:256,S:1032,n:'256-thread'}},CAP=384,SH=1536,DUR=[10,16,12,18,15,14,13,17,11,16,12,15];let kv='v2',E=[],cur=0;
+  function build(){const k=K[kv],cores=[0,1].map(()=>({run:[]}));let next=0,t=0,last=1;E=[];const snap=(msg,type)=>E.push({type,msg,next,cores:cores.map(c=>({run:c.run.map(r=>({...r}))}))});
+    const fits=c=>{const used=c.run.reduce((a,r)=>a+r.T,0),sh=c.run.reduce((a,r)=>a+r.S,0);return used+k.T<=CAP&&sh+k.S<=SH;};
+    const place=c=>{const slots=k.T/128;let ctx=0;for(;ctx+slots<=3;ctx++){if(!c.run.some(r=>r.ctx<ctx+slots&&ctx<r.ctx+r.T/128))break;}
+      let off=0;if(k.S){const segs=c.run.filter(r=>r.S).map(r=>[r.off,r.off+r.S]).sort((a,b)=>a[0]-b[0]);for(const [a,b] of segs){if(off+k.S<=a)break;off=Math.max(off,b);}}return {ctx,off};};
+    snap(`Host sends one command to the GPU: EXECUTE ${k.n} convolve, NUM_BLOCKS 1000. Each block needs ${k.T} threads' execution contexts and ${k.S} bytes of shared memory.`,'cmd');
+    while(E.length<16){let did=false;for(let a=0;a<2&&!did;a++){const ci=(last+1+a)%2,c=cores[ci];if(fits(c)){const p=place(c);c.run.push({b:next,T:k.T,S:k.S,ctx:p.ctx,off:p.off,end:t+DUR[next%DUR.length]});last=ci;
+          snap(`Scheduler maps <b>block ${next}</b> to <b>core ${ci}</b>: contexts ${p.ctx*128}–${p.ctx*128+k.T-1}${k.S?`, shared memory offset ${p.off} (${k.S} bytes)`:''}. NEXT = ${next+1}.`,'map');next++;did=true;}}
+      if(did)continue;
+      const all=cores.flatMap((c,ci)=>c.run.map(r=>({r,ci}))).sort((a,b)=>a.r.end-b.r.end)[0];
+      const c0=cores[0],why=(()=>{const used=c0.run.reduce((a,r)=>a+r.T,0),sh=c0.run.reduce((a,r)=>a+r.S,0);return used+k.T>CAP?`contexts: ${used} + ${k.T} > ${CAP} threads`:`shared memory: ${sh} + ${k.S} > ${SH} bytes`;})();
+      t=all.r.end;cores[all.ci].run=cores[all.ci].run.filter(r=>r!==all.r);
+      snap(`No core has room for block ${next} (${why}). <b>Block ${all.r.b} completes</b> on core ${all.ci}; its contexts${k.S?' and shared memory':''} are freed.`,'done');}}
+  function draw(){const e=E[cur],k=K[kv];let s='';
+    s+=`<rect x="250" y="8" width="260" height="46" class="bg2"/><text x="380" y="28" class="mid bd xs">GPU work scheduler</text><text x="380" y="46" class="mid xs">NEXT = ${e.next} · TOTAL = 1000</text>`;
+    e.cores.forEach((c,ci)=>{const x=20+ci*375;s+=slCore(x,70,345,240,`Core ${ci}`,11)+slFD(x+100,78,145,28,10);
+      for(let u=0;u<16;u++)s+=`<rect x="${x+14+u*20}" y="112" width="17" height="12" class="sl-alu"/>`;
+      s+=`<rect x="${x+12}" y="132" width="160" height="170" class="sl-ctx"/>`+tS(x+92,148,`contexts: 384 threads`,9.5)+`<rect x="${x+182}" y="132" width="150" height="170" class="sl-cache"/>`+tS(x+257,148,'shared memory: 1.5 KB',9.5);
+      for(let sl=0;sl<3;sl++)s+=`<rect x="${x+20}" y="${156+sl*46}" width="144" height="40" style="fill:none;stroke:#3d4a6b;stroke-dasharray:4 3"/>`;
+      c.run.forEach(r=>{const h=r.T/128*46-6,y=156+r.ctx*46;const fresh=e.type==='map'&&r.b===e.next-1;s+=`<rect x="${x+20}" y="${y}" width="144" height="${h}" style="fill:${fresh?'#d9763a':'#b9c5e2'};stroke:#3d4a6b"/>`+tS(x+92,y+h/2+4,`block ${r.b} (${r.ctx*128}–${r.ctx*128+r.T-1})`,9.5);
+        if(r.S){const sy=158+r.off/SH*140,sh=r.S/SH*140;s+=`<rect x="${x+190}" y="${sy}" width="134" height="${sh-2}" style="fill:${fresh?'#d9763a':'#e6e6e6'};stroke:#6f6f6f"/>`+tS(x+257,sy+sh/2+3,`block ${r.b}: support @${r.off}`,9);}});
+      if(!k.S)s+=tS(x+257,220,'(unused by this kernel)',9,500);});
+    set('gsSvg',s);
+    $('#gsMsg').innerHTML=e.msg;$('#gsOut').textContent=`event ${cur} of ${E.length-1}`;
+    $('#gsStrip').innerHTML=E.map((x,i)=>`<span class="${i===cur?'h cur':i<cur?'h':'n'}">${x.type==='cmd'?'launch':x.type==='map'?'map':'done'}</span>`).join('');
+    $('#gsBack').disabled=cur===0;$('#gsNext').disabled=cur>=E.length-1;$$('[data-kv]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.kv===kv));}
+  $$('[data-kv]').forEach(b=>b.onclick=()=>{kv=b.dataset.kv;build();cur=0;draw();});
+  $('#gsNext').onclick=()=>{cur++;draw();};$('#gsBack').onclick=()=>{cur--;draw();};$('#gsReset').onclick=()=>{cur=0;draw();};build();draw();})();
+
+/* 9 deadlock */
+(function(){let room=1,first=0;
+  function draw(){let s='';const x0=130,sc=5.6;const row=(y,lab)=>`<text x="${x0-8}" y="${y+18}" class="end xs">${lab}</text>`;
+    let out,msg;
+    if(room===2){s+=row(30,'block 0')+`<rect x="${x0}" y="30" width="${20*sc}" height="26" class="te"/>`+tS(x0+10*sc,47,'work, set flag',9.5,600,'mid','')+row(80,'block 1')+`<rect x="${x0}" y="80" width="${22*sc}" height="26" class="bg2"/><text x="${x0+11*sc}" y="97" class="mid xs">spin until flag</text><rect x="${x0+22*sc}" y="80" width="${18*sc}" height="26" class="te"/><text x="${x0+31*sc}" y="97" class="mid xs">work</text>`;out='done';msg='Both blocks are resident at once. Block 1 spins briefly until block 0 sets the flag, then finishes. The program happens to work here.';}
+    else if(first===0){s+=row(30,'block 0')+`<rect x="${x0}" y="30" width="${20*sc}" height="26" class="te"/>`+tS(x0+10*sc,47,'work, set flag',9.5,600,'mid','')+row(80,'block 1')+hatchR(x0,80,20*sc,26)+`<text x="${x0+10*sc}" y="97" class="mid xs">waiting for a slot</text><rect x="${x0+20*sc}" y="80" width="${14*sc}" height="26" class="te"/><text x="${x0+27*sc}" y="97" class="mid xs">flag set: work</text>`;out='done';msg='Only one block fits, and the scheduler happens to run block 0 first. It sets the flag and finishes; then block 1 runs and sees the flag. It works, but only because of this order.';}
+    else{s+=row(30,'block 0')+hatchR(x0,30,100*sc,26)+`<text x="${x0+50*sc}" y="47" class="mid xs">never scheduled: waiting for block 1's slot</text>`+row(80,'block 1')+`<rect x="${x0}" y="80" width="${100*sc}" height="26" class="bad" style="opacity:.55"/><text x="${x0+50*sc}" y="97" class="mid xs">spinning forever: while (myFlag == 0) { }</text>`;out='deadlock';msg='Only one block fits, and the scheduler starts <b>block 1</b>. It spins waiting for the flag, but block 0 can only run when block 1 finishes and frees the slot. Neither can proceed: <b>deadlock</b>. CUDA allows this order, so the program is wrong.';}
+    s+=`<text x="${x0}" y="140" class="bd ${out==='deadlock'?'tbad':'tte'}">${out==='deadlock'?'✗ deadlock':'✓ finishes (in this schedule)'}</text><text x="${x0+100*sc}" y="140" class="end xs">time →</text>`;
+    set('dlSvg',s);$('#dlMsg').innerHTML=msg;
+    $$('[data-dr]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.dr===room));$$('[data-do]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.do===first));}
+  $$('[data-dr]').forEach(b=>b.onclick=()=>{room=+b.dataset.dr;draw();});$$('[data-do]').forEach(b=>b.onclick=()=>{first=+b.dataset.do;draw();});draw();})();
+})();
+</script>
+</body>
+</html>

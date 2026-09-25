@@ -30,7 +30,7 @@ a.lec:hover{border-color:var(--cu);box-shadow:0 0 0 3px var(--cu-soft)}
   <nav class="unitnav" aria-label="Sections"><a href="../index.html">Course map</a><a href="../unit-01-build-a-computer.html">1 · Build a computer</a><a href="../unit-02-registers-programs-contexts.html">2 · Programs &amp; contexts</a><a href="../unit-03-faster-core.html">3 · A faster core</a><a href="../unit-04-parallelism.html">4 · Parallelism</a><a href="../unit-05-gpus.html">5 · GPUs</a><a href="../unit-06-modern-systems.html">6 · Systems</a><a href="index.html" aria-current="page">CS149 lectures</a></nav>
   <button class="themebtn" type="button">☾ Dark</button>
 </div>
-<nav class="subnav" aria-label="CS149 lectures"><span class="sl">CS149</span><a href="index.html" aria-current="page">All lectures</a><a href="lecture-02-modern-multicore.html">L2 · A modern multi-core processor</a></nav>
+<nav class="subnav" aria-label="CS149 lectures"><span class="sl">CS149</span><a href="index.html" aria-current="page">All lectures</a><a href="lecture-01-why-parallelism.html">L1 · Why parallelism?</a><a href="lecture-02-modern-multicore.html">L2 · A modern multi-core processor</a><a href="lecture-03-bandwidth-spmd.html">L3 · Bandwidth &amp; SPMD</a><a href="lecture-07-gpu-cuda.html">L7 · GPUs &amp; CUDA</a><a href="lecture-10-dnn-eval.html">L10 · Evaluating DNNs</a></nav>
 </header>
 <main id="main">
 <header class="hero">
@@ -49,7 +49,14 @@ a.lec:hover{border-color:var(--cu);box-shadow:0 0 0 3px var(--cu-soft)}
   <a class="lec" href="lecture-03-bandwidth-spmd.html"><span class="k">Lecture 3 · ready</span><h3>Latency, bandwidth, and the SPMD abstraction</h3>
     <ul><li>Latency vs throughput: highway, laundry, pipes</li><li>Memory bandwidth and Little's law</li><li>Bandwidth-bound execution, and why bandwidth is the critical resource</li><li>Abstraction vs implementation</li><li>ISPC: gangs, programIndex, uniform, foreach</li><li>Interleaved vs blocked, undefined programs, reductions</li></ul>
     <div class="ms"><b>7 explorers</b>: laundry pipeline · bandwidth-bound timeline · bandwidth calculator · iteration assignment · undefined-output demo · reduce_add · tree reduction. Related notes: Units 3–5.</div></a>
-  <div class="lec planned"><span class="k">Lecture 4 and later</span><h3>More lectures</h3><ul><li>Parallel programming basics, work distribution, GPUs, …</li></ul><div class="ms">Add slides to <code>Stan-CS149/</code> and ask for a companion page.</div></div>
+  <div class="lec planned"><span class="k">Lectures 4–6</span><h3>Not added yet</h3><ul><li>Parallel programming basics, work distribution and scheduling, …</li></ul><div class="ms">Add their slides to <code>Stan-CS149/</code> and ask for a companion page.</div></div>
+  <a class="lec" href="lecture-07-gpu-cuda.html"><span class="k">Lecture 7 · ready</span><h3>GPU architecture and CUDA programming</h3>
+    <ul><li>From 3D graphics to GPGPU and compute mode</li><li>CUDA: grids, blocks, threads; host and device</li><li>Memory spaces, shared memory and __syncthreads</li><li>Inside a V100 SM: sub-cores, warps, SIMT</li><li>The thread-block scheduler, step by step</li><li>Scheduling rules, deadlock, persistent threads</li></ul>
+    <div class="ms"><b>4 explorers</b>: thread-grid mapping · convolution loads · block scheduler · deadlock. Related notes: Unit 5.</div></a>
+  <div class="lec planned"><span class="k">Lectures 8–9</span><h3>Not added yet</h3><ul><li>Data-parallel thinking, distributed computing, …</li></ul><div class="ms">Add their slides to <code>Stan-CS149/</code> and ask for a companion page.</div></div>
+  <a class="lec" href="lecture-10-dnn-eval.html"><span class="k">Lecture 10 · ready</span><h3>Efficiently evaluating DNNs</h3>
+    <ul><li>Neurons, fully connected and convolution layers</li><li>Cheaper topologies: MobileNet's depthwise separable convolutions</li><li>Convolution as GEMM: im2col and implicit GEMM</li><li>Blocking matrix multiply for the memory hierarchy</li><li>Winograd, operator fusion, fused attention</li><li>Tensor cores and DNN accelerators</li></ul>
+    <div class="ms"><b>7 explorers</b>: convolution filters · layer cost · im2col · blocking roofline · Winograd · fusion · online softmax. Related notes: Units 5–6.</div></a>
 </div>
 <p class="credit">CS149 materials are © Stanford University and the course instructors. These companion pages are independent study notes: the explanations, diagrams and interactive models are original, and they reference the lectures' structure and examples for learning purposes. See the <a href="https://gfxcourses.stanford.edu/cs149/fall23">course site</a> for the official slides and videos.</p>
 <div class="nextunit"><a href="../index.html"><small>← Back to</small>Course map</a><a href="lecture-01-why-parallelism.html"><small>Start with</small>Lecture 1 · Why parallelism? →</a></div>

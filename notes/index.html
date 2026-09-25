@@ -95,11 +95,21 @@ a.unit:hover{border-color:var(--cu);box-shadow:0 0 0 3px var(--cu-soft)}
 <p style="max-width:68ch">Self-contained study pages built from Stanford's <i>Parallel Computing</i> course, one per lecture. They look at the same hardware from a programmer's angle: what each feature demands from your code.</p>
 <div class="units"><a class="unit" href="cs149/lecture-01-why-parallelism.html"><span class="k">CS149 · Lecture 1 <span class="tag">ready</span></span><h3>Why parallelism? Why efficiency?</h3>
   <ol style="list-style:none;padding-left:0"><li>Speedup, communication and load balance</li><li>ILP limits and the power wall</li><li>Memory latency, stalls and caches</li></ol>
-  <div class="ms">Pairs with Units 1–3. <a href="cs149/index.html">All CS149 lectures →</a></div></a><a class="unit" href="cs149/lecture-02-modern-multicore.html"><span class="k">CS149 · Lecture 2 <span class="tag">ready</span></span><h3>A modern multi-core processor</h3>
+  <div class="ms">Pairs with Units 1–3.</div></a>
+<a class="unit" href="cs149/lecture-02-modern-multicore.html"><span class="k">CS149 · Lecture 2 <span class="tag">ready</span></span><h3>A modern multi-core processor</h3>
   <ol style="list-style:none;padding-left:0"><li>Multi-core, SIMD and hardware multithreading</li><li>Divergence, latency hiding, throughput</li><li>Kaby Lake core and V100 SM, with peak-rate arithmetic</li></ol>
-  <div class="ms">Pairs with Units 3–4. <a href="cs149/index.html">All CS149 lectures →</a><a class="unit" href="cs149/lecture-03-bandwidth-spmd.html"><span class="k">CS149 · Lecture 3 <span class="tag">ready</span></span><h3>Latency, bandwidth, and SPMD</h3>
+  <div class="ms">Pairs with Units 3–4.</div></a>
+<a class="unit" href="cs149/lecture-03-bandwidth-spmd.html"><span class="k">CS149 · Lecture 3 <span class="tag">ready</span></span><h3>Latency, bandwidth, and SPMD</h3>
   <ol style="list-style:none;padding-left:0"><li>Latency vs throughput, Little's law</li><li>Bandwidth-bound execution</li><li>ISPC: abstraction vs implementation</li></ol>
-  <div class="ms">Pairs with Units 3–5. <a href="cs149/index.html">All CS149 lectures →</a></div></a></div></a></div>
+  <div class="ms">Pairs with Units 3–5.</div></a>
+<a class="unit" href="cs149/lecture-07-gpu-cuda.html"><span class="k">CS149 · Lecture 7 <span class="tag">ready</span></span><h3>GPU architecture and CUDA</h3>
+  <ol style="list-style:none;padding-left:0"><li>CUDA's thread hierarchy and memory model</li><li>V100 SM, warps and SIMT</li><li>Block scheduling and deadlock</li></ol>
+  <div class="ms">Pairs with Unit 5.</div></a>
+<a class="unit" href="cs149/lecture-10-dnn-eval.html"><span class="k">CS149 · Lecture 10 <span class="tag">ready</span></span><h3>Efficiently evaluating DNNs</h3>
+  <ol style="list-style:none;padding-left:0"><li>Convolution layers and cheaper topologies</li><li>im2col, implicit GEMM and blocking</li><li>Fusion, fused attention, tensor cores</li></ol>
+  <div class="ms">Pairs with Units 5–6.</div></a>
+</div>
+<p style="max-width:68ch"><a href="cs149/index.html">All CS149 lectures →</a></p>
 <h2 style="font-family:var(--display);font-size:34px;margin:44px 0 4px">How to study with these notes</h2>
 <ul style="max-width:68ch">
   <li><b>Treat lesson numbers as dependencies, not deadlines.</b> Spend one session reading and a separate one predicting and experimenting. Pipelining hazards, out-of-order execution, and (later) memory ordering and GPU tiling deserve more than one pass.</li>
