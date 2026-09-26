@@ -177,7 +177,7 @@
   <div class="card4">
     <div class="c1"><span class="l">Limitation</span>Overlap lets an instruction read a register before the instruction ahead of it has produced the value.</div>
     <div class="c2"><span class="l">New mechanism</span>Hazard detection that stalls when needed, plus forwarding paths that deliver fresh results early.</div>
-    <div class="c3"><span class="l">New state</span>Comparators on register numbers, bypass muxes, and stall/bubble control bits.</div>
+    <div class="c3"><span class="l">New state</span>Register identifiers, valid bits and other metadata in the pipeline registers that control forwarding (much of it already there), plus stall/bubble control bits. The register-number comparators and bypass muxes are new <i>hardware</i>: combinational logic, not state.</div>
     <div class="c4"><span class="l">Cost</span>Bubbles waste cycles, and bypass wiring adds area and timing pressure. Nothing can deliver a value before it exists.</div>
   </div>
 
@@ -291,6 +291,22 @@
     <p class="msg" id="amOut"></p>
   </div><figcaption><b>Small miss rates matter a lot</b> when the penalty is large. At a 100 ns penalty, going from 2% to 4% misses adds 2 ns to <i>every</i> access, a whole extra hit time. This is a per-access model, not time per instruction. Real cores overlap misses with other work (Lesson 14), and many instructions make no data access at all.</figcaption></figure>
 
+  <h3 class="part">Overlapping misses: memory-level parallelism</h3>
+  <p>The AMAT model charges each miss in full, one after another. A <b>nonblocking</b> cache doesn't have to work that way: it keeps a small table of outstanding misses (often called miss-status holding registers, MSHRs), so it can keep serving hits and send further misses to memory while earlier ones are still in flight. How many misses overlap is called <b>memory-level parallelism</b> (MLP). It's limited by the number of miss-tracking entries and by memory bandwidth, and above all by the program: a miss can only start once its <i>address</i> is known.</p>
+  <figure class="fig"><div class="sc">
+    <svg viewBox="0 0 760 170" role="img" aria-label="Two independent load misses overlap and finish together; in a pointer chase the second miss can start only after the first returns">
+      <text x="20" y="22" class="bd">independent loads</text><text x="20" y="38" class="xs">a[0] and a[64]</text>
+      <rect x="190" y="14" width="250" height="18" class="te"/><text x="200" y="27" class="xs">miss 1: 100 cycles</text>
+      <rect x="196" y="36" width="250" height="18" class="te"/><text x="206" y="49" class="xs">miss 2 starts 2 cycles later</text>
+      <text x="452" y="40" class="sm tte">both done ≈ 102 cycles</text>
+      <text x="20" y="92" class="bd">pointer chase</text><text x="20" y="108" class="xs">p = p-&gt;next; p = p-&gt;next</text>
+      <rect x="190" y="84" width="250" height="18" class="cu"/><text x="200" y="97" class="xs">miss 1: 100 cycles</text>
+      <rect x="440" y="106" width="250" height="18" class="cu"/><text x="450" y="119" class="xs">miss 2 needs miss 1's value</text>
+      <text x="690" y="142" class="end sm tcu">done ≈ 200 cycles</text>
+      <line x1="190" y1="158" x2="690" y2="158" class="w"/><text x="190" y="170" class="mid xs">0</text><text x="440" y="170" class="mid xs">100</text><text x="690" y="170" class="mid xs">200</text>
+    </svg></div>
+    <figcaption><b>Independence is what lets misses overlap.</b> Two loads whose addresses are known up front can both be outstanding at once, so two misses cost about one miss latency. In a pointer chase, the next address <i>is</i> the previous load's result, so the misses serialize no matter how capable the cache is. Out-of-order execution (Lesson 14) is how a core finds independent loads to start early, and GPUs (Unit 5) take the same idea much further.</figcaption></figure>
+
   <div class="predict"><div class="ph"><b>Predict</b><span>Split the address into fields before deciding.</span></div><ol>
     <li>In the direct-mapped cache, what are the block number, set, tag and offset of address <code>0x4C</code>?
       <details><summary>Show answer</summary><div class="ans"><p>0x4C = 0100 1100. Offset = low 4 bits = <b>0xC</b>. Block = 0x4C / 16 = <b>4</b>. Set = 4 mod 4 = <b>0</b>. Tag = 4 / 4 = <b>1</b> (binary 01). So bits 01 | 00 | 1100.</p></div></details></li>
@@ -308,7 +324,7 @@
 <section class="lesson" id="l11" data-toc="Virtual memory & TLB" data-n="11">
   <div class="lesson-h"><div class="kicker">Lesson 11</div><h2>Translate and protect addresses</h2></div>
   <div class="card4">
-    <div class="c1"><span class="l">Limitation</span>With raw physical addresses, any program can read or overwrite any other's memory, and programs can't be placed flexibly.</div>
+    <div class="c1"><span class="l">Limitation</span>Our machine so far has no memory-protection mechanism, so software can access any implemented memory address, and programs can't be placed flexibly. Virtual memory adds flexible per-address-space mappings and permissions.</div>
     <div class="c2"><span class="l">New mechanism</span>Virtual addresses translated page by page through per-process page tables, with a TLB caching recent translations.</div>
     <div class="c3"><span class="l">New state</span>Page tables in memory (owned by the OS), TLB entries (tagged by address space), and a page-table base register.</div>
     <div class="c4"><span class="l">Cost</span>Translation work on every access, TLB misses (page walks), page faults, and memory used by the tables.</div>
@@ -354,7 +370,7 @@
     <li>Can an access miss in the TLB and still hit in the data cache? Trace a read of <code>0x1344</code> right after a TLB reset.
       <details><summary>Show answer</summary><div class="ans"><p><b>Yes.</b> VPN 0x13 isn't in the TLB (miss), so the page walk finds frame <b>0xA1</b> and fills the TLB. The physical address is 0xA144, whose line 0xA140 is present: a <b>cache hit</b>. The TLB caches translations and the data cache caches bytes, so they hit and miss independently.</p></div></details></li>
     <li>A write hits in the TLB, but the entry says read-only. May it proceed? Is a missing cache line the problem?
-      <details><summary>Show answer</summary><div class="ans"><p><b>No</b>, it raises a <b>permission fault</b>. The translation was found, but the check failed. The cache isn't consulted at all for the target data, because the access isn't allowed.</p></div></details></li>
+      <details><summary>Show answer</summary><div class="ans"><p><b>No</b>, it raises a <b>permission fault</b>. The translation was found, but the check failed. In this model, the permission failure stops the access before the data-cache step. Real hardware can overlap the cache lookup with the permission check, but the disallowed write must never take architectural effect.</p></div></details></li>
     <li>Does every page fault mean reading from disk? Give two different OS responses.
       <details><summary>Show answer</summary><div class="ans"><p><b>No.</b> For the "page on disk" scenario the OS loads the page and installs a mapping, then the instruction retries. For the "unmapped page" scenario there's nothing valid there, so the OS terminates the process (segmentation fault). Other responses include zero-filling a newly touched page and copy-on-write.</p></div></details></li>
   </ol></div>
@@ -387,7 +403,7 @@
     <p class="readout" id="bpErr" style="margin:0 0 8px;min-height:1.2em"></p>
     <div class="pstrip" id="bpStrip"></div>
     <div class="ctrl"><button id="bpBack">◀ Back</button><button id="bpStep" class="pri">Next branch ▶</button><button id="bpAll">Run all</button><button id="bpReset">Reset</button><span class="readout" id="bpOut"></span></div>
-  </div><figcaption><b>Top row:</b> what actually happened. <b>Bottom row:</b> what the counter predicted, green if right and red if wrong. On "loop exits", each exit costs one miss but the counter doesn't flip. "Alternating" defeats it completely. Real predictors add <b>history</b>: they index counters by the recent pattern of branch outcomes, which lets them learn alternation and much more.</figcaption></figure>
+  </div><figcaption><b>Top row:</b> what actually happened. <b>Bottom row:</b> what the counter predicted, green if right and red if wrong. On "loop exits", each exit costs one miss but the counter doesn't flip. For the displayed T, N, T, N… sequence starting in state 1, the counter predicts every outcome incorrectly; other initial states give a different accuracy (try state 3). Real predictors add <b>history</b>: they index counters by the recent pattern of branch outcomes, which lets them learn alternation and much more.</figcaption></figure>
 
   <h3 class="part">How much does accuracy matter?</h3>
   <p>A simple long-run estimate: <b>CPI ≈ base CPI + (branches per instruction) × (misprediction rate) × (penalty in cycles)</b>. It assumes penalties don't overlap and ignores fill and drain.</p>
@@ -412,6 +428,8 @@
       <details><summary>Show answer</summary><div class="ans"><p>1 + 0.25 × 0.08 × 5 = <b>1.10</b>. It ignores overlap between penalties and other stalls, the fill and drain of short programs, and the fact that the penalty depends on <i>where</i> each branch resolves.</p></div></details></li>
     <li>A wrong-path load was squashed. Did it necessarily leave no trace in the cache? May its value ever reach an architectural register?
       <details><summary>Show answer</summary><div class="ans"><p>It <b>may have changed the cache</b>, which is a microarchitectural side effect. Its value <b>must never</b> become architectural state. Squashing guarantees the second, not the first.</p></div></details></li>
+    <li>Run the "alternating" pattern (T, N, T, N…) from start state 1, then from start state 3. How many of the 12 predictions are wrong in each case, and why?
+      <details><summary>Show answer</summary><div class="ans"><p>From state 1: <b>12 of 12 wrong</b>. The counter predicts N, sees T and moves to 2; predicts T, sees N and moves back to 1; and so on, always one step behind. From state 3: <b>6 of 12 wrong</b>. It predicts T every time, sliding 3 → 2 on each N and back to 3 on each T, so it gets every T right and every N wrong. The same simple predictor's accuracy depends on its starting state, which is why predictors need warm-up and why short measurements can mislead.</p></div></details></li>
   </ol></div>
   <p class="checkpoint">Keep four things distinct: the <b>predicted</b> direction, the <b>actual</b> direction, <b>speculative</b> execution, and <b>architectural acceptance</b>.</p>
 </section>
@@ -444,6 +462,7 @@
   <h4>Measuring it</h4>
   <p><b>IPC</b> = retired instructions ÷ cycles. Its reciprocal is CPI, when both are measured over the same instructions and the same interval. The explorer above only shows the execution window. It leaves out fetch, decode and retirement, so it isn't a whole-program IPC.</p>
 
+  <p>The load example separates two numbers that are easy to merge. Each load has a <b>latency</b> of 3 cycles: from starting to having its result. The load unit has an <b>initiation interval</b> of 1 cycle: it can accept a new load every cycle, because it's pipelined internally. So four loads start in cycles 1, 2, 3 and 4 and finish in cycles 3, 4, 5 and 6, with up to three in flight at once. A single port limits the <i>start</i> rate, not the number outstanding.</p>
   <div class="predict"><div class="ph"><b>Predict</b><span>Find the ready instructions each cycle.</span></div><ol>
     <li>With W = 2, how many cycles do the independent, two-chain and one-chain workloads need?
       <details><summary>Show answer</summary><div class="ans"><p><b>2, 2 and 4.</b> Independent: A B, then C D. Two chains: A B, then C D (each depends on the previous cycle). One chain: A, B, C, D, one per cycle, with the second slot idle.</p></div></details></li>
@@ -451,6 +470,8 @@
       <details><summary>Show answer</summary><div class="ans"><p>B needs A's result, which doesn't exist until the end of A's cycle. <b>More ALUs don't help</b>: the dependency, not the hardware, is the limit.</p></div></details></li>
     <li>Four independent loads, one load port, W = 4. What's the minimum number of cycles just to <i>start</i> them?
       <details><summary>Show answer</summary><div class="ans"><p><b>4 cycles</b>, one load per cycle through the single port. The idle ALUs can't start loads.</p></div></details></li>
+    <li>Suppose instead the load unit couldn't accept a new load until the previous one finished. When would the four loads finish?
+      <details><summary>Show answer</summary><div class="ans"><p>Its initiation interval becomes 3 cycles, equal to its latency. Loads would start in cycles 1, 4, 7 and 10 and finish in cycles 3, 6, 9 and 12: twice as long as the pipelined unit's 6 cycles. "One load port" says how many loads can <i>start</i> per cycle, not how many can be in flight.</p></div></details></li>
     <li>A program retires 300 instructions in 200 cycles. What are IPC and CPI?
       <details><summary>Show answer</summary><div class="ans"><p>IPC = 300 / 200 = <b>1.5</b>, CPI = <b>0.67</b>. A CPI below 1 is only possible with a superscalar core.</p></div></details></li>
   </ol></div>
@@ -544,8 +565,9 @@
     <div class="ctrl" style="margin:0 0 10px"><button id="robPrev">◀ Previous cycle</button><button id="robNext" class="pri">Next cycle ▶</button></div>
     <p class="msg" id="robMsg"></p>
   </div><figcaption><b>I3 and I4 finish in cycles 2–3 but can't retire until I1, I2 ahead of them have.</b> In the fault case, cycle 5 finds the faulting load at the ROB head: all five instructions are squashed, including the finished I3 and I4, and the handler sees x1–x4 exactly as they were before I1. (The handler's own work isn't shown.)</figcaption></figure>
-  <p>Notice two views of "x1". The <b>committed</b> x1 is 7 after I1 retires, then 24 after I3 retires. Meanwhile the <b>speculative map</b> already said x1 → p22 from the moment I3 was renamed, because any newly renamed instruction must read the newest version. Recovery copies the committed map back over the speculative one.</p>
-  <p>These two views are conceptual. Real out-of-order cores store and recover this state in different ways: some keep a separate retirement map, some checkpoint the rename map at branches, and none need a separate architectural register file. What every design must provide is the essential promise: <b>precise, in-order architectural effects</b>.</p>
+  <p>Notice two views of "x1". The <b>committed</b> x1 is 7 after I1 retires, then 24 after I3 retires. Meanwhile the <b>speculative map</b> already said x1 → p22 from the moment I3 was renamed, because any newly renamed instruction must read the newest version. Recovery from this <i>fault</i> copies the committed map back over the speculative one: every in-flight instruction is squashed, so none of their mappings are needed.</p>
+  <p>Recovery from a <b>mispredicted branch</b> is different. Instructions <i>older</i> than the branch are still valid even if they haven't retired, so the core must keep their mappings. A common approach is to <b>checkpoint</b> the speculative map when the branch is renamed and restore that checkpoint on a misprediction; copying the committed map instead would throw away the older instructions' mappings. The capstone shows this with real register names.</p>
+  <p>These two views are conceptual. Real out-of-order cores store and recover this state in different ways: some keep a separate retirement map, some checkpoint the rename map at branches. Some designs keep a separate architectural register file that retiring values are copied into; others keep both committed and speculative values in one physical register file and only track which physical register is committed. Neither organization is required (BOOM's documentation describes both). What every design must provide is the essential promise: <b>precise, in-order architectural effects</b>.</p>
 
   <h3 class="part">Memory dependencies: the one renaming can't see</h3>
   <p>Register dependencies are visible in the instruction bits. Memory dependencies aren't. Whether a store and a later load touch the same bytes depends on <b>addresses computed at run time</b>. Take a single thread with M[A] = 3. The listing is <b>schematic</b>, not assemblable RISC-V: in real RV32I the store would be <code>sw x6, 0(x10)</code> (store x6 = 9 at the address in x10 = p) and the load <code>lw x7, 0(x11)</code>.</p>
@@ -604,13 +626,31 @@
     </table></div>
     <p>After I3 retires: <b>x5 = 7, x6 = 3, x7 = 0</b>. I4's x6 = 4 was computed but never retired.</p>
     <p>The miss didn't stop everything because renaming and out-of-order issue let I2 (and speculatively I4) run underneath it. It still wasn't free. The branch had to wait for the load, and because it was mispredicted, correct-path fetch couldn't restart until cycle 6. Here I4 only used an otherwise idle slot, but in a busier core wrong-path work also takes resources from useful work.</p>
+    <p><b>How the misprediction is repaired.</b> Say x5 and x6 start mapped to p5 and p6, and renaming gives I1's x5 → p10, I2's x6 → p11 and I4's x6 → p12. When I3 resolves in cycle 5, I1 has just retired but I2 hasn't, and I2's result is correct and still needed:</p>
+    <div class="tbl"><table>
+      <tr><th></th><th>Committed map (cycle 5)</th><th>Checkpoint taken at I3</th><th>Speculative map before repair</th></tr>
+      <tr><td class="m">x5</td><td class="m">p10</td><td class="m">p10</td><td class="m">p10</td></tr>
+      <tr><td class="m">x6</td><td class="m">p6 (I2 not retired yet)</td><td class="m">p11 (I2's result)</td><td class="m">p12 (wrong-path I4)</td></tr>
+    </table></div>
+    <p>The core restores the <b>checkpoint</b>, so x6 → p11 and p12 returns to the free list. Restoring the committed map instead would point x6 back at p6 and lose I2's 3 even though I2 is on the correct path. This is one representative design; cores differ in how they checkpoint.</p>
   </div></details>
+
+  <div class="predict"><div class="ph"><b>Combine the mechanisms</b><span>New cases; each needs two lessons at once.</span></div><ol>
+    <li>A branch's direction is predicted correctly, but its predicted target address is wrong. Is recovery still needed?
+      <details><summary>Show answer</summary><div class="ans"><p><b>Yes.</b> Fetch needs the whole next PC, so a correct taken/not-taken guess with the wrong target still fetched the wrong instructions. They must be squashed and fetch redirected, just as for a wrong direction.</p></div></details></li>
+    <li>A younger load on the wrong path faults before the older branch resolves. Should the OS receive that fault?
+      <details><summary>Show answer</summary><div class="ans"><p><b>No.</b> The fault is only recorded in the load's ROB entry. When the branch resolves as mispredicted, the load is squashed, and a squashed instruction never delivers an architectural exception. Only a fault that reaches the ROB head is taken.</p></div></details></li>
+    <li>Two virtual addresses map to the same physical bytes. For dependency checks and the memory system, are they necessarily different memory objects?
+      <details><summary>Show answer</summary><div class="ans"><p><b>No.</b> They're two names (aliases) for the same bytes. A store through one and a load through the other conflict, so memory-ordering checks and caches must recognize the shared physical identity, not just compare virtual addresses.</p></div></details></li>
+    <li>An independent load misses in the cache while the ROB is nearly full. Can out-of-order execution hide an arbitrarily long delay?
+      <details><summary>Show answer</summary><div class="ans"><p><b>No.</b> Younger instructions can run while the miss is outstanding, but they can't retire past it. Once the ROB, issue queue, load/store queues or free physical registers fill, renaming stops and the core stalls until the load returns. The window is finite, so it hides only as much latency as it has room for.</p></div></details></li>
+  </ol></div>
 
   <h3 class="part">A map of the state this unit added</h3>
   <div class="tbl"><table>
     <tr><th>Mechanism</th><th>State it adds or organizes</th><th>Limitation that remains</th></tr>
     <tr><td>Pipeline</td><td>pipeline registers, valid bits, control</td><td>dependencies, bubbles</td></tr>
-    <tr><td>Forwarding</td><td>comparators, bypass muxes</td><td>values that don't exist yet</td></tr>
+    <tr><td>Forwarding</td><td>register identifiers and valid bits used to control bypassing (the comparators and bypass muxes are logic, not state)</td><td>values that don't exist yet</td></tr>
     <tr><td>Cache</td><td>lines, tags, valid/dirty, replacement state</td><td>capacity, conflicts, bandwidth</td></tr>
     <tr><td>Virtual memory</td><td>page tables, TLB, permissions</td><td>translation and fault costs</td></tr>
     <tr><td>Prediction</td><td>counters, history, target buffers, checkpoints</td><td>wrong guesses</td></tr>
@@ -1005,11 +1045,12 @@ function oneWide(inorder){const n=5,is=[];for(let c=1;c<40&&is.filter(v=>v).leng
     $('#robSpec').innerHTML=Object.entries(spec).map(([r,p])=>`<div><small>${r}</small>${p}</div>`).join('');
     const ev=[];RP.forEach((I,i)=>{if(is[i]===cyc&&!(fault&&cyc>=5))ev.push(`I${i+1} issues`);if(comp[i]===cyc&&!(fault&&(i===1||cyc>=5)))ev.push(i===0&&fault?'I1 reports a <b>fault</b>':`I${i+1} completes (= ${VALS[i]})`);if(!fault&&ret[i]===cyc)ev.push(`<b>I${i+1} retires</b>: committed ${DEST[i]} = ${VALS[i]}`);});
     let m=cyc===0?'<b>Before cycle 1.</b> All five instructions are renamed and sitting in the ROB in program order. Nothing has executed.':`<b>Cycle ${cyc}:</b> ${ev.length?ev.join('; '):'nothing new'}.`;
-    if(fault&&cyc>=5)m=`<b>Cycle ${cyc}:</b> the faulting load is at the ROB head, so <b>every in-flight instruction is squashed</b>. I3's 24 and I4's 19 were computed but never become architectural. The speculative map is restored from the committed map, and the handler sees x1–x4 = 0, the precise state before I1.`;
+    if(fault&&cyc>5)m=`<b>Cycle ${cyc}:</b> the trap was taken in cycle 5; the handler's subsequent execution is outside this model. Committed x1–x4 are still 0 and the speculative map is still the restored committed map.`;
+    else if(fault&&cyc===5)m=`<b>Cycle 5:</b> the faulting load is at the ROB head, so <b>every in-flight instruction is squashed</b>. I3's 24 and I4's 19 were computed but never become architectural. The speculative map is restored from the committed map, and the handler sees x1–x4 = 0, the precise state before I1.`;
     else if(cyc===3)m+=' I3 and I4 have finished, but <b>cannot retire</b>: I1 at the head is still waiting on memory.';
     $('#robMsg').innerHTML=m;
     $$('[data-ld]').forEach(b=>b.setAttribute('aria-pressed',(b.dataset.ld==='fault')===fault));
-    $('#robPrev').disabled=cyc===0;$('#robNext').disabled=cyc>=9;
+    $('#robPrev').disabled=cyc===0;$('#robNext').disabled=cyc>=(fault?5:9);
   }
   $$('[data-ld]').forEach(b=>b.onclick=()=>{fault=b.dataset.ld==='fault';render();});
   $('#robC').oninput=e=>{cyc=+e.target.value;render();};$('#robPrev').onclick=()=>{cyc=Math.max(0,cyc-1);render();};$('#robNext').onclick=()=>{cyc=Math.min(9,cyc+1);render();};
