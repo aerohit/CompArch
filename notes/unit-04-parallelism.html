@@ -111,7 +111,7 @@
   </div>
 
   <h3 class="part">More cores, one memory</h3>
-  <p>A <b>multicore</b> chip puts several complete cores on one die. Each has its own PC, registers, pipeline and private caches, so each can run a different software thread at full speed. What they share is further out: usually a last-level cache, the on-chip interconnect, the memory controllers and the DRAM bandwidth. "Shared memory" means every core can <i>address</i> the same bytes. It doesn't mean every access costs the same, or that the caches are physically shared.</p>
+  <p>A <b>multicore</b> processor puts several complete cores in one package, possibly spread across multiple dies (chiplets, which Unit 6 returns to). Each has its own PC, registers, pipeline and private caches, so each can run a different software thread at full speed. What they share is further out: usually a last-level cache, the on-chip interconnect, the memory controllers and the DRAM bandwidth. "Shared memory" means every core can <i>address</i> the same bytes. It doesn't mean every access costs the same, or that the caches are physically shared.</p>
   <figure class="fig"><div class="sc">
     <svg viewBox="0 0 760 236" role="img" aria-label="Four cores, each with private L1 and L2, connected by an interconnect to a shared L3 and memory controller">
       <g id="mcCores"></g>
@@ -119,10 +119,10 @@
       <rect x="20" y="174" width="500" height="44" class="cu"/><text x="270" y="194" class="mid bd">shared L3 cache</text><text x="270" y="210" class="mid xs">shared capacity: one core's data can crowd out another's</text>
       <rect x="540" y="174" width="200" height="44" class="te"/><text x="640" y="194" class="mid bd">memory controllers</text><text x="640" y="210" class="mid xs">shared DRAM bandwidth</text>
     </svg></div>
-    <figcaption><b>Private near the core, shared further out.</b> Private caches are fast precisely because they're private. That's also what creates this lesson's problem: two private caches can each hold a copy of the same address.</figcaption></figure>
+    <figcaption><b>Private near the core, shared further out.</b> This is one common organization; which cache levels are private or shared varies by design. Near-core caches are fast mainly because they're small, physically close and designed for low latency; being private also avoids contention with other cores. Privacy is what creates this lesson's problem: two private caches can each hold a copy of the same address.</figcaption></figure>
 
   <h3 class="part">How much can more cores help? Amdahl's bound</h3>
-  <p>Split a fixed task across P equally fast cores. If a fraction <i>s</i> of the work must run serially (setup, a final combine step, a part nobody parallelized), then even with perfect scaling the best possible speedup is</p>
+  <p>Split a fixed task across P equally fast cores. If a fraction <i>s</i> of the baseline single-core execution <b>time</b> must run serially (setup, a final combine step, a part nobody parallelized; not a fraction of source lines or of operations), then even with perfect scaling the best possible speedup is</p>
   <p style="text-align:center;font:600 17px var(--mono)">speedup ≤ 1 / (s + (1 − s) / P)</p>
   <figure class="fig"><div class="widget">
     <div class="calc">
@@ -167,6 +167,8 @@
   <p>Run the <b>false sharing</b> preset with x and y in one line. A only ever touches x and B only ever touches y. They share no data, yet every write must take ownership of the whole line away from the other core: four ownership requests and three invalidations for four writes. Switch to <b>separate lines</b> and run it again. Each core takes its own line once and then hits in M: two requests and no invalidations.</p>
   <figure class="fig"><div class="sc"><svg id="fsSvg" viewBox="0 0 760 180" role="img" aria-label="False sharing: two counters in one line ping-pong between cores; padded counters stay put"></svg></div>
     <figcaption><b>The line ping-pongs.</b> A classic real-world case is per-thread counters stored next to each other in an array. The fix is to pad or align each thread's hot data to its own line, or to change which data each thread writes. Padding costs memory and can hurt locality, so use the <i>actual</i> machine's line size (often 64 bytes; our 16 is a teaching choice).</figcaption></figure>
+
+  <div class="worked"><p><b>What an extra state buys: MESI's E.</b> In our MSI model, a read miss always enters S, even when no other cache has the line. If that core then writes, it must send an ownership request so any other copies are invalidated, although there are none. MESI adds <b>Exclusive (E)</b>: a clean line that this cache knows no other cache holds. A lone reader receives E, and a later local write changes E to M <i>silently</i>, with no message. That saves a request for the very common read-then-write pattern on private data. (MOESI adds <b>Owned (O)</b>: a dirty line shared with others, where one designated owner supplies the data and is responsible for writing it back, so memory needn't be updated when a modified line becomes shared. Our MSI explorer doesn't do this: its M → S read updates memory.)</p></div>
 
   <div class="predict"><div class="ph"><b>Predict</b><span>Track permission, then data.</span></div><ol>
     <li>In the textbook trace, after "A writes x = 1": what are A's and B's states, what does memory hold, and where is the current value?
@@ -245,10 +247,10 @@ ready.store(true,                    int v = data;   // guaranteed to see 42
   </div><figcaption><b>Both threads read 0, both compute 1, both store 1: one increment vanishes.</b> An atomic <b>read-modify-write</b> (fetch_add) makes read, add and write one indivisible step, so two of them always produce 2. For this isolated counting job, even "relaxed" ordering is enough. It just doesn't publish any <i>other</i> data.</figcaption></figure>
   <div class="tbl"><table>
     <tr><th>Tool</th><th>What it guarantees</th><th>What it doesn't</th></tr>
-    <tr><td><b>Atomic read-modify-write</b> (fetch_add, compare-and-swap)</td><td>One variable is updated indivisibly</td><td>Consistency across several variables</td></tr>
+    <tr><td><b>Atomic read-modify-write</b> (fetch_add, compare-and-swap)</td><td>One variable is updated indivisibly. That describes the visible result, not the cost: it isn't one cycle, and under contention it can wait or retry.</td><td>Consistency across several variables</td></tr>
     <tr><td><b>Mutex / lock</b></td><td>Only one thread runs a critical section at a time, and unlock → lock also synchronizes memory</td><td>That threads are fairly scheduled. Contention serializes them.</td></tr>
     <tr><td><b>Memory fence</b></td><td>Constrains the order of this thread's memory operations, as part of a correct scheme built on atomic operations</td><td>Repairing racy code: a fence placed around ordinary conflicting accesses still leaves a data race. Nor does it make other threads reach any particular point</td></tr>
-    <tr><td><b>Thread barrier</b> (e.g. <code>std::barrier</code>)</td><td>Everyone reaches the phase boundary before anyone continues, and a synchronizing barrier like <code>std::barrier</code> makes earlier work visible after it</td><td>Progress if some participants never arrive (deadlock)</td></tr>
+    <tr><td><b>Thread barrier</b> (e.g. <code>std::barrier</code>, used as <code>arrive_and_wait()</code>)</td><td>Everyone reaches the phase boundary before anyone continues (with <code>arrive_and_wait()</code>; the interface also allows <code>arrive()</code> without waiting), and a synchronizing barrier like <code>std::barrier</code> makes earlier work visible after it</td><td>Progress if some participants never arrive (deadlock)</td></tr>
     <tr><td><i>sleep, <code>volatile</code></i></td><td><i>Nothing about inter-thread ordering in C/C++</i></td><td><i>Not a substitute for any of the above</i></td></tr>
   </table></div>
   <p>Making every field of a structure individually atomic doesn't preserve an invariant that spans several fields ("balance equals the sum of entries"). That's what a lock is for. Every tool here adds shared state and waiting, so choose by the relationship your algorithm needs, then measure the contention.</p>
@@ -258,6 +260,8 @@ ready.store(true,                    int v = data;   // guaranteed to see 42
       <details><summary>Show answer</summary><div class="ans"><p>Both stores are still waiting in their buffers when both loads read memory, which still holds zeros. <b>No coherence violation</b>: each address still has a single history (0, then 1). Only the <i>cross-address</i> order looks strange.</p></div></details></li>
     <li>State the argument that rules out (0, 0) under SC.
       <details><summary>Show answer</summary><div class="ans"><p>A's store → A's load (program order). A's load reads y = 0 → it precedes B's store. B's store → B's load (program order). B's load reads x = 0 → it precedes A's store. That's a <b>cycle</b>, so no single global order satisfies all four constraints.</p></div></details></li>
+    <li>In the C++ version, make both stores <code>memory_order_release</code> and both loads <code>memory_order_acquire</code>. Is (0, 0) now forbidden?
+      <details><summary>Show answer</summary><div class="ans"><p><b>No.</b> Release/acquire creates a synchronizes-with edge only when an acquire load <i>reads the value written by</i> a release store. If both loads read the initial zeros, neither reads the other thread's store, so no synchronization happens and nothing rules out (0, 0). Contrast the publication example: there, the consumer seeing <code>true</code> is exactly the event that creates the relationship. Forbidding (0, 0) here takes <code>memory_order_seq_cst</code> on all four operations.</p></div></details></li>
     <li>In the publication example, which event makes the ordinary read of data safe? Does an acquire load that reads false help?
       <details><summary>Show answer</summary><div class="ans"><p>The acquire load <b>reading the value written by the release store</b> (synchronizes-with). A load that reads false establishes <b>nothing</b>, which is why the consumer loops until it actually sees true.</p></div></details></li>
     <li>Why can two atomic loads and stores still lose an increment? What does fetch_add change?
@@ -322,7 +326,7 @@ ready.store(true,                    int v = data;   // guaranteed to see 42
   <div class="card4">
     <div class="c1"><span class="l">Limitation</span>Scalar code repeats the same fetch, decode and schedule work for every element of an array, even though the operation is identical.</div>
     <div class="c2"><span class="l">New mechanism</span><b>SIMD / vector</b> instructions: one instruction operates on a group of elements, with masks or a vector length for partial groups.</div>
-    <div class="c3"><span class="l">New state</span>Wide vector registers, mask (predicate) registers, and a current vector length.</div>
+    <div class="c3"><span class="l">New state</span>Wide vector registers, plus predicate (mask) and vector-configuration state (such as a current vector length) where the ISA provides them.</div>
     <div class="c4"><span class="l">Cost</span>Wider datapaths, more register bandwidth and power. Tails and reductions need care, and memory bandwidth can become the new bottleneck.</div>
   </div>
 
@@ -338,12 +342,12 @@ ready.store(true,                    int v = data;   // guaranteed to see 42
   <div class="asm">
     <div class="r"><span class="a"></span><span class="i">remaining = N</span><span class="c"></span></div>
     <div class="r"><span class="a"></span><span class="i">while remaining > 0:</span><span class="c"></span></div>
-    <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;vl = vsetvl(remaining)</span><span class="c">hardware returns how many it will do (≤ VLMAX)</span></div>
+    <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;vl = vsetvl(remaining)</span><span class="c">schematic: hardware returns how many it will do (≤ VLMAX), with element width and grouping already chosen</span></div>
     <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;process vl elements</span><span class="c">vector loads, add, store</span></div>
     <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;advance pointers by vl; remaining −= vl</span><span class="c">use the <i>returned</i> vl, never an assumed width</span></div>
   </div>
   <p>In RISC-V V, the maximum is VLMAX = VLEN × LMUL / SEW: register length times register grouping, divided by element width. With VLEN = 128 bits, LMUL = 1 and SEW = 32 bits, VLMAX = 4. That's an instruction-set quantity. It doesn't promise four physical lanes or a one-cycle instruction. The returned <code>vl</code> is an actual count, so a short last iteration simply has a smaller <code>vl</code>; it isn't a mask over four positions. Usually <code>vl</code> = min(remaining, VLMAX), but the specification lets an implementation return a different permitted value in some cases (for example, splitting the last two groups more evenly), which is another reason to use the returned value.</p>
-  <p><b>Arm SVE</b> does it the other way: the loop always advances by the implementation's vector length, and a <b>predicate</b> (mask) built by an instruction such as <code>whilelt</code> switches off the positions at or past N. That's the mechanism the explorer below models.</p>
+  <p><b>Arm SVE</b> programs commonly do it the other way: a common SVE loop advances by the implementation's vector length and a <b>predicate</b> (mask) built by an instruction such as <code>whilelt</code> switches off the positions at or past N. That's the mechanism the explorer below models.</p>
 
   <h3 class="part">Try it: the tail problem</h3>
   <p>Ten elements don't divide into groups of four. The last group needs a <b>mask</b> that turns off the positions past the end. In our model, masked-off positions do <b>no memory access at all</b>: they neither read past the array nor write output. That matters. Loading past the end of an array and throwing the extra values away later is <i>not</i> equivalent, because it can touch memory that isn't yours.</p>
@@ -360,14 +364,14 @@ ready.store(true,                    int v = data;   // guaranteed to see 42
   <h3 class="part">What vectorizes, and what doesn't</h3>
   <p>Elementwise work vectorizes because every output is independent. Two kinds of loop don't pack so simply:</p>
   <figure class="fig"><div class="sc"><svg id="redSvg" viewBox="0 0 760 240" role="img" aria-label="Left: a loop-carried dependence chain across iterations. Right: a tree reduction summing eight elements in three levels"></svg></div>
-    <figcaption><b>Left, a loop-carried dependence:</b> <code>a[i] = a[i−1] + 1</code> needs the previous iteration's result, so four iterations can't simply run side by side. Compilers must establish that there's no such dependence, and no overlap (aliasing) between arrays, before they vectorize: either by proving it at compile time, or by emitting a runtime check that picks the vector or scalar loop. <b>Right, a reduction:</b> a sum needs values from different lanes to meet. That's done with partial sums or a tree, where 8 numbers take 3 levels. Regrouping a floating-point sum changes rounding, so the result may not be bit-identical to the sequential loop.</figcaption></figure>
+    <figcaption><b>Left, a loop-carried dependence:</b> <code>a[i] = a[i−1] + 1</code> needs the previous iteration's result, so four iterations can't simply run side by side. Evaluated directly, it can't be vectorized by packing adjacent iterations (though this particular recurrence has an algebraic rewrite, a[i] = a[0] + i). More generally, the compiler must prove that the proposed vector schedule preserves the loop's dependencies, or select a safe version with a runtime check. Overlap between arrays matters only when it creates such a dependence: <code>a[i] = a[i] + b[i]</code> vectorizes even if a and b are the same array, but a partial overlap at an offset can create a harmful dependence and prevent straightforward vectorization. <b>Right, a reduction:</b> a sum needs values from different lanes to meet. That's done with partial sums or a tree, where 8 numbers take 3 levels. Regrouping a floating-point sum changes rounding, so the result may not be bit-identical to the sequential loop.</figcaption></figure>
   <p>Layout matters here too. Vector loads want the elements they combine to be contiguous, which favours a <b>structure of arrays</b> (all x's together, all y's together) over an array of structures, especially when a loop works on the same field across many objects. Gathers can load scattered addresses, but they don't make scattered memory traffic cheap. Once the arithmetic is vectorized, the bottleneck often moves to memory bandwidth.</p>
 
   <div class="predict"><div class="ph"><b>Predict</b><span>Use the explorer to check.</span></div><ol>
     <li>Ten elements, width 4: how many groups, what's the last group's mask, and which outputs does it write?
       <details><summary>Show answer</summary><div class="ans"><p><b>3 groups</b>. The last covers positions 8–11 with mask <b>1 1 0 0</b>, and it writes only <b>c[8] = 117 and c[9] = 119</b>. Positions 10–11 do no memory access.</p></div></details></li>
     <li>Compare position utilization at widths 4 and 8 for 10 elements. Is the lower one necessarily slower?
-      <details><summary>Show answer</summary><div class="ans"><p>Width 4: 10/12 = <b>83.3%</b>. Width 8: 10/16 = <b>62.5%</b>. <b>Not necessarily slower.</b> Width 8 needs 2 instructions instead of 3, and the real time depends on throughput per instruction, masks and memory behaviour.</p></div></details></li>
+      <details><summary>Show answer</summary><div class="ans"><p>Width 4: 10/12 = <b>83.3%</b>. Width 8: 10/16 = <b>62.5%</b>. <b>Not necessarily slower.</b> Width 8 needs 2 vector groups instead of 3. Each group here is two loads, one add and one store, so ignoring loop control and predicate setup that's 8 vector instructions (4 loads, 2 adds, 2 stores) instead of 12 (6, 3, 3) under this example's decomposition, and the real time depends on throughput per instruction, masks and memory behaviour.</p></div></details></li>
     <li>How many useful bytes cross the array boundary for 10 elementwise 32-bit additions? Why might actual memory traffic differ?
       <details><summary>Show answer</summary><div class="ans"><p>12 bytes per element × 10 = <b>120 bytes</b>. Actual traffic moves whole cache lines, can include bytes you don't use, may read the output line before writing it (write-allocate), and depends on what's already cached.</p></div></details></li>
     <li>VLEN = 128, SEW = 32, LMUL = 1: what's VLMAX? Does it tell you the number of physical lanes or the instruction latency?
@@ -383,7 +387,8 @@ ready.store(true,                    int v = data;   // guaranteed to see 42
   <p>Suppose two software threads each add a 10-element slice of two arrays, on two different physical cores. Each uses the width-4 vector model. The output slices don't overlap, but each thread increments its own "done" counter, and the two counters sit in the same cache line.</p>
   <details class="predict" style="padding:0"><summary style="margin:12px 16px">Work it out, then open</summary><div class="ans" style="margin:0 16px 16px">
     <p><b>Vector groups:</b> 3 per thread, so <b>6</b> in total. <b>Useful array traffic:</b> 12 bytes × 20 elements = <b>240 bytes</b>.</p>
-    <p><b>Coherence:</b> the two counters are different variables in one line, which is <b>false sharing</b>. Each increment takes ownership away from the other core. Pad them onto separate lines.</p>
+    <p><b>Coherence:</b> the two counters are different variables in one line, which is <b>false sharing</b>. When the threads' increments alternate, each one transfers ownership to the other core (the earlier trace); consecutive increments by the same core hit in M without a transfer, so how often it actually costs time depends on the schedule. Pad the counters onto separate lines.</p>
+    <p><b>The outputs can falsely share too.</b> "The slices don't overlap" means no element is written by both threads, so there's no data race. But two adjacent 10-element slices of 4-byte values meet at byte 40, and cache lines don't care about slice boundaries: with 64-byte lines starting at the array, bytes 0–39 (thread 1) and 40–63 (thread 2) share the first line; with our 16-byte teaching lines, the line covering bytes 32–47 is split. Unless each slice starts on its own suitably aligned line, the output writes falsely share as well.</p>
     <p><b>Knowing the work is done:</b> the coordinator should <b>join</b> both threads, or use a correct release/acquire publication (each worker release-stores its flag, and the coordinator acquire-loads until it reads it). Coherent caches alone aren't a correctness argument. The language's synchronization rules are.</p>
     <p><b>Move both threads onto SMT siblings of one core</b> and the estimate changes. Their contexts remain separate, but they now compete for that one core's vector units, front end and cache bandwidth.</p>
   </div></details>
@@ -394,6 +399,16 @@ ready.store(true,                    int v = data;   // guaranteed to see 42
     <tr><td>Hardware multithreading / SMT (Lesson 18)</td><td>Resident contexts on one core</td><td>Execution ports, queues, caches, front end</td></tr>
     <tr><td>SIMD / vector data-level (Lesson 19)</td><td>Element operations within one instruction</td><td>Vector throughput, masks, reductions, data supply</td></tr>
   </table></div>
+  <div class="predict"><div class="ph"><b>Which hardware helps?</b><span>For each case, say whether more cores, SMT or wider vectors would help, and why the others wouldn't.</span></div><ol>
+    <li>A long dependency chain: each step needs the previous result.
+      <details><summary>Show answer</summary><div class="ans"><p><b>None of them much.</b> There's only one ready operation at a time. More cores have no independent work to take; wider vectors have nothing to pack; SMT can use the idle slots only if <i>another</i> thread supplies work, so it raises total throughput but doesn't speed up this chain. Only lower operation latency or a better algorithm helps.</p></div></details></li>
+    <li>Many independent tasks, each branchy scalar code.
+      <details><summary>Show answer</summary><div class="ans"><p><b>More cores</b>, and <b>SMT</b> to fill each core's idle slots. Vectors help little: different tasks take different branches, so lanes would diverge.</p></div></details></li>
+    <li>A contiguous elementwise loop over arrays that fit in cache.
+      <details><summary>Show answer</summary><div class="ans"><p><b>Wider vectors</b> first: one instruction covers many elements with no divergence. More cores help too, if the loop is long enough to split.</p></div></details></li>
+    <li>A stream that already saturates memory bandwidth.
+      <details><summary>Show answer</summary><div class="ans"><p><b>None of them.</b> The limit is bytes per second, not instructions. More cores, SMT or wider vectors just issue requests faster to a memory system that can't deliver them faster. Only more bandwidth or less traffic (reuse, smaller data types) helps.</p></div></details></li>
+  </ol></div>
   <p>A real program can use all four at once, and none of them speeds anything up just by existing. The next unit carries these distinctions into GPUs, where they're pushed to the extreme: thousands of logical threads, grouped for lockstep SIMD-style execution, scheduled across many hardware contexts, and limited by the memory traffic that feeds them.</p>
   <h3 class="part">Model assumptions and further reading</h3>
   <p>Every explorer on this page is a teaching model: coherence steps are whole transactions, the ordering explorer models only store buffers, the SMT explorer models only issue ports, and the vector explorer models only groups and masks. For the precise rules, go to the primary sources:</p>
