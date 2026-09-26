@@ -46,7 +46,8 @@
 .outc span.seen{background:var(--te-soft);border-color:var(--te);color:var(--te)}
 .outc span.forbid{text-decoration:line-through;opacity:.6}
 .outc span.seen.forbid{background:var(--bad-soft);border-color:var(--bad);color:var(--bad);text-decoration:none;opacity:1}
-.arr{display:grid;grid-template-columns:44px repeat(var(--n),minmax(30px,1fr));gap:3px;font:500 12px var(--mono);align-items:center;overflow-x:auto}
+.arr{display:grid;grid-template-columns:44px repeat(var(--n),minmax(30px,1fr));gap:3px;font:500 12px var(--mono);align-items:center;overflow-x:auto;max-width:100%;min-width:0;padding-bottom:4px}
+#vArr{min-width:0;max-width:100%;overflow-x:auto}
 .arr .h{color:var(--mute);font-size:10.5px;text-align:center}
 .arr .l{color:var(--mute);font-size:11.5px}
 .arr .c{height:30px;display:grid;place-items:center;border-radius:3px;background:var(--panel2)}
@@ -58,6 +59,7 @@
 .vreg span.e{width:56px;height:32px;display:grid;place-items:center;border-radius:3px;background:var(--cu-soft);border:1px solid var(--cu)}
 .vreg span.e.off{background:var(--panel2);border:1px dashed var(--line);color:var(--mute)}
 .vreg span.m1{background:var(--te-soft);border-color:var(--te)}
+.code{font:500 13px/1.55 var(--mono);background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:12px 16px;overflow-x:auto;margin:16px 0;white-space:pre;color:var(--ink);max-width:100%}
 </style>
 </head>
 <body>
@@ -188,7 +190,7 @@
     <div class="c1"><span class="l">Limitation</span>Coherent caches still let different threads observe operations on <i>different</i> addresses in surprising orders.</div>
     <div class="c2"><span class="l">New mechanism</span>A <b>memory consistency model</b> that defines which results are legal, plus synchronization (atomics, acquire/release, locks, barriers) to demand the order you need.</div>
     <div class="c3"><span class="l">New state</span>Store buffers, the modification order of atomic variables, lock ownership, waiting queues and barrier counts.</div>
-    <div class="c4"><span class="l">Cost</span>Fences and atomics stall or drain buffers, contended atomics bounce lines between cores, and threads wait on each other.</div>
+    <div class="c4"><span class="l">Cost</span>Ordering constraints can make some operations wait, at a cost that depends on the operation and the architecture. Contended atomics bounce lines between cores, and threads wait on each other.</div>
   </div>
 
   <h3 class="part">Why the order can look strange: store buffers</h3>
@@ -197,30 +199,45 @@
     <figcaption><b>The store is committed for this thread, but not yet visible to others.</b> A load checks its own store buffer first, and otherwise reads coherent memory. Nothing here violates coherence: each address still has one agreed history. What changes is how operations on <i>different</i> addresses interleave.</figcaption></figure>
 
   <h3 class="part">Sequential consistency: the intuitive baseline</h3>
-  <p>A <b>memory consistency model</b> is the rule that says which values loads are allowed to return. The most intuitive one is <b>sequential consistency (SC)</b>: the result must look as if all threads' operations were shuffled into <i>one</i> global sequence that keeps each thread's own program order. Real CPUs and languages mostly allow <i>more</i> behaviours than SC, for speed. x86, ARM, RISC-V, C++ and Java each define exactly which ones.</p>
+  <p>A <b>memory consistency model</b> is the rule that says which values loads are allowed to return. The most intuitive one is <b>sequential consistency (SC)</b>: the result must look as if all threads' operations were shuffled into <i>one</i> global sequence that keeps each thread's own program order. Real CPUs and languages mostly allow <i>more</i> behaviours than SC, for speed. x86, ARM, RISC-V, C++ and Java each define exactly which ones. Note that "SC" here is this abstract hardware model; C++'s <code>memory_order_seq_cst</code> is a related but separately defined language guarantee.</p>
 
   <h3 class="part">Try it: can both threads read zero?</h3>
   <p>Start with x = 0, y = 0. Thread A does <code>x = 1</code>, then reads y into rA. Thread B does <code>y = 1</code>, then reads x into rB. Step the two threads in any order you like. In the store-buffer model you also decide when each buffer <b>drains</b> to memory. Every final (rA, rB) outcome you reach is recorded below.</p>
+  <div class="assume">This explorer is an <b>abstract hardware execution</b>, not C++. Written as plain C++ variables, these accesses would be a data race, and the program's behaviour would be undefined. It is also not a complete x86 model: it shows only the store buffer, which is enough for this test.</div>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 10px"><div class="seg" role="group" aria-label="Machine model"><button data-mm="sc" aria-pressed="true">Sequentially consistent</button><button data-mm="sb">Store buffers (like x86-TSO)</button></div><button id="soWit">Play a (0, 0) witness</button></div>
     <div class="thr" id="soThr"></div>
     <div class="memrow" id="soMem"></div>
     <div class="ctrl"><button id="soA" class="pri">Step A ▶</button><button id="soB" class="pri">Step B ▶</button><button id="soDA">Drain A's buffer</button><button id="soDB">Drain B's buffer</button><button id="soReset">Reset run</button><button id="soClear">Clear outcomes</button></div>
     <p class="msg" id="soMsg"></p>
-    <p class="panel-t" style="margin-top:12px">Outcomes reached (rA, rB)</p><div class="outc" id="soOut"></div>
+    <p class="panel-t" style="margin-top:12px">Outcomes reached (rA, rB)</p><div class="outc" id="soOut" aria-live="polite"></div>
   </div><figcaption><b>(0, 0) is impossible under SC but allowed with store buffers.</b> Under SC you can reach (0, 1), (1, 0) and (1, 1), but never (0, 0). With store buffers, both stores can wait in their buffers while both loads read the old zeros from memory. Every cache stayed coherent the whole time.</figcaption></figure>
+  <p>The well-defined C++ counterpart uses atomics. With relaxed ordering, (0, 0) is a <b>defined, permitted</b> outcome, not undefined behaviour:</p>
+  <pre class="code">std::atomic&lt;int&gt; x{0}, y{0};
+// thread A                                  // thread B
+x.store(1, std::memory_order_relaxed);       y.store(1, std::memory_order_relaxed);
+int rA = y.load(std::memory_order_relaxed);  int rB = x.load(std::memory_order_relaxed);
+// rA == 0 &amp;&amp; rB == 0 is allowed. Making all four operations memory_order_seq_cst forbids it.</pre>
   <p>Why is (0, 0) impossible under SC? Follow the "must come before" arrows:</p>
   <figure class="fig narrow"><div class="sc"><svg id="cycSvg" viewBox="0 0 560 220" role="img" aria-label="The four ordering constraints form a cycle, so no single global order exists" style="min-width:460px"></svg></div>
     <figcaption><b>A cycle means no single global order exists.</b> Program order puts each store before its own thread's load. Each load reading 0 means it happened before the other thread's store. The four arrows chase each other in a circle, and a circle can't be laid out in one line.</figcaption></figure>
 
   <h3 class="part">Publishing data safely: release and acquire</h3>
-  <p>The practical question is usually "how does a consumer know the producer's data is ready?" Consider a <b>one-shot publication</b>. <code>ready</code> starts false, one producer writes <code>data = 42</code> and then sets <code>ready = true</code>, and data is never changed again. The consumer waits until it sees <code>ready</code>, then reads <code>data</code>.</p>
+  <p>The practical question is usually "how does a consumer know the producer's data is ready?" Consider a <b>one-shot publication</b>. <code>ready</code> starts false, one producer writes <code>data = 42</code> and then sets <code>ready = true</code>, and data is never changed again. The consumer waits until it sees <code>ready</code>, then reads <code>data</code>. Both objects are initialized before either thread starts. In C++:</p>
+  <pre class="code">int data = 0;                       // ordinary, non-atomic
+std::atomic&lt;bool&gt; ready{false};
+
+// producer                          // consumer
+data = 42;                           while (!ready.load(std::memory_order_acquire)) { }
+ready.store(true,                    int v = data;   // guaranteed to see 42
+            std::memory_order_release);</pre>
+  <p>The chain is <b>sequenced before → synchronizes with → sequenced before</b>: the write of data is sequenced before the release store; the acquire load that reads <code>true</code> synchronizes with that store; the read of data is sequenced after the acquire load.</p>
   <figure class="fig"><div class="sc"><svg id="relSvg" viewBox="0 0 760 230" role="img" aria-label="Producer and consumer timelines connected by a release-acquire synchronizes-with edge"></svg></div>
     <figcaption><b>The chain that makes it safe.</b> The producer's write to data comes before its <b>release</b> store to ready (program order). The consumer's <b>acquire</b> load <i>reads that very store</i>, so the two synchronize. The consumer's read of data comes after (program order). Together these give "the write of 42 happens before the read of data". Remove release/acquire (make both "relaxed") and the chain breaks. In C++ that's a data race on <code>data</code>, and the program's behaviour is undefined.</figcaption></figure>
-  <p>Two subtleties. An acquire load that reads <code>false</code> establishes nothing: the relationship exists only with the specific store it read. And acquire/release says nothing about <i>timing</i>, so it doesn't promise the producer runs soon or that the wait ends. The compiler turns release and acquire into whatever instructions and fences the target CPU needs. On x86 they're often free, while on ARM and RISC-V they may need special instructions.</p>
+  <p>Two subtleties. An acquire load that reads <code>false</code> establishes nothing: the relationship exists only with the specific store it read. And acquire/release says nothing about <i>timing</i>, so it doesn't promise the producer runs soon or that the wait ends. The compiler turns release and acquire into whatever instructions and fences the target CPU needs. For this pattern on x86 they often need no additional fence instruction, though they still constrain how the compiler may reorder code and aren't free in every sense. On ARM and RISC-V they may need special instructions or fences.</p>
 
   <h3 class="part">Lost updates, and the tools that fix different problems</h3>
-  <p>Two threads each run <code>counter = counter + 1</code>. Even if each load and each store is individually atomic, the <i>pair</i> isn't:</p>
+  <p>Two threads each increment a shared counter using an atomic <i>load</i> followed by a separate atomic <i>store</i> (think <code>c.store(c.load() + 1)</code>). Each operation is atomic, so there's no data race, but the <i>pair</i> isn't:</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 10px"><div class="seg" role="group" aria-label="Scenario"><button data-cn="bad" aria-pressed="true">Interleaved load/add/store</button><button data-cn="seq">One after the other</button><button data-cn="rmw">Atomic fetch_add</button></div></div>
     <div class="sc" style="padding:0"><svg id="cnSvg" viewBox="0 0 760 200" role="img" aria-label="Timeline of two threads incrementing a shared counter" style="min-width:560px"></svg></div>
@@ -230,8 +247,8 @@
     <tr><th>Tool</th><th>What it guarantees</th><th>What it doesn't</th></tr>
     <tr><td><b>Atomic read-modify-write</b> (fetch_add, compare-and-swap)</td><td>One variable is updated indivisibly</td><td>Consistency across several variables</td></tr>
     <tr><td><b>Mutex / lock</b></td><td>Only one thread runs a critical section at a time, and unlock → lock also synchronizes memory</td><td>That threads are fairly scheduled. Contention serializes them.</td></tr>
-    <tr><td><b>Memory fence</b></td><td>Constrains the order of this thread's memory operations</td><td>That other threads reach any particular point</td></tr>
-    <tr><td><b>Thread barrier</b></td><td>Everyone reaches the phase boundary before anyone continues, and earlier work is visible after it</td><td>Progress if some participants never arrive (deadlock)</td></tr>
+    <tr><td><b>Memory fence</b></td><td>Constrains the order of this thread's memory operations, as part of a correct scheme built on atomic operations</td><td>Repairing racy code: a fence placed around ordinary conflicting accesses still leaves a data race. Nor does it make other threads reach any particular point</td></tr>
+    <tr><td><b>Thread barrier</b> (e.g. <code>std::barrier</code>)</td><td>Everyone reaches the phase boundary before anyone continues, and a synchronizing barrier like <code>std::barrier</code> makes earlier work visible after it</td><td>Progress if some participants never arrive (deadlock)</td></tr>
     <tr><td><i>sleep, <code>volatile</code></i></td><td><i>Nothing about inter-thread ordering in C/C++</i></td><td><i>Not a substitute for any of the above</i></td></tr>
   </table></div>
   <p>Making every field of a structure individually atomic doesn't preserve an invariant that spans several fields ("balance equals the sum of entries"). That's what a lock is for. Every tool here adds shared state and waiting, so choose by the relationship your algorithm needs, then measure the contention.</p>
@@ -246,7 +263,7 @@
     <li>Why can two atomic loads and stores still lose an increment? What does fetch_add change?
       <details><summary>Show answer</summary><div class="ans"><p>Each load and each store is atomic, but another thread's load can slip <i>between</i> them, so both threads read the same old value. fetch_add makes the read-add-write <b>one indivisible operation</b>, so the increments are serialized and none is lost.</p></div></details></li>
     <li>Match each need to a tool: "one shared counter", "update three fields together", "all workers finish phase 1 before phase 2", "keep my stores in order relative to a later load". Does <code>volatile</code> solve any of them in C++?
-      <details><summary>Show answer</summary><div class="ans"><p>Counter → <b>atomic RMW</b>. Three fields → <b>mutex</b>. Phases → <b>barrier</b>. Store-load order → <b>fence</b> (or suitable atomics). <code>volatile</code> solves <b>none</b> of them in C++: it neither makes operations atomic nor orders them between threads.</p></div></details></li>
+      <details><summary>Show answer</summary><div class="ans"><p>Counter → <b>atomic RMW</b>. Three fields → <b>mutex</b>. Phases → <b>barrier</b>. Store-load order → <b>seq_cst atomics</b>, or fences used together with atomic operations (a fence alone doesn't make ordinary conflicting accesses race-free). <code>volatile</code> solves <b>none</b> of them in C++: it neither makes operations atomic nor orders them between threads.</p></div></details></li>
   </ol></div>
   <p class="checkpoint">Before talking about caches or buffers, identify the <b>language-level synchronization relationship</b> that makes the program correct: which store is read by which load, or which lock hand-off.</p>
 </section>
@@ -262,7 +279,7 @@
   </div>
 
   <h3 class="part">Three ways to share a core</h3>
-  <p>In Unit 2, switching threads meant the OS saving and restoring registers: hundreds of instructions or more. Hardware multithreading instead keeps several <b>hardware contexts</b> physically resident, so switching between them costs little or nothing. Designs differ in <i>when</i> they switch:</p>
+  <p>In Unit 2, switching threads meant software (the OS) saving one thread's registers to memory and restoring another's, at a cost that varies but is far from free. Hardware multithreading instead keeps several <b>hardware contexts</b> physically resident, so switching between them costs little or nothing. Designs differ in <i>when</i> they switch:</p>
   <figure class="fig"><div class="sc"><svg id="mtSvg" viewBox="0 0 760 250" role="img" aria-label="Issue-slot grids for coarse-grained, fine-grained and simultaneous multithreading"></svg></div>
     <figcaption><b>Issue slots over time</b> (4 slots per cycle, 8 cycles). <b>Coarse-grained</b> multithreading runs one thread until a long stall, such as a cache miss, then switches. <b>Fine-grained</b> picks a different thread every cycle, but still one thread per cycle. <b>Simultaneous (SMT)</b> fills one cycle's slots from several threads at once. These are hardware strategies, not new kinds of software thread.</figcaption></figure>
 
@@ -279,9 +296,10 @@
     <div class="sc" style="padding:0"><svg id="smtSvg" viewBox="0 0 760 170" role="img" aria-label="Cycle-by-port schedule of the two threads" style="min-width:560px"></svg></div>
     <p class="msg" id="smtMsg"></p>
   </div><figcaption><b>SMT fills a slot that one chain can't.</b> With 2 ports, one chain only ever has one ready add, so selecting one thread per cycle wastes a port every cycle. SMT issues from both and finishes in 4 cycles instead of 8. With only 1 port there's nothing to fill: both policies need 8 cycles, and SMT can't create an extra ALU.</figcaption></figure>
+  <div class="assume">Model assumptions: the two ALU ports are interchangeable; every add is ready except for its own thread's one-cycle dependency; and the model ignores the front end, retirement, cache misses and any cost of selecting a context. It illustrates issue slots, not a general SMT speedup prediction.</div>
 
   <h3 class="part">Throughput, not latency</h3>
-  <p>SMT can raise <b>total throughput</b> by using slots one thread would leave empty. It never promises lower <b>latency</b> for an individual thread. A thread running alone may finish sooner than when it shares a core with a sibling that competes for the same caches, queues and bandwidth. Two threads that are both limited by memory bandwidth mostly just fight each other. That's why enabling SMT isn't universally a win: it depends on the workload, on latency goals, and on the specific core. Sharing resources also leaks timing information between siblings, which matters for security isolation (Unit 2 mentioned this).</p>
+  <p>SMT can raise <b>total throughput</b> by using slots one thread would leave empty. It never promises lower <b>latency</b> for an individual thread. A thread running alone may finish sooner than when it shares a core with a sibling that competes for the same caches, queues and bandwidth. Two threads that are both limited by memory bandwidth mostly just fight each other. That's why enabling SMT isn't universally a win: it depends on the workload, on latency goals, and on the specific core. Sharing resources can also leak timing information between siblings, which matters for security isolation.</p>
 
   <div class="predict"><div class="ph"><b>Predict</b><span>Count ports and ready operations.</span></div><ol>
     <li>Two ALU ports: how many cycles do the two chains take with one-thread-per-cycle selection, and with SMT? What are the final x5 values?
@@ -316,15 +334,16 @@
   <h3 class="part">Four numbers that are easy to confuse</h3>
   <figure class="fig"><div class="sc"><svg id="vlSvg" viewBox="0 0 760 230" role="img" aria-label="A 128-bit register holding four 32-bit elements, executed on two physical lanes over two beats"></svg></div>
     <figcaption><b>Register bits, element width, active elements and physical lanes are separate quantities.</b> A 128-bit register holds four 32-bit elements, but a design may process them on only two physical lanes over two cycles ("beats"). How many elements an instruction <i>names</i> doesn't tell you how many are processed <i>at once</i>.</figcaption></figure>
-  <p><b>Fixed-width</b> SIMD (x86 SSE/AVX, Arm NEON) bakes the register width into the instruction set. <b>Scalable</b> vector ISAs (Arm SVE, RISC-V V) let the same program run on hardware with different vector lengths. The loop asks "how many elements can you do now?" and uses the answer:</p>
+  <p><b>Fixed-width</b> SIMD (x86 SSE/AVX, Arm NEON) bakes the register width into the instruction set. <b>Scalable</b> vector ISAs (Arm SVE, RISC-V V) let the same program run on hardware with different vector lengths. They express the loop differently. In <b>RISC-V V</b>, the loop asks "how many elements can you do now?" with <code>vsetvl</code> and uses the answer:</p>
   <div class="asm">
     <div class="r"><span class="a"></span><span class="i">remaining = N</span><span class="c"></span></div>
     <div class="r"><span class="a"></span><span class="i">while remaining > 0:</span><span class="c"></span></div>
-    <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;vl = set_length(remaining)</span><span class="c">hardware returns how many it will do (≤ its maximum)</span></div>
+    <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;vl = vsetvl(remaining)</span><span class="c">hardware returns how many it will do (≤ VLMAX)</span></div>
     <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;process vl elements</span><span class="c">vector loads, add, store</span></div>
     <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;advance pointers by vl; remaining −= vl</span><span class="c">use the <i>returned</i> vl, never an assumed width</span></div>
   </div>
-  <p>In RISC-V V, the maximum is VLMAX = VLEN × LMUL / SEW: register length times register grouping, divided by element width. With VLEN = 128 bits, LMUL = 1 and SEW = 32 bits, VLMAX = 4. That's an instruction-set quantity. It doesn't promise four physical lanes or a one-cycle instruction.</p>
+  <p>In RISC-V V, the maximum is VLMAX = VLEN × LMUL / SEW: register length times register grouping, divided by element width. With VLEN = 128 bits, LMUL = 1 and SEW = 32 bits, VLMAX = 4. That's an instruction-set quantity. It doesn't promise four physical lanes or a one-cycle instruction. The returned <code>vl</code> is an actual count, so a short last iteration simply has a smaller <code>vl</code>; it isn't a mask over four positions. Usually <code>vl</code> = min(remaining, VLMAX), but the specification lets an implementation return a different permitted value in some cases (for example, splitting the last two groups more evenly), which is another reason to use the returned value.</p>
+  <p><b>Arm SVE</b> does it the other way: the loop always advances by the implementation's vector length, and a <b>predicate</b> (mask) built by an instruction such as <code>whilelt</code> switches off the positions at or past N. That's the mechanism the explorer below models.</p>
 
   <h3 class="part">Try it: the tail problem</h3>
   <p>Ten elements don't divide into groups of four. The last group needs a <b>mask</b> that turns off the positions past the end. In our model, masked-off positions do <b>no memory access at all</b>: they neither read past the array nor write output. That matters. Loading past the end of an array and throwing the extra values away later is <i>not</i> equivalent, because it can touch memory that isn't yours.</p>
@@ -341,8 +360,8 @@
   <h3 class="part">What vectorizes, and what doesn't</h3>
   <p>Elementwise work vectorizes because every output is independent. Two kinds of loop don't pack so simply:</p>
   <figure class="fig"><div class="sc"><svg id="redSvg" viewBox="0 0 760 240" role="img" aria-label="Left: a loop-carried dependence chain across iterations. Right: a tree reduction summing eight elements in three levels"></svg></div>
-    <figcaption><b>Left, a loop-carried dependence:</b> <code>a[i] = a[i−1] + 1</code> needs the previous iteration's result, so four iterations can't simply run side by side. Compilers must prove there's no such dependence, and no overlap (aliasing) between arrays, before they vectorize. <b>Right, a reduction:</b> a sum needs values from different lanes to meet. That's done with partial sums or a tree, where 8 numbers take 3 levels. Regrouping a floating-point sum changes rounding, so the result may not be bit-identical to the sequential loop.</figcaption></figure>
-  <p>Layout matters here too. Vector loads want the elements they combine to be contiguous, which favours a <b>structure of arrays</b> (all x's together, all y's together) over an array of structures. Gathers can load scattered addresses, but they don't make scattered memory traffic cheap. Once the arithmetic is vectorized, the bottleneck often moves to memory bandwidth.</p>
+    <figcaption><b>Left, a loop-carried dependence:</b> <code>a[i] = a[i−1] + 1</code> needs the previous iteration's result, so four iterations can't simply run side by side. Compilers must establish that there's no such dependence, and no overlap (aliasing) between arrays, before they vectorize: either by proving it at compile time, or by emitting a runtime check that picks the vector or scalar loop. <b>Right, a reduction:</b> a sum needs values from different lanes to meet. That's done with partial sums or a tree, where 8 numbers take 3 levels. Regrouping a floating-point sum changes rounding, so the result may not be bit-identical to the sequential loop.</figcaption></figure>
+  <p>Layout matters here too. Vector loads want the elements they combine to be contiguous, which favours a <b>structure of arrays</b> (all x's together, all y's together) over an array of structures, especially when a loop works on the same field across many objects. Gathers can load scattered addresses, but they don't make scattered memory traffic cheap. Once the arithmetic is vectorized, the bottleneck often moves to memory bandwidth.</p>
 
   <div class="predict"><div class="ph"><b>Predict</b><span>Use the explorer to check.</span></div><ol>
     <li>Ten elements, width 4: how many groups, what's the last group's mask, and which outputs does it write?
@@ -376,6 +395,14 @@
     <tr><td>SIMD / vector data-level (Lesson 19)</td><td>Element operations within one instruction</td><td>Vector throughput, masks, reductions, data supply</td></tr>
   </table></div>
   <p>A real program can use all four at once, and none of them speeds anything up just by existing. The next unit carries these distinctions into GPUs, where they're pushed to the extreme: thousands of logical threads, grouped for lockstep SIMD-style execution, scheduled across many hardware contexts, and limited by the memory traffic that feeds them.</p>
+  <h3 class="part">Model assumptions and further reading</h3>
+  <p>Every explorer on this page is a teaching model: coherence steps are whole transactions, the ordering explorer models only store buffers, the SMT explorer models only issue ports, and the vector explorer models only groups and masks. For the precise rules, go to the primary sources:</p>
+  <ul>
+    <li>C++ memory model: <a href="https://eel.is/c++draft/intro.races">data races and happens-before</a>, <a href="https://eel.is/c++draft/atomics.order">atomic ordering (release, acquire, seq_cst)</a>, and <a href="https://eel.is/c++draft/thread.barrier"><code>std::barrier</code></a> (working draft of the standard).</li>
+    <li>x86: Sewell, Owens et al., <a href="https://www.cl.cam.ac.uk/~pes20/weakmemory/index3.html">x86-TSO</a>, the store-buffer model this page's explorer simplifies.</li>
+    <li>SMT: Intel's <a href="https://www.intel.com/content/www/us/en/developer/articles/technical/intel64-and-ia32-architectures-optimization.html">64 and IA-32 Architectures Optimization Reference Manual</a>, on which resources hardware threads share.</li>
+    <li>Vectors: the <a href="https://docs.riscv.org/reference/isa/unpriv/v-st-ext">RISC-V "V" vector extension</a> (<code>vsetvl</code>, VLMAX, tail handling) and Arm's <a href="https://developer.arm.com/community/arm-research/b/articles/posts/the-arm-scalable-vector-extension-sve">introduction to SVE</a> (predicates, <code>whilelt</code>).</li>
+  </ul>
   <div class="nextunit"><a href="unit-03-faster-core.html"><small>← Unit 3</small>Make one CPU core faster</a><a href="unit-05-gpus.html"><small>Next</small>Unit 5 · Understand GPUs →</a></div>
 </section>
 
@@ -399,7 +426,8 @@ const {$,$$,RM}=NOTES;
     const step=ymax<=10?2:ymax<=24?4:ymax<=40?8:16;
     for(let v=0;v<=ymax;v+=step)h+=`<line x1="80" y1="${Y(v)}" x2="720" y2="${Y(v)}" class="w" style="stroke:var(--line);stroke-width:1"/><text x="72" y="${Y(v)+4}" class="end xs">${v}×</text>`;
     for(let k=0;k<=6;k++)h+=`<text x="${X(2**k)}" y="238" class="mid xs">${2**k}</text>`;
-    h+=`<path d="M${X(1)} ${Y(1)} L${X(Math.min(64,ymax))} ${Y(Math.min(64,ymax))}" class="w dash"/><text x="${X(Math.min(64,ymax))-6}" y="${Y(Math.min(64,ymax))+14}" class="end xs">perfect scaling</text>`;
+    {const pe=Math.min(64,ymax),pts=[];for(let k=0;k<=48;k++){const p=2**(k/8);if(p>=pe){pts.push(pe);break;}pts.push(p);}
+     h+=`<path d="M${pts.map(p=>`${X(p).toFixed(1)} ${Y(p).toFixed(1)}`).join(' L')}" class="w dash"/><text x="${X(pe)-6}" y="${Y(pe)+14}" class="end xs">perfect scaling (speedup = P)</text>`;}
     if(s>0&&lim<=ymax)h+=`<line x1="80" y1="${Y(lim)}" x2="720" y2="${Y(lim)}" class="wb dash"/><text x="716" y="${Y(lim)-5}" class="end sm tbad">limit 1/s = ${lim.toFixed(1)}×</text>`;
     let d='';for(let k=0;k<=60;k++){const p=2**(k/10);d+=(k?'L':'M')+X(p)+' '+Y(f(p));}
     h+=`<path d="${d}" class="wc" style="stroke-width:2.4"/><circle cx="${X(P)}" cy="${Y(f(P))}" r="6" class="mkc"/><text x="${X(P)+10}" y="${Y(f(P))+18}" class="sm bd">${P} cores: ${f(P).toFixed(2)}×</text>`;
@@ -557,7 +585,7 @@ const {$,$$,RM}=NOTES;
     h+='<text x="20" y="50" class="bd">Thread A</text><text x="20" y="100" class="bd">Thread B</text><text x="20" y="160" class="bd">counter</text>';
     [['A',32],['B',82]].forEach(([t,y])=>S[t].forEach(([c,l])=>h+=`<rect x="${x0+(c-1)*cw+2}" y="${y}" width="${cw-4}" height="30" class="${t==='A'?'cu':'pl'}"/><text x="${x0+(c-0.5)*cw}" y="${y+19}" class="mid" style="font-size:11px">${l}</text>`));
     for(let c=0;c<=n;c++)h+=`<rect x="${x0+(c-0.5)*cw-16}" y="140" width="32" height="30" class="${c===n?(S.c[c]===2?'okf':'bad'):'bx'}"/><text x="${x0+(c-0.5)*cw}" y="160" class="mid bd">${S.c[c]}</text>`;
-    h+=`<text x="${x0-24}" y="190" class="xs">start</text>`;
+    h+=`<text x="${x0-24}" y="190" class="xs">start</text>`+(k!=='rmw'?`<text x="740" y="194" class="end xs">each load and each store: a separate atomic operation</text>`:'');
     $('#cnSvg').innerHTML=h;$('#cnMsg').innerHTML=S.msg;$$('[data-cn]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.cn===k));}
   $$('[data-cn]').forEach(b=>b.onclick=()=>{k=b.dataset.cn;r();});r();
 })();
@@ -638,7 +666,7 @@ const {$,$$,RM}=NOTES;
       const reg=(n,f)=>`<div class="vreg"><span class="n">${n}</span>${m.map((on,k)=>`<span class="e ${on?(n==='mask'?'m1':''):'off'}">${on?f(base+k):(n==='mask'?'0':'—')}</span>`).join('')}</div>`;
       $('#vRegs').innerHTML=reg('mask',()=>1)+reg('va',i=>i+1)+reg('vb',i=>100+i)+reg('vc',i=>2*i+101);
       const act=m.filter(x=>x).length;
-      $('#vMsg').innerHTML=`<b>Group ${g}</b> covers positions ${base}–${base+W-1}, with vl = ${act}${act<W?` (the tail: mask ${m.join(' ')})`:''}. Two masked vector loads, one vector add, one masked store. ${act<W?`Positions ${base+act}–${base+W-1} make <b>no memory access</b> and write nothing.`:'All positions active.'}`;}
+      $('#vMsg').innerHTML=`<b>Group ${g}</b> covers positions ${base}–${base+W-1}, with ${act} active position${act===1?'':'s'} out of ${W}${act<W?` (the tail: mask ${m.join(' ')})`:''}. Two masked vector loads, one vector add, one masked store. ${act<W?`Positions ${base+act}–${base+W-1} make <b>no memory access</b> and write nothing.`:'All positions active.'}`;}
     else{$('#vRegs').innerHTML='';$('#vMsg').innerHTML=`<b>Ready.</b> ${N} elements at width ${W} need ${G} group${G>1?'s':''}.`;}
     $('#vStat').innerHTML=[['vector groups',G],['positions used',`${N} / ${slots}`],['utilization',`${(100*N/slots).toFixed(1)}%`],['useful bytes',`12 × ${N} = ${12*N}`],['scalar adds replaced',N]].map(([x,y])=>`<div>${x}<b>${y}</b></div>`).join('');
     $('#vBack').disabled=g===0;$('#vStep').disabled=g>=G;$$('[data-vw]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.vw===W));
