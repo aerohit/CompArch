@@ -81,7 +81,7 @@
 <section class="lesson" id="l5" data-toc="Registers & RISC-V" data-n="5">
   <div class="lesson-h"><div class="kicker">Lesson 5</div><h2>Keep working values in registers</h2></div>
   <div class="card4">
-    <div class="c1"><span class="l">Limitation</span>With one accumulator, every intermediate result has to detour through memory.</div>
+    <div class="c1"><span class="l">Limitation</span>One accumulator can retain only one working result. Keeping another result alive while computing something else may require temporary memory.</div>
     <div class="c2"><span class="l">New mechanism</span>A register file, plus a load/store instruction set where arithmetic only touches registers.</div>
     <div class="c3"><span class="l">New state</span>32 architectural registers (x0 is always 0), named by number in each instruction.</div>
     <div class="c4"><span class="l">Cost</span>Storage, read/write ports, wiring, and instruction bits to name registers. Registers are still finite, so values sometimes spill to memory.</div>
@@ -100,7 +100,7 @@
     <div class="r"><span class="a">5</span><span class="i">ADD t</span><span class="c">ACC = 7 + 16 = 23</span></div>
     <div class="r"><span class="a">6</span><span class="i">STORE y</span><span class="c">write the answer</span></div>
   </div>
-  <p>That's seven instructions with <b>five data reads and two data writes</b>. Three of those accesses (STORE t, the re-read of a, and ADD t) exist only because there was nowhere else to keep a value. A clever programmer could reorder this particular sum as a + b + a − c and avoid the temporary. We keep the expression's structure fixed so the storage difference is visible. For most real calculations, such rearranging isn't possible.</p>
+  <p>That's seven instructions with <b>five data reads and two data writes</b>. Three of those accesses (STORE t, the re-read of a, and ADD t) exist only because there was nowhere else to keep a value. A clever programmer could reorder this particular sum as a + b + a − c and avoid the temporary. We keep the expression's structure fixed so the storage difference is visible.</p>
 
   <h3 class="part">A register file</h3>
   <p>A <b>register file</b> is a small array of registers selected by number, built for speed. The one drawn here has <b>two read ports and one write port</b>, so one instruction can read two operands and write one result in the same cycle. (Real register files vary: wide cores have many more ports.) An instruction like <code>add x28, x5, x6</code> means "read registers 5 and 6, add them, write register 28". Every operand and the destination are named explicitly.</p>
@@ -118,7 +118,7 @@
       <path d="M640 110 H700 V244 H20 V210 H40" class="wc"/><text x="690" y="236" class="end sm tcu">16 goes back to x28</text>
     </svg></div>
     <figcaption><b>Two reads and one write every cycle.</b> Selecting a register by a 5-bit number is fast because the array is tiny and sits right next to the ALU. That is why intermediate values belong here and not in memory.</figcaption></figure>
-  <p>More registers aren't free. Each one costs storage and wiring, and every instruction needs more bits to name them: 32 registers need 5 bits per register field. The register file's delay also grows with its size and port count. That's why general-purpose register counts stay modest: x86-64 has 16, AArch64 31, and RISC-V 32 (16 in its RV32E variant).</p>
+  <p>More registers aren't free. Each one costs storage and wiring, and every instruction needs more bits to name them: 32 registers need 5 bits per register field. The register file's delay also grows with its size and port count. That's why general-purpose register counts stay modest: baseline x86-64 has 16, AArch64 31, and RISC-V 32 (16 in its RV32E variant). (Intel's APX extension raises x86-64's count to 32.) These are <b>architectural</b> register names, the ones instructions can mention; the hardware may hold them in a larger physical register file, which later units explore.</p>
 
   <h3 class="part">Stepping onto a real instruction set: RV32I</h3>
   <p>From here on we use <b>RISC-V</b>, specifically its 32-bit base integer set, <b>RV32I</b>. It's a real, openly documented ISA, and it's clean enough to learn from. What changes from NIB-8:</p>
@@ -128,7 +128,7 @@
     <tr><td>Register width</td><td class="m">8 bits</td><td class="m">32 bits</td></tr>
     <tr><td>An address names…</td><td>one 8-bit word</td><td>one <b>byte</b>. A 32-bit word takes 4 consecutive addresses.</td></tr>
     <tr><td>Instruction size</td><td class="m">1 byte</td><td class="m">4 bytes (so sequential fall-through advances PC by 4; a taken branch or jump sets another PC)</td></tr>
-    <tr><td>Arithmetic operands</td><td>ACC and one memory word</td><td>registers only (load/store design)</td></tr>
+    <tr><td>Arithmetic operands</td><td>ACC and one memory word</td><td>register operands and, for some instructions (like <code>addi</code>), an immediate constant; no data-memory operands in arithmetic (load/store design)</td></tr>
   </table></div>
   <p>We'll use just a few instructions:</p>
   <div class="tbl"><table>
@@ -140,6 +140,7 @@
     <tr><td class="m">sw rs2, offset(base)</td><td>store rs2's value at byte address <i>base + offset</i></td></tr>
     <tr><td class="m">beq rs1, rs2, label</td><td>jump to label if rs1 = rs2</td></tr>
   </table></div>
+  <div class="assume"><b>RV32I rules these examples rely on.</b> Arithmetic works on 32-bit values; <code>add</code>, <code>sub</code> and <code>addi</code> keep the low 32 bits of the result and <b>don't trap</b> on integer overflow. The <code>addi</code> immediate and the load/store offsets are <b>signed 12-bit</b> constants, −2048 to 2047. Offsets count <b>bytes</b>. The examples assume aligned, little-endian word accesses.</div>
 
   <h3 class="part">Four different kinds of number in one instruction</h3>
   <p>A load instruction mixes several kinds of number, and they must be kept apart. Take <code>lw x6, 4(x10)</code> with x10 = 0x100:</p>
@@ -156,11 +157,11 @@
       <path d="M710 220 V238 H290 V150" class="wc dash" marker-end="url(#ahc)"/><text x="300" y="252" class="sm tcu">…and the loaded value 6 goes into x6</text>
     </svg></div>
     <figcaption><b>Five numbers, five roles.</b> 6 is a register number. 4 is an immediate, a constant baked into the instruction. 0x100 is the <i>contents</i> of x10. 0x104 is the <b>effective address</b> computed from them. The loaded word is whatever sits at 0x104, here b = 6. <code>lw</code> never loads the number 4 just because "4" appears in the instruction.</figcaption></figure>
-  <p>Because addresses name bytes, that 32-bit word occupies four addresses. These examples use a <b>little-endian</b> RISC-V memory system: the byte at the lowest address supplies the least significant eight bits. (Instruction fetch in RISC-V is always little-endian; the execution environment may choose big-endian for data memory, though little-endian is by far the most common.)</p>
+  <p>Because addresses name bytes, that 32-bit word occupies four addresses. These examples use a <b>little-endian</b> RISC-V memory system: the byte at the lowest address supplies the least significant eight bits. The word 0x12345678 stored at 0x104 makes this visible: byte 0x104 holds 78, 0x105 holds 56, 0x106 holds 34 and 0x107 holds 12. (Instruction fetch in RISC-V is always little-endian; the execution environment may choose big-endian for data memory, though little-endian is by far the most common.)</p>
   <figure class="fig narrow"><div class="sc">
-    <svg viewBox="0 0 560 130" role="img" aria-label="The word 6 stored little-endian at addresses 0x104 to 0x107">
+    <svg viewBox="0 0 560 130" role="img" aria-label="The word 0x12345678 stored little-endian at addresses 0x104 to 0x107">
       <g id="leBytes"></g>
-    </svg></div><figcaption><b>Little-endian layout</b> of the word 0x00000006 at 0x104: bytes 06 00 00 00. The byte at the lowest address is the least significant; read from the highest address down to recover the value.</figcaption></figure>
+    </svg></div><figcaption><b>Little-endian layout</b> of the word 0x12345678 at 0x104: bytes 78 56 34 12. The byte at the lowest address is the least significant; read from the highest address down to recover the value. (The word b = 6 in the load example above is stored the same way: 06 00 00 00.)</figcaption></figure>
 
   <h3 class="part">Try it: the same calculation, two machines</h3>
   <p>Step through both versions and watch the memory-traffic counters. The register version keeps a in x5 the whole time, so it's never re-read, and both partial results stay in registers.</p>
@@ -177,8 +178,8 @@
 
   <h3 class="part">Registers are not variables</h3>
   <p>The ISA knows nothing about the names in your source code. The <b>compiler</b> decides where each value lives at each moment. A variable might sit in a register for a while, be stored to memory, be kept in two places, or vanish entirely if it's optimized away. One register holds many different variables over a program's life. When a program needs more live values than there are registers, the compiler must <b>spill</b> some to memory and reload them later. (Real compilers first try to avoid this, for example by reordering computations so fewer values are live at once, or by recomputing a cheap value instead of saving it. The lesson stands: register pressure can create memory traffic.)</p>
-  <figure class="fig"><div class="sc"><svg id="spillSvg" viewBox="0 0 760 170" role="img" aria-label="Ten live values competing for four registers: six must spill to memory"></svg></div>
-    <figcaption><b>Register pressure.</b> Ten values are needed at once, but only four registers are free, so six live in memory and cost loads and stores. More registers relieve this. So does restructuring code so fewer values are live at the same time. GPUs face the same problem, and it's severe there (a later unit).</figcaption></figure>
+  <figure class="fig"><div class="sc"><svg id="spillSvg" viewBox="0 0 760 170" role="img" aria-label="Ten live values competing for four registers: six are kept in memory"></svg></div>
+    <figcaption><b>Register pressure.</b> Ten values are needed at once, but only four registers are free, so six have to live in memory. Assuming a fixed computation order, no recomputation and four available registers, that means extra loads, and stores for any value that doesn't already have a valid copy in memory: register pressure <i>can</i> create additional memory traffic. More registers relieve this. So does restructuring code so fewer values are live at the same time. GPUs face the same problem, and it's severe there (a later unit).</figcaption></figure>
 
   <div class="predict"><div class="ph"><b>Predict</b><span>Use the stepper only to check.</span></div><ol>
     <li>In the RV32I version, what are x5, x28, x29 and M[0x10C] immediately after the instruction at 0x50?
@@ -218,12 +219,13 @@
     <figcaption><b>Same contract, different machines.</b> A tiny microcontroller and a high-end core can run the <i>same binary</i> and agree on every visible result, provided both support the ISA extensions, ABI and execution environment the binary needs. They differ in cycles, internal state and cost. Only the visible results at defined points must match; for the simplified machines in this unit, that means after each instruction.</figcaption></figure>
 
   <h3 class="part">Design 1: single-cycle</h3>
-  <p>Do everything for an instruction in one clock cycle: fetch it, decode it, read registers, use the ALU, access data memory and write a register. The trouble is that the clock period must fit the <b>longest</b> chain, which is a load. An add finishes its real work sooner, but it still waits for the next clock edge.</p>
+  <p>Do everything for an instruction in one clock cycle: fetch it, decode it, read registers, use the ALU, access data memory and write a register. The trouble is that the clock period must fit the <b>longest</b> chain, which is a load (in the figure, 1.0 + 0.8 + 1.2 + 1.2 + 0.8 = 5 ns). An add finishes its real work sooner, but it still waits for the next clock edge.</p>
   <figure class="fig"><div class="sc"><svg id="scSvg" viewBox="0 0 760 180" role="img" aria-label="Single-cycle design: every instruction takes the load's full delay"></svg></div>
     <figcaption><b>Wasted tails.</b> Hatched regions are time an instruction spends finished but waiting for the clock. A single-cycle design also needs separate instruction and data memories (or two ports), because a load needs both in the same cycle.</figcaption></figure>
 
   <h3 class="part">Design 2: multicycle</h3>
   <p>Instead, split each instruction into short <b>phases</b>, one per clock cycle, and let each instruction use only the phases it needs. Values that must survive from one phase to the next are captured in <b>internal latches</b>: registers that exist only inside the implementation.</p>
+  <p>The clock must now accommodate the <b>slowest phase</b>, including the latch and control overhead each cycle adds. Splitting an instruction into five phases therefore doesn't make the clock five times faster unless the phases are balanced. Built from the single-cycle figure's parts, the ALU and memory phases each need 1.2 ns, so the period would be at least 1.2 ns plus overhead.</p>
   <figure class="fig"><div class="sc">
     <svg viewBox="0 0 760 210" role="img" aria-label="Multicycle phases F, D, E, M, W with internal latches between them">
       <g id="mcPhases"></g>
@@ -250,7 +252,7 @@
     <div class="ctrl"><label class="rl" for="tcS">single-cycle period: <b id="tcSv">5.0</b> ns<input id="tcS" type="range" min="3" max="7" step="0.5" value="5"></label><label class="rl" for="tcM">multicycle period: <b id="tcMv">1.0</b> ns<input id="tcM" type="range" min="0.8" max="1.6" step="0.1" value="1"></label></div>
     <div class="sc" style="padding:8px 0 0"><svg id="tcSvg" viewBox="0 0 760 170" role="img" aria-label="Timelines of the two designs drawn to scale" style="min-width:560px"></svg></div>
     <p class="msg" id="tcMsg"></p>
-  </div><figcaption><b>Synthetic teaching timings</b> include all register and control overhead, assume memory always answers within its phase, and model one instruction at a time. With the defaults, the mixed sequence takes 25 ns single-cycle and 20 ns multicycle. Nudge the multicycle period to 1.3 ns and it loses. More phases are not automatically faster.</figcaption></figure>
+  </div><figcaption><b>Synthetic teaching timings</b>, separate from the single-cycle figure: the comparator assumes a design whose phases have been balanced to fit a 1.0 ns period. Both periods include all register and control overhead, assume memory always answers within its phase, and model one instruction at a time. With the defaults, the mixed sequence takes 25 ns single-cycle and 20 ns multicycle. Nudge the multicycle period to 1.3 ns and it loses. More phases are not automatically faster.</figcaption></figure>
 
   <div class="pitfall">Multicycle is <b>not pipelining</b>. Here one instruction still finishes completely before the next begins: we split <i>one instruction's</i> work across time. Pipelining (Unit 3) overlaps <i>different instructions</i>. Also, "F, D, E, M, W" is a teaching decomposition, not a claim that every real CPU has exactly these five steps.</div>
 
@@ -263,6 +265,8 @@
       <details><summary>Show answer</summary><div class="ans"><p>No, there's no speedup at all: single-cycle 5 × 5 = 25 ns, multicycle 5 × 5 × 1 = 25 ns. Loads use every phase, so there's nothing to skip.</p></div></details></li>
     <li>If the extra latches and muxes push the multicycle period to 1.3 ns, how long does the mixed sequence take?
       <details><summary>Show answer</summary><div class="ans"><p>20 × 1.3 = <b>26 ns</b>, now <i>slower</i> than single-cycle's 25 ns. The overhead of adding state and control is real.</p></div></details></li>
+    <li>If one phase needs 1.2 ns, can this implementation safely use a 1.0 ns clock without changing that phase?
+      <details><summary>Show answer</summary><div class="ans"><p><b>No.</b> Every phase must finish within one clock period (plus setup), so the slowest phase sets the minimum period: at least 1.2 ns. At 1.0 ns the latch at the end of that phase would capture a value that hasn't settled. Faster clocks need that phase shortened or split.</p></div></details></li>
     <li>A CPU's documentation says it uses F–D–E–M–W internally. Does that prove it's pipelined? What would?
       <details><summary>Show answer</summary><div class="ans"><p>No. A multicycle machine uses those phases one instruction at a time. Pipelining is shown by <b>overlap</b>: a second instruction being fetched while the first is still in a later phase, so instructions complete more often than one per full phase sequence.</p></div></details></li>
   </ol></div>
@@ -275,7 +279,7 @@
   <div class="card4">
     <div class="c1"><span class="l">Limitation</span>A jump forgets where it came from, and an interrupted program would lose the values in its registers.</div>
     <div class="c2"><span class="l">New mechanism</span>Link registers for returning, a stack by convention, trap entry into privileged handlers, and saved thread contexts.</div>
-    <div class="c3"><span class="l">New state</span>ra and sp, stack frames in ordinary memory, the OS's saved contexts (one per thread), and trap/privilege registers.</div>
+    <div class="c3"><span class="l">New state</span>Roles for existing registers (the ABI names x1 <code>ra</code> and x2 <code>sp</code>; no registers are added), stack frames in ordinary memory, the OS's saved contexts (one per thread), and trap/privilege registers.</div>
     <div class="c4"><span class="l">Cost</span>Saving and restoring takes instructions and memory traffic. Every context switch has overhead.</div>
   </div>
 
@@ -290,12 +294,12 @@
       <rect x="510" y="20" width="220" height="116" class="bx"/><text x="520" y="40" class="bd tcu">f:</text>
       <text x="524" y="64" class="sm">0x80  …</text><text x="524" y="84" class="sm">…    (f's work)</text>
       <rect x="516" y="96" width="208" height="22" class="te"/><text x="524" y="111">0x9C jalr x0, 0(ra)</text>
-      <path d="M244 83 C 360 60, 420 56, 508 62" class="wc" marker-end="url(#ahc)"/><text x="376" y="48" class="mid sm tcu">① PC ← 0x80</text>
+      <path d="M244 83 C 360 60, 420 56, 508 62" class="wc" marker-end="url(#ahc)"/><text x="376" y="48" class="mid sm tcu">jal effect: PC ← target (0x80)</text>
       <rect x="320" y="140" width="120" height="36" class="pl"/><text x="380" y="163" class="mid bd">ra = 0x48</text>
-      <path d="M200 94 C 230 150, 280 158, 318 158" class="wp" marker-end="url(#ahp)"/><text x="40" y="158" class="sm tpl">② ra ← PC + 4</text>
-      <path d="M516 118 C 460 170, 300 120, 246 108" class="wt" marker-end="url(#aht)"/><text x="470" y="178" class="sm tte">③ return: PC ← ra</text>
+      <path d="M200 94 C 230 150, 280 158, 318 158" class="wp" marker-end="url(#ahp)"/><text x="40" y="158" class="sm tpl">jal effect: ra ← old PC + 4</text>
+      <path d="M516 118 C 460 170, 300 120, 246 108" class="wt" marker-end="url(#aht)"/><text x="470" y="178" class="sm tte">later, jalr: PC ← ra</text>
     </svg></div>
-    <figcaption><b>jal does two things at once:</b> it records the return address in ra and jumps. The hardware has no idea what a "function" is. <code>jal</code> and <code>jalr</code> are just control transfers, and the notion of a function comes from how software uses them.</figcaption></figure>
+    <figcaption><b>jal does two things at once:</b> it records the return address in ra and jumps. Both effects belong to the same instruction and both use the <i>old</i> PC (0x44), so ra = 0x44 + 4 = 0x48. The hardware has no idea what a "function" is. <code>jal</code> and <code>jalr</code> are just control transfers, and the notion of a function comes from how software uses them.</figcaption></figure>
 
   <h3 class="part">The calling convention: a software agreement</h3>
   <p>Separately compiled pieces of code can only cooperate if they agree on which registers carry arguments, which hold the return address and stack pointer, and which a called function may freely overwrite. That agreement is part of the <b>ABI</b> (application binary interface), and it's layered <i>on top of</i> the ISA:</p>
@@ -305,8 +309,9 @@
     <tr><td class="m">sp</td><td class="m">x2</td><td>stack pointer</td><td>Yes: restored before returning</td></tr>
     <tr><td class="m">a0–a7</td><td class="m">x10–x17</td><td>arguments; a0 (and a1) also carry return values</td><td>No</td></tr>
     <tr><td class="m">t0–t6</td><td class="m">x5–7, x28–31</td><td>temporaries: the <i>caller</i> saves them if it still needs them</td><td>No</td></tr>
-    <tr><td class="m">s0–s11</td><td class="m">x8–9, x18–27</td><td>saved: the <i>callee</i> must restore them if it uses them</td><td>Yes</td></tr>
+    <tr><td class="m">s0–s11</td><td class="m">x8–9, x18–27</td><td>saved: the <i>callee</i> must restore them if it modifies them</td><td>Yes</td></tr>
   </table></div>
+  <div class="worked"><p><b>Who preserves what.</b> Suppose <code>main</code> holds a value in <code>t0</code> that it needs after calling <code>g</code>. <code>g</code> may overwrite <code>t0</code> freely, so it's <b>main's</b> job, as the caller, to save <code>t0</code> (say, on its stack) before the call and reload it afterwards. Now suppose <code>g</code> wants to use <code>s0</code> for its own work. <code>main</code> is entitled to find its <code>s0</code> unchanged, so <b>g</b>, the callee, must save the incoming <code>s0</code> before changing it and restore it before returning. If <code>g</code> only <i>reads</i> <code>s0</code>, there's nothing to save.</p></div>
   <p>The stack also follows conventions: it <b>grows toward lower addresses</b>, sp stays 16-byte aligned, and each function call that needs storage reserves a <b>stack frame</b>. To the hardware, the stack is just ordinary memory plus a register the software agrees to treat as a pointer.</p>
 
   <h3 class="part">Nested calls overwrite ra, so save it</h3>
@@ -315,7 +320,7 @@
     <svg viewBox="0 0 760 240" role="img" aria-label="Stack frame of f: 16 bytes from 0x1F0 to 0x1FF, with main's return address saved at 0x1FC">
       <g id="frameFig"></g>
     </svg></div>
-    <figcaption><b>f's 16-byte frame.</b> <code>addi sp, sp, -16</code> reserves it and <code>sw ra, 12(sp)</code> writes 0x48 to 0x1FC. Only 4 of the 16 bytes are used, but the convention keeps sp 16-byte aligned. <code>double</code> is a <b>leaf</b> function (it calls nobody), so it needs no frame at all.</figcaption></figure>
+    <figcaption><b>f's 16-byte frame.</b> <code>addi sp, sp, -16</code> reserves it and <code>sw ra, 12(sp)</code> writes 0x48 to 0x1FC. Only 4 of the 16 bytes are used, but the convention keeps sp 16-byte aligned. <code>double</code> needs no frame in this example: it makes no calls and needs no stack storage or saved registers. Being a <b>leaf</b> (calling nobody) isn't enough by itself: a leaf that needs a local array or has to spill values would still reserve a frame.</figcaption></figure>
 
   <h3 class="part">Try it: trace the calls, then break them</h3>
   <p>Step through and watch ra, sp and the stack. Then switch on <b>Remove save/restore</b>, which turns <code>sw ra</code> and <code>lw ra</code> into no-ops, and step again to see exactly where things go wrong.</p>
@@ -339,7 +344,10 @@
     <li><b>Interrupt</b>: asynchronous, caused by something outside the instruction stream, such as a timer tick or a network packet.</li>
     <li><b>System call</b>: an intentional request for OS service. On RISC-V that's the <code>ecall</code> instruction.</li>
   </ul>
-  <p>All of these cause a <b>trap</b>. The hardware records a small amount of control information (on RISC-V, the interrupted PC goes into a special register and the cause into another), switches to a privileged mode (from user code, a higher <b>privilege level</b>), and jumps to a handler. The hardware does <i>not</i> automatically save all 31 registers. The handler's software must save any registers it will use and restore them before returning. What happens next depends on the trap: after an <b>interrupt</b>, the handler returns to the saved PC and the interrupted code never notices. After an <b>ecall</b>, it returns to the instruction <i>after</i> the ecall, usually with a result in a register. After a <b>fault</b>, it may fix the problem and retry the instruction, or terminate the thread. The exact control state saved and the privilege levels involved depend on how the trap is configured (see the RISC-V privileged specification).</p>
+  <p>All of these cause a <b>trap</b>. The hardware records a small amount of control information (on RISC-V, the interrupted PC goes into a special register and the cause into another), along with the previous privilege level and interrupt-enable status, and transfers control to a configured trap handler; a trap from user code enters a more privileged mode (a higher <b>privilege level</b>). The hardware does <i>not</i> automatically save all 31 registers. The handler's software must save any registers it will use and restore them before returning. What happens next depends on the trap: after an <b>interrupt</b>, the handler returns to the saved PC with the interrupted code's registers restored, so it continues correctly (though time has passed, and other observable effects may have changed). That preserve-and-restore rule is for transparent interrupt handling. After an <b>ecall</b>, the handler deliberately returns a result, usually in a register, and resumes <i>after</i> the ecall. After a <b>fault</b>, it may fix the problem and retry the instruction, or terminate the thread. The exact control state saved and the privilege levels involved depend on how the trap is configured (see the RISC-V privileged specification).</p>
+  <div class="worked"><p><b>How a system call gets past its ecall.</b> RISC-V records the address of the <code>ecall</code> instruction <i>itself</i> in the handler's exception-PC register (<code>sepc</code> for a supervisor-mode handler). The trap-return instruction resumes at whatever that register holds; it doesn't add 4 on its own. So for an ordinary completed system call, the handler advances the saved PC:</p>
+  <p style="font-family:var(--mono);font-size:14px">ecall at 0x100 → saved exception PC = 0x100 → handler sets it to 0x104 → trap return resumes at 0x104</p>
+  <p>xv6 does exactly this (<code>p-&gt;trapframe-&gt;epc += 4</code> in <code>trap.c</code>). For an interrupt the saved PC is already the right place to resume, so nothing is added. For a recoverable fault, such as a page fault the OS fixes, the saved PC deliberately stays on the faulting instruction so it runs again.</p></div>
   <figure class="fig"><div class="sc"><svg id="xferSvg" viewBox="0 0 760 230" role="img" aria-label="Three kinds of control transfer: function call, trap handled and returned, and trap leading to a switch to another thread"></svg></div>
     <figcaption><b>Three transfers that are easy to confuse.</b> Entering the kernel does <i>not</i> mean switching threads. Often the handler just deals with the event and returns to the same thread: to the saved PC after an interrupt, or past the <code>ecall</code> after a system call. A context switch happens only when the OS scheduler decides that a different thread should run.</figcaption></figure>
 
@@ -378,18 +386,18 @@
     <div class="ctrl"><button id="t7step" class="pri">Run 1 instruction ▶</button><button id="t7int">Interrupt, same thread resumes</button><button id="t7sw">Timer interrupt → switch threads ⇄</button><button id="t7reset">Reset</button></div>
     <p class="msg" id="t7status"></p>
     <div class="evlog" id="t7log" aria-label="Event history"></div>
-  </div><figcaption><b>Watch x5.</b> After a switch, the same hardware register holds the other thread's value. Switch back and the first thread's value reappears, restored from its saved context, and it continues <i>exactly</i> where it stopped, even between two instructions of its loop. A real switch saves more (all integer registers and privilege state, plus floating-point or vector state when the thread has used it) and may change address spaces between processes. It never copies the process's memory.</figcaption></figure>
+  </div><figcaption><b>Watch x5.</b> After a switch, the same hardware register holds the other thread's value. Switch back and the first thread's value reappears, restored from its saved context, and it continues <i>exactly</i> where it stopped, even between two instructions of its loop. The explorer's single "save / restore context" step is a <b>conceptual aggregation</b>. A real OS preserves the thread's complete resumable state across several mechanisms. In xv6, for example, trap entry saves the user registers into the thread's <i>trapframe</i>, while the kernel's <code>swtch</code> routine saves only <code>ra</code>, <code>sp</code> and <code>s0</code>–<code>s11</code> of the kernel code doing the switching; floating-point or vector state may be handled separately, only when needed. A switch between processes may also change address spaces. It never copies the process's memory.</figcaption></figure>
 
   <div class="tbl"><table>
     <tr><th>Event</th><th>Why control moves</th><th>Does the running thread change?</th></tr>
     <tr><td>Function call / return</td><td>Run another routine, then come back</td><td><b>No</b></td></tr>
-    <tr><td>Trap: syscall, exception, interrupt</td><td>Request a service or handle an event, at a higher privilege level</td><td><b>Not necessarily</b>: often returns to the same thread</td></tr>
+    <tr><td>Trap: syscall, exception, interrupt</td><td>Request a service or handle an event: control goes to a configured trap handler (a trap from user code enters a more privileged mode)</td><td><b>Not necessarily</b>: often returns to the same thread</td></tr>
     <tr><td>Context switch</td><td>The scheduler gives the hardware context to a different thread</td><td><b>Yes</b></td></tr>
   </table></div>
   <p>Each of these saves a different set of state, for a different reason:</p>
   <div class="tbl"><table>
     <tr><th>Event</th><th>What gets saved</th><th>Why that set</th></tr>
-    <tr><td>Function call</td><td><code>ra</code> and whichever registers the calling convention says must survive (callee-saved registers the callee uses)</td><td>Both sides agreed on the convention in advance, so only those need saving</td></tr>
+    <tr><td>Function call</td><td>The <b>caller</b> saves caller-saved registers (t0–t6, a0–a7) whose values it needs after the call. The <b>callee</b> restores any callee-saved registers (s0–s11, sp) it modifies. A function that will overwrite its incoming <code>ra</code> (by making its own call) must preserve it to return.</td><td>Both sides agreed on the convention in advance, so each saves only what it's responsible for</td></tr>
     <tr><td>Interrupt handler</td><td>The interrupted PC and cause (by hardware), plus every register the handler will change (by software)</td><td>The interrupted code agreed to nothing, so anything disturbed must be put back</td></tr>
     <tr><td>Thread switch</td><td>The running thread's whole continuation: PC, registers and sp, into its saved context</td><td>Another thread will use all the registers; this one must resume later exactly where it stopped</td></tr>
   </table></div>
@@ -409,6 +417,16 @@
       <details><summary>Show answer</summary><div class="ans"><p>Target <b>0x40</b>; encoded displacement 0x40 − 0x44 = <b>−4 bytes</b>, because <code>jal</code> is PC-relative. The instruction never contains the address 0x40, so the same bytes placed elsewhere would jump somewhere else. A bare number is ambiguous (target or offset?), and assemblers differ in how they read it; a label lets the assembler compute the correct displacement.</p></div></details></li>
     <li>Two threads in one process have different sp values. Does that mean two cores, two protected address spaces, or two isolated stacks?
       <details><summary>Show answer</summary><div class="ans"><p><b>None of these.</b> They may share one core by taking turns, they share one address space, and their stacks are just different regions of it that either thread could access. What's truly distinct is each thread's <b>register state and continuation</b>.</p></div></details></li>
+    <li><b>Transfer.</b> A caller needs the value in <code>t0</code> after a call. What obligation does it have?
+      <details><summary>Show answer</summary><div class="ans"><p><code>t0</code> is caller-saved, so the callee may overwrite it. The <b>caller</b> must save it before the call (or keep the value in a callee-saved register instead) and restore it afterwards.</p></div></details></li>
+    <li><b>Transfer.</b> A leaf function needs a local array. Can it require a stack frame?
+      <details><summary>Show answer</summary><div class="ans"><p><b>Yes.</b> "Leaf" only means it makes no calls, so it needn't save <code>ra</code>. The array still needs memory, which comes from reserving a frame on the stack.</p></div></details></li>
+    <li><b>Transfer.</b> An interrupt handler returns without invoking the scheduler. Has a thread switch occurred?
+      <details><summary>Show answer</summary><div class="ans"><p><b>No.</b> Control passed to the handler and came back to the same thread. A trap is a control transfer; a thread switch happens only if the OS chooses to run a different thread before returning.</p></div></details></li>
+    <li><b>Transfer.</b> A system-call handler leaves the exception PC pointing at the <code>ecall</code>. Where does trap return resume?
+      <details><summary>Show answer</summary><div class="ans"><p>At the <b>ecall itself</b>, which would make the same system call again, over and over. Trap return uses the saved PC as-is, so the handler must add 4.</p></div></details></li>
+    <li><b>Transfer.</b> Two CPUs implement the same ISA but have different internal latches. Must the OS save those latches when switching threads?
+      <details><summary>Show answer</summary><div class="ans"><p><b>No.</b> The OS saves architectural state, which the ISA defines and both CPUs share. Internal latches are microarchitectural: the hardware finishes or discards their contents at instruction boundaries, so they carry nothing a thread needs to resume.</p></div></details></li>
   </ol></div>
   <p class="checkpoint">Draw a function return and a thread resumption side by side as two different uses of saved state. For each, say what lives in registers, what lives in memory, and which software convention gives the saved bits their meaning.</p>
 </section>
@@ -419,7 +437,7 @@
     <tr><th>Lesson</th><th>Mechanism</th><th>State it adds</th><th>Who defines it</th><th>Limitation that remains</th></tr>
     <tr><td>5</td><td>Register file, load/store ISA</td><td>32 architectural registers</td><td>ISA</td><td>Finite registers, so spills</td></tr>
     <tr><td>6</td><td>ISA vs. microarchitecture; multicycle</td><td>Internal latches (invisible)</td><td>Hardware designer</td><td>Still one instruction at a time</td></tr>
-    <tr><td>7</td><td>Calls, stacks, traps, context switches</td><td>ra/sp, frames, saved contexts, privilege</td><td>ABI and OS conventions + ISA trap rules</td><td>Switching costs time</td></tr>
+    <tr><td>7</td><td>Calls, stacks, traps, context switches</td><td>ABI roles for x1/x2 (ra/sp), frames, saved contexts, privilege</td><td>ABI and OS conventions + ISA trap rules</td><td>Switching costs time</td></tr>
   </table></div>
   <p>Closing exercise: explain (1) why a processor can run the <i>same program</i> faster without changing its ISA, and (2) why running several software threads doesn't by itself mean several instructions execute at the same moment. Unit 3 answers the first question in depth, by overlapping instructions inside one core.</p>
   <div class="worked srcnote"><b>Sources and model assumptions.</b> The explorers on this page are small teaching models, not RISC-V or operating-system emulators. They implement a handful of RV32I instructions, use aligned little-endian 32-bit words, show each instruction only once it has completed, and summarize operating-system work (trap entry, scheduling, saving and restoring) as single steps. The real-architecture facts come from the <a href="https://docs.riscv.org/reference/isa/v20240411/unpriv/rv32.html">RV32I base ISA specification</a> (instruction formats, PC-relative <code>jal</code>, loads and stores, endianness), the <a href="https://github.com/riscv-non-isa/riscv-elf-psabi-doc/blob/master/riscv-cc.adoc">RISC-V calling convention</a> (<code>ra</code>, <code>sp</code>, argument and saved registers), and the <a href="https://docs.riscv.org/reference/isa/_attachments/riscv-privileged.pdf">RISC-V privileged specification</a> (trap entry, saved exception PC and cause, trap return). For a concrete operating system's saved state, see xv6's <a href="https://github.com/mit-pdos/xv6-riscv/blob/riscv/kernel/proc.h">process and context definitions</a>, which distinguish RUNNABLE from RUNNING. Links checked September 2026.</div>
@@ -438,8 +456,8 @@ const H=v=>'0x'+(v>>>0).toString(16).toUpperCase();
 (function(){
   const rows=[['x0 = 0 (hardwired)',''],['x5 = 10','te'],['x6 = 6','te'],['…',''],['x28 ← 16','cu'],['…  x31','']];
   $('#rfRows').innerHTML=rows.map(([t,c],i)=>`<rect x="262" y="${54+i*28}" width="176" height="24" class="${c||'bx'}"/><text x="272" y="${71+i*28}" class="${c?'bd':'sm'}">${t}</text>`).join('');
-  let le='';['06','00','00','00'].forEach((b,i)=>{const x=60+i*110;le+=`<text x="${x+50}" y="22" class="mid sm">${H(0x104+i)}</text><rect x="${x}" y="30" width="100" height="50" class="${i?'bg2':'cu'}"/><text x="${x+50}" y="62" class="mid bd" style="font-size:18px">${b}</text>`;});
-  le+='<text x="110" y="104" class="mid sm">least significant</text><text x="440" y="104" class="mid sm">most significant</text><text x="275" y="124" class="mid bd">word value = 0x00000006 = 6</text>';
+  let le='';['78','56','34','12'].forEach((b,i)=>{const x=60+i*110;le+=`<text x="${x+50}" y="22" class="mid sm">${H(0x104+i)}</text><rect x="${x}" y="30" width="100" height="50" class="${i?'bg2':'cu'}"/><text x="${x+50}" y="62" class="mid bd" style="font-size:18px">${b}</text>`;});
+  le+='<text x="110" y="104" class="mid sm">least significant</text><text x="440" y="104" class="mid sm">most significant</text><text x="275" y="124" class="mid bd">word value = 0x12345678</text>';
   $('#leBytes').innerHTML=le;
   let sp='<text x="20" y="14" class="sm">10 values needed at the same time</text>';
   for(let i=0;i<10;i++){const x=20+i*56,inR=i<4;sp+=`<rect x="${x}" y="22" width="48" height="30" class="${inR?'te':'cu'}"/><text x="${x+24}" y="42" class="mid bd">v${i+1}</text>`;}
