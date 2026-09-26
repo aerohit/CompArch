@@ -76,7 +76,7 @@
     <div class="ctrl" style="margin:0 0 8px"><button id="mxBack">◀ Back</button><button id="mxNext" class="pri">Add next k ▶</button><button id="mxReset">Reset</button><span class="readout" id="mxOut"></span></div>
     <div class="sc" style="padding:0"><svg id="mxSvg" viewBox="0 0 760 230" role="img" aria-label="D = C + A × B built up one reduction index at a time, each as an outer product of a column of A and a row of B" style="min-width:560px"></svg></div>
     <p class="msg" id="mxMsg"></p>
-  </div><figcaption><b>One reduction index at a time.</b> Each step adds an <b>outer product</b>: column k of A times row k of B, a full 2 × 2 grid of products. With A = [[1, 2], [3, 4]], B = [[5, 6], [7, 8]] and C = [[10, 0], [0, 10]], the result is D = [[29, 22], [43, 60]]. That is 8 multiplies and 8 adds, conventionally 16 FLOPs, and one matrix instruction could perform all of it. So instruction counts say little about work.</figcaption></figure>
+  </div><figcaption><b>One reduction index at a time.</b> Each step adds an <b>outer product</b>: column k of A times row k of B, a full 2 × 2 grid of products. With A = [[1, 2], [3, 4]], B = [[5, 6], [7, 8]] and C = [[10, 0], [0, 10]], the result is D = [[29, 22], [43, 60]]. That is 8 multiplies and 8 adds, conventionally 16 FLOPs. Conceptually it is <i>one</i> matrix operation, D = C + A × B. Real matrix instructions, though, accept only specific, generally larger tile shapes (CUDA's WMMA fragments, for example, are 16 × 16 × 16), so a 2 × 2 problem would be padded into a bigger tile or computed another way. Padded, the hardware would perform far more than 16 FLOPs, of which only 16 are useful. Either way, instruction counts say little about work.</figcaption></figure>
   <p>The operands also have a <b>layout</b>, not just values. A matrix instruction expects its tile in specific registers or memory, often split across the threads of a warp as <b>fragments</b>: each thread holds a piece that need not be a neat row of the logical matrix. The rules differ between instruction families (NVIDIA's warp-level <code>wmma</code>, warp-group <code>wgmma</code> and newer single-thread-initiated forms each have their own participation and completion rules). For applications, a tuned matrix library is the right first baseline. And a quoted matrix peak must name its precision, sparsity assumption and FLOP-counting convention before it means anything for your workload. A narrow or oddly shaped problem may waste much of a fixed tile on padding.</p>
 
   <h3 class="part">Range and precision are different problems</h3>
@@ -90,10 +90,11 @@
     <tr><td>FP8 E5M2</td><td class="m">1 / 5 / 2</td><td class="m">57,344</td><td class="m">2⁻²</td></tr>
   </table></div>
   <figure class="fig"><div class="widget">
-    <div class="ctrl" style="margin:0 0 8px"><span class="readout">Value x =</span><input type="text" id="fpX" value="3.14159" aria-label="Value to convert" style="width:130px;font:500 14px var(--mono);padding:5px 8px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:4px"><span class="readout">or try:</span><div class="seg" role="group" aria-label="Example values"><button data-fx="1.001">1.001</button><button data-fx="0.1">0.1</button><button data-fx="300">300</button><button data-fx="1000">1000</button><button data-fx="70000">70000</button><button data-fx="0.00001">0.00001</button><button data-fx="16777217">2²⁴+1</button></div></div>
+    <div class="ctrl" style="margin:0 0 8px"><span class="readout">Value x =</span><input type="text" id="fpX" value="3.14159" aria-label="Value to convert" style="width:130px;font:500 14px var(--mono);padding:5px 8px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:4px"><span class="readout">or try:</span><div class="seg" role="group" aria-label="Example values"><button data-fx="1.001">1.001</button><button data-fx="0.1">0.1</button><button data-fx="300">300</button><button data-fx="1000">1000</button><button data-fx="70000">70000</button><button data-fx="0.00001">0.00001</button><button data-fx="16777217">2²⁴+1</button><button data-fx="460">460</button><button data-fx="470">470</button></div>
+      <span class="readout">FP8 overflow:</span><div class="seg" role="group" aria-label="FP8 conversion mode"><button data-fsat="0" aria-pressed="true">non-saturating (NaN / ∞)</button><button data-fsat="1">saturate to max finite</button></div></div>
     <div class="sc" style="padding:0"><svg id="fpSvg" viewBox="0 0 760 230" role="img" aria-label="The value stored in each format, its error, and the spacing between neighbouring representable values" style="min-width:560px"></svg></div>
     <p class="msg" id="fpMsg"></p>
-  </div><figcaption><b>Same value, five formats.</b> Each row shows the nearest representable value (round to nearest, ties to even), the relative error, and the gap between neighbouring values at that magnitude, with bits drawn to scale on the left. Values beyond a format's largest finite value overflow. FP32, FP16, BF16 and E5M2 have an infinity for that; E4M3FN has no infinity, so an overflowing conversion becomes NaN or saturates to 448, depending on the conversion mode. Tiny values underflow toward zero through the subnormal range.</figcaption></figure>
+  </div><figcaption><b>Same value, five formats.</b> Each row shows the nearest representable value (round to nearest, ties to even), the relative error, and the gap between neighbouring values at that magnitude, with bits drawn to scale on the left. Values beyond a format's largest finite value overflow. FP32, FP16, BF16 and E5M2 have an infinity for that; E4M3FN has no infinity. For the two FP8 formats the result also depends on the <b>conversion mode</b>, which the toggle selects: a non-saturating conversion turns an overflow into NaN (E4M3FN) or ∞ (E5M2), while a saturating one clamps to the largest finite value (448 or 57,344). Try 460 and 470 in E4M3FN: 460 rounds to 448 and is representable; 470 rounds past it and overflows. "Gap" is the spacing from the stored magnitude to the next larger representable value. Tiny values underflow toward zero through the subnormal range, and relative error is unstable near zero: a tiny absolute error can be a huge relative one.</figcaption></figure>
   <p>FP16 and BF16 both take 2 bytes, but behave differently. Near 1, FP16's spacing is <b>8 times finer</b> (2⁻¹⁰ versus 2⁻⁷), while BF16 keeps FP32's 8-bit exponent and therefore its huge range. Try 70000: FP16 overflows, BF16 stores it coarsely. Choosing a format means looking at the actual values and the tolerable error, not just the byte count. "FP8" alone isn't even a complete description: E4M3 and E5M2 split the bits differently and treat infinities differently.</p>
 
   <h3 class="part">Accumulation is another numerical choice</h3>
@@ -111,7 +112,7 @@
     <div class="sc" style="padding:10px 0 0"><svg id="qSvg" viewBox="0 0 760 230" role="img" aria-label="Number line with the representable levels, the original values and their reconstructions; clipped values marked" style="min-width:560px"></svg></div>
     <div class="stat" id="qStat"></div>
     <p class="msg" id="qMsg"></p>
-  </div><figcaption><b>A small scale gives fine steps but a narrow range; a large scale the reverse.</b> Tick marks are the representable values s × q; the shaded band is the range [−Qs, Qs]. Circles are the six original values, diamonds their reconstructions. At 4 bits and s = 0.5 the reconstruction is [−2.5, −1, 0, 0.5, 1.5, 3.5]: the outlier 6.2 clips to 3.5. At s = 1 nothing clips, but small values round more coarsely. This is an integer quantizer, not an FP8 emulator: floating-point formats have non-uniform spacing and their own encoding rules.</figcaption></figure>
+  </div><figcaption><b>A small scale gives fine steps but a narrow range; a large scale the reverse.</b> At 4 bits the tick marks are the representable values s × q; at 8 bits the 255 levels are too dense to draw, so their ticks are omitted. The shaded band is the range [−Qs, Qs]. The view is cropped at ±8.5; when the range extends further (up to ±14 at 4 bits with s = 2), an arrow at the edge says so. The symmetric codes −7…7 use 15 of the 16 possible 4-bit patterns: −8 is deliberately left unused in this teaching quantizer so that the range is symmetric. Circles are the six original values, diamonds their reconstructions. At 4 bits and s = 0.5 the reconstruction is [−2.5, −1, 0, 0.5, 1.5, 3.5]: the outlier 6.2 clips to 3.5. At s = 1 nothing clips, but small values round more coarsely. This is an integer quantizer, not an FP8 emulator: floating-point formats have non-uniform spacing and their own encoding rules.</figcaption></figure>
   <p>A single outlier can force a large scale that wastes resolution on everything else in a tensor. <b>Per-channel</b> or <b>per-block</b> scales adapt to local ranges, at the cost of storing and handling the scales. Modern low-precision matrix formats combine small floating-point elements with block scales, and those scales are part of the format's contract. Judge accuracy with representative data, both absolute and relative error, and the downstream result that matters. What's tolerable for inference may not be for training, or for an iterative solver that accumulates error.</p>
 
   <div class="predict"><div class="ph"><b>Predict</b><span>Check with the explorers.</span></div><ol>
@@ -219,7 +220,7 @@
     <div class="sc" style="padding:10px 0 0"><svg id="hbSvg" viewBox="0 0 760 170" role="img" aria-label="Bandwidth calculation from pins, rate and stacks, with bars for bandwidth and capacity" style="min-width:560px"></svg></div>
     <p class="msg" id="hbMsg"></p>
   </div><figcaption><b>pins × bits per second per pin ÷ 8 = bytes per second.</b> With 1,024 pins at 4 Gb/s per pin: 1024 × 4 × 10⁹ / 8 = 512 GB/s per stack; four stacks give 2,048 GB/s (2.048 TB/s) raw, and 4 × 16 GB = 64 GB of capacity. The pin rate is already transferred bits per second, so don't multiply by 2 again for "double data rate". These are invented inputs, not a real HBM generation, and delivered bandwidth is lower than raw (refresh, access patterns, controller efficiency, competing traffic).</figcaption></figure>
-  <p>Capacity and bandwidth are separate dimensions: more gigabytes per stack doesn't add bandwidth, and high bandwidth doesn't make one dependent read faster. Latency is still set by the DRAM itself.</p>
+  <p>Capacity and bandwidth are separate dimensions: more gigabytes per stack doesn't add bandwidth, and high bandwidth doesn't make one dependent read faster. HBM's wide interface raises the bandwidth ceiling, but it doesn't by itself promise low latency for a <i>dependent</i> load. That load still travels through the cache hierarchy, the on-chip interconnect and the memory controller's queues to the DRAM and back, and contention and data placement affect every step. The next section shows placement at work.</p>
 
   <h3 class="part">Try it: locality depends on who is asking</h3>
   <p>In a <b>NUMA</b> (non-uniform memory access) system, the cost of reaching memory depends on where the requester sits relative to the memory. A core reaches its own node's controller directly, or crosses a fabric to another node's. The virtual address doesn't change; the physical placement decides the route. Our teaching machine has two nodes. A thread on node A takes <b>80 ns</b> for a cache-missing load from A's DRAM and <b>140 ns</b> from B's. Each load's address depends on the previous result (pointer chasing), so loads can't overlap.</p>
@@ -260,7 +261,7 @@
 
   <h3 class="part">Know what each collective promises</h3>
   <figure class="fig"><div class="sc"><svg id="colSvg" viewBox="0 0 760 300" role="img" aria-label="Five collectives on four ranks: broadcast, reduce, all-reduce, reduce-scatter and all-gather, shown as before and after buffers" style="min-width:560px"></svg></div>
-    <figcaption><b>Before and after, on four ranks.</b> Colours mark whose data a value contains; Σ marks a sum of all four contributions. The <i>semantics</i> of a collective are independent of the algorithm that implements it: an all-reduce can be built as a reduce-scatter followed by an all-gather (below), and libraries such as NCCL pick algorithms by message size, topology and hardware.</figcaption></figure>
+    <figcaption><b>Before and after, on four ranks.</b> Colours mark whose data a value contains; Σ marks a sum of all four contributions; — marks a buffer with no defined result (after a reduce, only the root R0 is guaranteed to hold the sum). The <i>semantics</i> of a collective are independent of the algorithm that implements it: an all-reduce can be built as a reduce-scatter followed by an all-gather (below), and libraries such as NCCL pick algorithms by message size, topology and hardware.</figcaption></figure>
 
   <h3 class="part">Try it: a ring all-reduce</h3>
   <p>Four ranks form a directed ring R0 → R1 → R2 → R3 → R0. Each starts with a four-element vector, split into four one-element <b>chunks</b>. Everyone wants the elementwise sum [1111, 2222, 3333, 4444]. In each of three <b>reduce-scatter</b> rounds, every rank sends one partial chunk to its neighbour, which adds it to its own. After those rounds each rank owns one fully summed chunk. Then three <b>all-gather</b> rounds pass the finished chunks around until everyone has all four. Every send in a round uses the state from <i>before</i> the round.</p>
@@ -274,7 +275,10 @@
   <h3 class="part">Derive the communication cost</h3>
   <p>With P ranks and an M-byte contribution each, split into P chunks: every rank sends M/P bytes in each of the P − 1 reduce-scatter rounds and the P − 1 all-gather rounds.</p>
   <div class="asm" style="max-width:720px"><div class="r"><span class="a"></span><span class="i">bytes sent per rank = 2 × (P − 1)/P × M</span></div><div class="r"><span class="a"></span><span class="i">T_ring ≈ 2 × (P − 1) × α + 2 × (P − 1)/P × M / β</span></div></div>
-  <p>α is a fixed cost per round and β the bandwidth of each directed ring link, assuming identical full-duplex links (so sending and receiving happen at once; don't add the receive time again), equal chunks, no other traffic, and negligible time for the additions. Note that the bytes per rank approach 2M as P grows: the ring's communication time barely shrinks with more ranks. With P = 4, M = 100 MB, β = 25 GB/s and α = 5 μs, each rank sends 150 MB: 6 ms of transfer plus 6 × 5 μs, so <b>6.03 ms</b>.</p>
+  <p>α is a fixed cost per round and β the bandwidth of each directed ring link, assuming identical full-duplex links (so sending and receiving happen at once; don't add the receive time again), equal chunks, no other traffic, and negligible time for the additions. With P = 4, M = 100 MB, β = 25 GB/s and α = 5 μs, each rank sends 150 MB: 6 ms of transfer plus 6 × 5 μs, so <b>6.03 ms</b>.</p>
+  <p>Now add ranks. The bytes each rank sends, 2(P−1)/P × M, rise toward 2M, so the <b>bandwidth term rises toward 2M/β from below</b>; it never shrinks. Meanwhile the <b>startup term 2(P−1)α grows linearly</b> with P. Total communication time therefore doesn't level off, and it keeps increasing:</p>
+  <div class="tbl"><table><tr><th>Ranks</th><th class="m">Bandwidth term</th><th class="m">Startup term</th><th class="m">All-reduce time</th></tr><tr><td>4</td><td class="m">6.00 ms</td><td class="m">0.03 ms</td><td class="m">6.03 ms</td></tr><tr><td>8</td><td class="m">7.00 ms</td><td class="m">0.07 ms</td><td class="m">7.07 ms</td></tr><tr><td>16</td><td class="m">7.50 ms</td><td class="m">0.15 ms</td><td class="m">7.65 ms</td></tr></table></div>
+  <p>These come from the ideal model; measured collectives are usually slower, because links are shared, chunks are pipelined differently and software adds overhead.</p>
   <figure class="fig"><div class="widget">
     <div class="calc">
       <div><span class="readout">Gradient size M = <b id="scMv"></b></span><input type="range" id="scM" min="0" max="5" step="1" value="2" aria-label="Message size"></div>
@@ -319,6 +323,22 @@
   <details class="predict" style="padding:0"><summary style="margin:12px 16px">One segment, worked out</summary><div class="ans" style="margin:0 16px 16px">
     <p>With 10 ms of local compute per GPU and a 100 MB gradient all-reduced over the lesson's 25 GB/s ring, the compute-then-communicate segment takes 10 + 6.03 = <b>16.03 ms</b>. That's not the whole iteration: host transfers, conversions and the CPU's consumption of the output are extra stages. To improve it, find the largest exposed stage and test one hypothesis: fewer bytes, better locality, cheaper conversion, faster useful compute, or legal overlap. Check numerical quality after every precision or reduction-order change.</p>
   </div></details>
+  <h3 class="part">Transfer exercise: annotate a path and a time budget</h3>
+  <p>A fresh hypothetical setup, with its own numbers. One CPU node holds a 400 MB input batch in host memory. Four GPUs each copy their 100 MB share over their own 25 GB/s host link (assume the links and host memory don't contend). Each GPU computes for 12 ms and produces a 200 MB FP32 gradient, which is all-reduced over a ring with β = 50 GB/s per link and α = 10 μs. Each GPU then returns a 4 MB result to the host over its 25 GB/s link, and the CPU reads it. Assume every stage waits for the previous one: no overlap.</p>
+  <ol>
+    <li>Draw where the input, the gradients and the outputs live, and mark every copy and every completion dependency.</li>
+    <li>Compute each stage's time and the critical-path estimate for one iteration.</li>
+    <li>Name the bottleneck, and propose <b>one measurement that could disprove</b> your prediction.</li>
+    <li>Now use 8 GPUs. Compare <b>strong scaling</b> (same 400 MB batch) with <b>weak scaling</b> (each GPU keeps 100 MB, so the batch doubles). The gradient stays 200 MB because it depends on the model, not the batch.</li>
+  </ol>
+  <details class="predict" style="padding:0"><summary style="margin:12px 16px">Show a worked answer</summary><div class="ans" style="margin:0 16px 16px">
+    <p><b>Path.</b> Host memory on the CPU's node → (copy, then completion) → each GPU's HBM → compute → gradient in HBM → ring all-reduce over GPU links (complete before any rank uses the sum) → 4 MB result copied to host memory → the CPU may read only after that copy completes.</p>
+    <p><b>Stages.</b> Copy in: 100 MB ÷ 25 GB/s = <b>4 ms</b>. Compute: <b>12 ms</b>. All-reduce: 2 × 3/4 × 200 MB ÷ 50 GB/s = 6 ms, plus 6 × 10 μs = 0.06 ms, so <b>6.06 ms</b>. Copy out: 4 MB ÷ 25 GB/s = <b>0.16 ms</b>. Critical path: 4 + 12 + 6.06 + 0.16 = <b>22.22 ms</b>.</p>
+    <p><b>Bottleneck.</b> Compute is the largest stage (54%), then the all-reduce (27%). The obvious improvement is overlapping gradient buckets' communication with the rest of the backward pass, which could hide much of the 6.06 ms, but never the last bucket's.</p>
+    <p><b>A disproving measurement.</b> Profile one iteration's timeline (for example with Nsight Systems) and time the all-reduce by itself at 200 MB. If it takes much longer than 6.06 ms, the ring's links are shared or slower than assumed, and the "compute is the bottleneck" conclusion may be wrong too.</p>
+    <p><b>8 GPUs, strong scaling.</b> Copy in 50 MB = 2 ms; compute 6 ms; all-reduce 2 × 7/8 × 200 MB ÷ 50 GB/s = 7 ms + 14 × 10 μs, so 7.14 ms; copy out 2 MB = 0.08 ms. Total <b>15.22 ms</b>: a speedup of 22.22 / 15.22 ≈ <b>1.46×</b> on twice the GPUs, because the all-reduce grew while everything else halved.</p>
+    <p><b>8 GPUs, weak scaling.</b> Copy in 4 ms, compute 12 ms, all-reduce 7.14 ms, copy out 0.16 ms: <b>23.30 ms</b> for an 800 MB batch. Throughput goes from 400/22.22 ≈ 18.0 to 800/23.30 ≈ 34.3 MB of input per ms, about <b>1.91×</b>. Weak scaling looks better because each GPU's compute share stays large compared with the communication.</p>
+  </div></details>
   <div class="tbl"><table>
     <tr><th>Question</th><th>What answers it</th></tr>
     <tr><td>Which numerical contract?</td><td>Input format, scales, accumulator type, rounding and reduction order</td></tr>
@@ -326,6 +346,14 @@
     <tr><td>Which communication path?</td><td>The physical links and controllers each transfer crosses, and what else shares them</td></tr>
     <tr><td>Which dependency permits overlap?</td><td>Completion events and data readiness; overlap only between truly independent work</td></tr>
   </table></div>
+  <h3 class="part">Further reading and model limits</h3>
+  <p>Every machine, memory stack, link speed and timing on this page is an invented teaching model. To check the real rules:</p>
+  <ul>
+    <li>Matrix instructions and FP8: NVIDIA's <a href="https://docs.nvidia.com/cuda/parallel-thread-execution/index.html">PTX ISA</a> (supported shapes, types and which threads participate), <a href="https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/cpp-language-extensions.html">CUDA WMMA</a>, and the <a href="https://docs.nvidia.com/cuda/cuda-math-api/cuda_math_api/group__CUDA__MATH__FP8__MISC.html">FP8 conversion functions</a> (saturating versus non-saturating).</li>
+    <li>Unified addressing versus managed memory: the CUDA Programming Guide's <a href="https://docs.nvidia.com/cuda/cuda-programming-guide/02-basics/understanding-memory.html">memory chapter</a>.</li>
+    <li>Collective semantics: NCCL's <a href="https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/nccl4py/communicator/collectives.html">collective operations</a>, including what reduce leaves on non-root ranks.</li>
+    <li>NUMA placement: the Linux kernel's <a href="https://docs.kernel.org/6.11/admin-guide/mm/numa_memory_policy.html">NUMA memory policy</a> documentation.</li>
+  </ul>
   <p class="credit">Inspired by the Unit 6 outline and worked answers in <code>chatgpt-reference/</code>, rewritten and redrawn here. Every machine, memory stack, link and timing on this page is an invented teaching model; none describes a specific product. For real details see NVIDIA's CUDA and PTX documentation, NCCL's collective operations guide, the Linux NUMA documentation, and vendor HBM and UCIe specifications.</p>
   <div class="nextunit"><a href="unit-05-gpus.html"><small>← Unit 5</small>Understand GPUs</a><a href="index.html"><small>Back to</small>Course map →</a></div>
 </section>
@@ -360,22 +388,23 @@ const f2=v=>+v.toFixed(2);
   $('#mxNext').onclick=()=>{k++;draw();};$('#mxBack').onclick=()=>{k--;draw();};$('#mxReset').onclick=()=>{k=-1;draw();};draw();})();
 
 /* L25 float formats */
-(function(){const F=[['FP32',8,23,127,-126,(2-2**-23)*2**127,1],['FP16',5,10,15,-14,65504,1],['BF16',8,7,127,-126,(2-2**-7)*2**127,1],['E4M3FN',4,3,7,-6,448,0],['E5M2',5,2,15,-14,57344,1]];
+(function(){let sat=0;const F=[['FP32',8,23,127,-126,(2-2**-23)*2**127,1],['FP16',5,10,15,-14,65504,1],['BF16',8,7,127,-126,(2-2**-7)*2**127,1],['E4M3FN',4,3,7,-6,448,0],['E5M2',5,2,15,-14,57344,1]];
   const rne=y=>{const f=Math.floor(y),d=y-f;return d>0.5?f+1:d<0.5?f:(f%2===0?f:f+1);};
   function conv(x,[n,e,m,b,emin,mx,inf]){if(x===0)return {v:0,gap:2**(emin-m)};const s=Math.sign(x),a=Math.abs(x);let E=Math.max(Math.floor(Math.log2(a)),emin);const ulp=2**(E-m);let r=rne(a/ulp)*ulp;
-    if(r>mx)return {ovf:true,inf,gap:ulp};return {v:s*r,gap:r>=2**(E+1)?ulp*2:ulp,sub:a<2**emin};}
+    if(r>mx){if(sat&&(n==='E4M3FN'||n==='E5M2'))return {v:s*mx,sat:true,gap:0};return {ovf:true,inf,gap:ulp};}return {v:s*r,gap:r>=2**(E+1)?ulp*2:ulp,sub:a<2**emin};}
   const fmt=v=>{if(v===0)return '0';const a=Math.abs(v);return a>=1e10||a<1e-3?v.toExponential(4):(+v.toPrecision(8)).toString();};
   function draw(){const x=parseFloat($('#fpX').value);let s='';if(!isFinite(x)){$('#fpMsg').innerHTML='<span style="color:var(--bad)">Enter a number.</span>';return;}
-    s+=T(20,16,'format','xs')+T(150,16,'bits: sign · exponent · fraction','xs')+T(420,16,'stored value','xs')+T(560,16,'rel. error','xs')+T(660,16,'gap here','xs');
+    s+=T(20,16,'format','xs')+T(150,16,'bits: sign · exponent · fraction','xs')+T(420,16,'stored value','xs')+T(560,16,'rel. error','xs')+T(660,16,'gap above','xs');
     F.forEach((f,i)=>{const y=30+i*38,r=conv(x,f);s+=T(20,y+18,f[0],'bd');const bw=Math.min(8,240/(1+f[1]+f[2]));
       s+=R(150,y+4,bw,20,'bad')+R(150+bw,y+4,bw*f[1],20,'cu')+R(150+bw*(1+f[1]),y+4,bw*f[2],20,'te');
-      s+=T(420,y+18,r.ovf?(r.inf?'overflow → ∞':'overflow → NaN / 448'):fmt(r.v),`bd ${r.ovf?'tbad':''}`);
+      s+=T(420,y+18,r.ovf?(r.inf?'overflow → ∞':'overflow → NaN'):r.sat?`${fmt(r.v)} (saturated)`:fmt(r.v),`bd ${r.ovf||r.sat?'tbad':''}`);
       const re=r.ovf?null:x===0?0:Math.abs(r.v-x)/Math.abs(x);s+=T(560,y+18,re===null?'—':re===0?'exact':re<1e-3?re.toExponential(1):pct(re),re&&re>0.01?'tbad':'');
-      s+=T(660,y+18,r.ovf?'—':r.gap>=1e5||r.gap<1e-4?r.gap.toExponential(1):String(+r.gap.toPrecision(3)),'xs');});
+      s+=T(660,y+18,r.ovf||r.sat?'—':r.gap>=1e5||r.gap<1e-4?r.gap.toExponential(1):String(+r.gap.toPrecision(3)),'xs');});
     s+=R(150,226-12,10,10,'bad')+T(164,223,'sign','xs')+R(210,214,10,10,'cu')+T(224,223,'exponent (range)','xs')+R(340,214,10,10,'te')+T(354,223,'fraction (precision)','xs');
     setVB('fpSvg',760,232,s);
     const h=conv(x,F[1]),b=conv(x,F[2]);
     $('#fpMsg').innerHTML=x===16777217?'2²⁴ + 1 = 16,777,217 is exactly halfway between the FP32 neighbours 2²⁴ and 2²⁴ + 2. Ties go to the even one, 2²⁴, so the +1 is lost. That is why <code>(2²⁴ + 1) − 2²⁴</code> evaluates to 0 in FP32.':`x = ${x}. FP16 ${h.ovf?'<b>overflows</b> (largest 65,504)':`stores ${fmt(h.v)}`}; BF16 stores ${b.ovf?'overflow':fmt(b.v)}. ${!h.ovf&&!b.ovf&&x!==0?(Math.abs(h.v-x)===Math.abs(b.v-x)?'Here both happen to land on the same value.':Math.abs(h.v-x)<Math.abs(b.v-x)?'FP16 is closer here: its 10 fraction bits give finer steps.':'BF16 is closer here.'):h.ovf&&!b.ovf?'BF16 keeps FP32\'s 8-bit exponent, so it has the range FP16 lacks, but only 7 fraction bits.':''}`;}
+  $$('[data-fsat]').forEach(b=>b.onclick=()=>{sat=+b.dataset.fsat;$$('[data-fsat]').forEach(x=>x.setAttribute('aria-pressed',+x.dataset.fsat===sat));draw();});
   $('#fpX').oninput=draw;$$('[data-fx]').forEach(b=>b.onclick=()=>{$('#fpX').value=b.dataset.fx;draw();});draw();})();
 
 /* L25 quantizer */
@@ -388,7 +417,8 @@ const f2=v=>+v.toFixed(2);
     s+=`<line x1="20" y1="100" x2="740" y2="100" class="w"/>`;for(let v=-8;v<=8;v+=2)s+=`<line x1="${Xp(v)}" y1="96" x2="${Xp(v)}" y2="104" class="w"/>`+T(Xp(v),196,v,'mid xs');
     if(Q*s0/ s0<=64)for(let c=-Q;c<=Q;c++){const v=c*s0;if(Math.abs(v)<=8.5)s+=`<line x1="${Xp(v)}" y1="88" x2="${Xp(v)}" y2="112" style="stroke:var(--te);stroke-width:${bits===4?1.5:.6}"/>`;}
     X.forEach((x,i)=>{s+=`<circle cx="${Xp(x)}" cy="70" r="6" class="mkc"/>`+T(Xp(x),i%2?44:58,x,'mid xs')+`<path d="M${Xp(x)} 76 L${Xp(rec[i])} 124" class="w dash"/>`+`<polygon points="${Xp(rec[i])},122 ${Xp(rec[i])+6},130 ${Xp(rec[i])},138 ${Xp(rec[i])-6},130" class="${clip[i]?'mkb':'mkt'}"/>`+T(Xp(rec[i]),154,f2(rec[i]),`mid xs ${clip[i]?'tbad':''}`);});
-    s+=T(20,24,`codes −${Q}…${Q}; step ${s0}; range ±${f2(Q*s0)}`,'xs')+(X.some((x)=>Math.abs(x)>8.5)?'':'');
+    s+=T(20,24,`codes −${Q}…${Q}; step ${s0}; range ±${f2(Q*s0)}${bits===8?' (level ticks omitted: too dense to draw)':''}`,'xs');
+    if(Q*s0>8.5)s+=T(740,34,`range continues to ±${f2(Q*s0)} →`,'end xs','fill:var(--te)')+T(20,34,'← view cropped at ±8.5','xs','fill:var(--te)');
     setVB('qSvg',760,210,s);
     const mx=Math.max(...err),mean=err.reduce((a,b)=>a+b,0)/err.length,nc=clip.filter(Boolean).length;
     $('#qStat').innerHTML=[['reconstructed',`[${rec.map(f2).join(', ')}]`],['clipped',nc],['max abs error',f2(mx)],['mean abs error',mean.toFixed(3)]].map(([k,v])=>`<div>${k}<b style="font-size:${k==='reconstructed'?13:17}px">${v}</b></div>`).join('');
@@ -469,8 +499,8 @@ const f2=v=>+v.toFixed(2);
 
 /* L28 collectives figure */
 (function(){const C=['var(--bad)','var(--cu)','var(--te)','var(--pl)'];let s='';
-  const cell=(x,y,fill,t,cw=22)=>`<rect x="${x}" y="${y}" width="${cw}" height="16" style="fill:${fill};opacity:${t==='·'?0.15:0.8}"/>`+(t&&t!=='·'?T(x+cw/2,y+12,t,'mid','font-size:9px;font-weight:700;fill:var(--panel)'):'');
-  const rows=[['broadcast (root R0)',r=>[[C[0],'a']],r=>[[C[0],'a']],1],['reduce (to R0)',r=>[[C[r],String(r)]],r=>r===0?[['var(--ink)','Σ']]:[[C[r],String(r)]],1],['all-reduce',r=>[[C[r],String(r)]],r=>[['var(--ink)','Σ']],1],['reduce-scatter',r=>[0,1,2,3].map(k=>[C[r],String(r)]),r=>[0,1,2,3].map(k=>k===r?['var(--ink)','Σ']:['var(--line)','·']),4],['all-gather',r=>[0,1,2,3].map(k=>k===r?[C[r],String(r)]:['var(--line)','·']),r=>[0,1,2,3].map(k=>[C[k],String(k)]),4]];
+  const cell=(x,y,fill,t,cw=22)=>t==='—'?`<rect x="${x}" y="${y}" width="${cw}" height="16" style="fill:none;stroke:var(--line);stroke-dasharray:2 2"/>`+T(x+cw/2,y+12,'—','mid','font-size:10px;fill:var(--mute)'):`<rect x="${x}" y="${y}" width="${cw}" height="16" style="fill:${fill};opacity:${t==='·'?0.15:0.8}"/>`+(t&&t!=='·'?T(x+cw/2,y+12,t,'mid','font-size:9px;font-weight:700;fill:var(--panel)'):'');
+  const rows=[['broadcast (root R0)',r=>[[C[0],'a']],r=>[[C[0],'a']],1],['reduce (to R0)',r=>[[C[r],String(r)]],r=>r===0?[['var(--ink)','Σ']]:[['var(--line)','—']],1],['all-reduce',r=>[[C[r],String(r)]],r=>[['var(--ink)','Σ']],1],['reduce-scatter',r=>[0,1,2,3].map(k=>[C[r],String(r)]),r=>[0,1,2,3].map(k=>k===r?['var(--ink)','Σ']:['var(--line)','·']),4],['all-gather',r=>[0,1,2,3].map(k=>k===r?[C[r],String(r)]:['var(--line)','·']),r=>[0,1,2,3].map(k=>[C[k],String(k)]),4]];
   s+=T(280,16,'before','mid xs')+T(580,16,'after','mid xs');
   rows.forEach(([lab,bf,af,w],i)=>{const y=28+i*54;s+=T(20,y+26,lab,'bd xs');
     const cw=w===4?14:22,st=w*(cw+1)+8;
@@ -502,12 +532,13 @@ const f2=v=>+v.toFixed(2);
 (function(){const MS=[10,50,100,200,400,1000],BS=[10,25,50,100],Ps=[1,2,4,8,16],al=5e-6;
   function draw(){const M=MS[+$('#scM').value]*1e6,B=BS[+$('#scB').value]*1e9,C=+$('#scC').value;$('#scMv').textContent=MS[+$('#scM').value]+' MB';$('#scBv').textContent=BS[+$('#scB').value]+' GB/s';$('#scCv').textContent=C+' ms';
     const rows=Ps.map(P=>{const comp=C/P,comm=P>1?(2*(P-1)*al+2*(P-1)/P*M/B)*1e3:0;return {P,comp,comm,tot:comp+comm,sp:C/(comp+comm)};});
-    const mx=Math.max(...rows.map(r=>r.tot)),sc=520/mx;let s='';
+    const mx=Math.max(...rows.map(r=>r.tot)),sc=440/mx;let s='';
     rows.forEach((r,i)=>{const y=20+i*40;s+=T(90,y+19,`${r.P} rank${r.P>1?'s':''}`,'end bd xs')+R(100,y+4,r.comp*sc,22,'cu')+(r.comm?R(100+r.comp*sc,y+4,r.comm*sc,22,'te'):'')+T(106+r.tot*sc,y+19,`${f2(r.tot)} ms · ${r.sp.toFixed(2)}× · ${pct(r.sp/r.P)}`,'xs');});
     s+=R(100,228,12,12,'cu')+T(118,238,'compute (divided ideally)','xs')+R(300,228,12,12,'te')+T(318,238,'ring all-reduce (blocking)','xs');
     setVB('scSvg',760,250,s);
     const r4=rows[2],r8=rows[3],best=rows.reduce((a,b)=>b.tot<a.tot?b:a);
-    $('#scMsg').innerHTML=`At 4 ranks: ${f2(r4.comp)} + ${f2(r4.comm)} = <b>${f2(r4.tot)} ms</b> (${r4.sp.toFixed(2)}×, ${pct(r4.sp/4)} efficient). At 8: <b>${f2(r8.tot)} ms</b> (${r8.sp.toFixed(2)}×). The all-reduce time approaches 2M/β = ${f2(2*M/B*1e3)} ms however many ranks you add, so the fastest configuration here is ${best.P} rank${best.P>1?'s':''}.`;}
+    const terms=[4,8,16].map(P=>{const bwT=2*(P-1)/P*M/B*1e3,laT=2*(P-1)*al*1e3;return `${P} ranks ${bwT.toFixed(2)} + ${laT.toFixed(2)} = ${(bwT+laT).toFixed(2)} ms`;}).join('; ');
+    $('#scMsg').innerHTML=`At 4 ranks: ${f2(r4.comp)} + ${f2(r4.comm)} = <b>${f2(r4.tot)} ms</b> (${r4.sp.toFixed(2)}×, ${pct(r4.sp/4)} efficient). At 8: <b>${f2(r8.tot)} ms</b> (${r8.sp.toFixed(2)}×). All-reduce time as bandwidth term + startup term: ${terms}. The bandwidth term rises toward 2M/β = ${f2(2*M/B*1e3)} ms from below while the startup term grows linearly, so communication time never levels off. The fastest configuration here is <b>${best.P} rank${best.P>1?'s':''}</b>.`;}
   ['scM','scB','scC'].forEach(i=>$('#'+i).oninput=draw);draw();})();
 })();
 </script>
