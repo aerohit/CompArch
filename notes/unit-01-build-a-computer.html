@@ -115,7 +115,7 @@
     <div class="c1"><span class="l">Limitation</span>A machine can only hold physical conditions, such as voltages. We need them to stand for information.</div>
     <div class="c2"><span class="l">New mechanism</span>Binary encoding: agreed ways of reading patterns of two-valued states.</div>
     <div class="c3"><span class="l">New state</span>None yet. Just bit patterns plus conventions for interpreting them.</div>
-    <div class="c4"><span class="l">Cost</span>Every representation has a fixed width, so it has a limited range and can overflow.</div>
+    <div class="c4"><span class="l">Cost</span>A fixed-width representation has a limited range, so arithmetic on it can overflow.</div>
   </div>
 
   <h3 class="part">Why two states?</h3>
@@ -157,7 +157,9 @@
   <p>The payoff is easiest to see on a wheel. Picture all 16 patterns of a 4-bit number around a circle. Adding 1 always moves one step clockwise, whichever reading you use. That's why <b>the same adder circuit works for signed and unsigned numbers</b>. The two readings only disagree about where the "cliff" is: the place where the numbers jump.</p>
   <figure class="fig"><div class="sc"><svg id="wheelSvg" viewBox="0 0 760 330" role="img" aria-label="Four-bit number wheel showing unsigned and signed readings of each pattern"></svg></div>
     <figcaption><b>The 4-bit wheel.</b> Outer labels are unsigned readings (0 to 15), inner labels are signed readings (−8 to 7), and the bit pattern sits on the ring between them. Unsigned values overflow at the top, going from 15 to 0. Signed values overflow at the bottom, going from 7 to −8.</figcaption></figure>
-  <p>Two handy facts follow. To negate a two's-complement number, <b>flip every bit and add 1</b>: 5 = <code>0101</code>, flipped is <code>1010</code>, plus 1 is <code>1011</code> = −5 (look it up on the wheel). And <b>subtraction needs no new hardware</b>: A − B is just A + (flipped B) + 1. We'll use this in the ALU in Lesson 2.</p>
+  <p>Two handy facts follow. To negate a two's-complement number, <b>flip every bit and add 1</b>: 5 = <code>0101</code>, flipped is <code>1010</code>, plus 1 is <code>1011</code> = −5 (look it up on the wheel). And <b>subtraction reuses the adder</b>: A − B is A + (flipped B) + 1, so the ALU only needs a way to invert B and to set the adder's carry-in to 1. We'll use this in the ALU in Lesson 2.</p>
+  <p>The negation rule has one exception. An n-bit two's-complement number ranges from <b>−2<sup>n−1</sup> to 2<sup>n−1</sup> − 1</b>: −8 to +7 in 4 bits. There's no +8, so negating <code>1000</code> (−8) gives flipped <code>0111</code>, plus 1, which is <code>1000</code> again.</p>
+  <p>Carry and signed overflow are also different things. <code>0111 + 0001</code> = <code>1000</code> has no carry out of the top bit, yet as signed numbers 7 + 1 came out as −8: <b>signed overflow without a carry</b>. <code>1111 + 0001</code> = <code>1 0000</code> does carry out, which means the <i>unsigned</i> sum 15 + 1 didn't fit, but as signed numbers it's −1 + 1 = 0, <b>a correct result despite the carry</b>. Signed overflow happens when two operands of the same sign produce a result of the other sign.</p>
 
   <h3 class="part">Fixed width means arithmetic wraps around</h3>
   <p>An 8-bit register can't hold 300. When a result needs more bits than the register has, the extra high bits are simply dropped. The result is the true answer <b>modulo 2<sup>8</sup> = 256</b>.</p>
@@ -258,7 +260,7 @@
 
   <h3 class="part">What we still can't do</h3>
   <p>Change an input, and after the delay the output changes. The adder doesn't keep its old answer anywhere. It's a <b>calculator circuit</b>, not yet a machine that can carry out a <i>sequence</i> of steps, because nothing holds a result so the next step can use it. That missing ingredient is the next lesson.</p>
-  <div class="insight">This split between <b>parts that transform values</b> (ALUs, adders) and <b>parts that hold values</b> (registers, memories) survives all the way to GPUs. When we later ask why a chip is slow, the answer is usually that the transforming parts are waiting on the holding parts.</div>
+  <div class="insight">This split between <b>parts that transform values</b> (ALUs, adders) and <b>parts that hold values</b> (registers, memories) survives all the way to GPUs. When we later ask why a chip is slow, the limit might be arithmetic, dependencies between operations, control flow, or moving data between the two kinds of part. Later units teach how to tell which.</div>
 
   <div class="predict"><div class="ph"><b>Predict</b><span>Trace it on paper first.</span></div><ol>
     <li>A mux has A = 7 and B = 12. What's the output for S = 0? For S = 1?
@@ -284,7 +286,31 @@
   </div>
 
   <h3 class="part">Feedback makes memory</h3>
-  <p>Take two gates and feed each one's output into the other's input. The loop can settle in two stable ways, and it stays in whichever one it's pushed into. That's a <b>latch</b>: one bit of memory built from logic. A <b>flip-flop</b> refines this so it only changes at one precise moment, the <b>rising edge of a clock</b> signal. Line up 8 flip-flops sharing one clock and you have an 8-bit <b>register</b>.</p>
+  <p>Not every loop of gates remembers anything useful, so take a specific one: <b>two inverters, each feeding the other</b>. If the right-hand node is 1, the lower inverter makes the left-hand node 0, and the upper inverter turns that 0 back into 1. The loop agrees with itself, so it stays that way. The opposite state (right 0, left 1) is just as self-consistent. Two stable states: one bit of storage.</p>
+  <figure class="fig"><div class="sc">
+    <svg viewBox="0 0 760 250" role="img" aria-label="Left: two cross-coupled inverters holding Q = 1. Right: a D latch, where a mux chooses between new data D and the loop's own output">
+      <text x="190" y="20" class="mid bd">1 · Two inverters in a loop: it holds</text>
+      <polygon points="150,48 150,92 196,70" class="bx"/><circle cx="200" cy="70" r="4" class="bx"/>
+      <polygon points="230,128 230,172 184,150" class="bx"/><circle cx="180" cy="150" r="4" class="bx"/>
+      <path d="M204 70 H290 V150 H230" class="wc" style="stroke-width:2.2"/><path d="M176 150 H90 V70 H150" class="wt" style="stroke-width:2.2"/>
+      <text x="300" y="114" class="bd tcu">Q = 1</text><text x="80" y="114" class="end bd tte">Q̄ = 0</text>
+      <text x="190" y="200" class="mid sm">Q = 1 feeds the lower inverter → Q̄ = 0 →</text><text x="190" y="216" class="mid sm">upper inverter → Q = 1 again. Stable.</text>
+      <text x="190" y="236" class="mid xs">(Q = 0, Q̄ = 1 is the other stable state.) No way in yet.</text>
+      <line x1="380" y1="10" x2="380" y2="240" class="w" style="stroke:var(--line)"/>
+      <text x="570" y="20" class="mid bd">2 · Add a way to write: a D latch</text>
+      <text x="400" y="74" class="bd">D</text><path d="M414 70 H464" class="w" marker-end="url(#ah)"/>
+      <polygon points="468,50 498,62 498,128 468,140" class="bx"/><text x="480" y="75" class="sm">1</text><text x="480" y="124" class="sm">0</text>
+      <path d="M483 36 V54" class="wp dash" marker-end="url(#ah)"/><text x="483" y="30" class="mid sm tpl">enable</text>
+      <path d="M498 95 H538" class="w" marker-end="url(#ah)"/>
+      <rect x="540" y="72" width="110" height="46" class="te"/><text x="595" y="92" class="mid sm bd">inverter loop</text><text x="595" y="108" class="mid xs">(two inverters)</text>
+      <path d="M650 95 H735" class="wc" marker-end="url(#ahc)"/><text x="700" y="88" class="mid sm tcu">Q</text>
+      <path d="M690 95 V160 H440 V120 H466" class="wt" marker-end="url(#aht)"/>
+      <text x="570" y="190" class="mid sm">enable = 1: Q follows D (<tspan style="font-weight:700">transparent</tspan>)</text>
+      <text x="570" y="208" class="mid sm">enable = 0: Q is fed back, so it <tspan style="font-weight:700">holds</tspan></text>
+      <text x="570" y="232" class="mid xs">flip-flop = two latches, opposite clock halves</text>
+    </svg></div>
+    <figcaption><b>From a loop that holds to a cell you can write.</b> The inverter loop stores a bit but gives no way to change it. Putting a mux in the loop (the same mux as Lesson 2) chooses between "take new data" and "keep what I have". That's a <b>D latch</b>: while enabled it's transparent, so Q follows D; when disabled it holds. This is a teaching construction; real latch circuits are built more compactly at the transistor level.</figcaption></figure>
+  <p>A latch changes <i>whenever</i> it's enabled, which is awkward when its output feeds logic that feeds its own input. A <b>flip-flop</b> fixes this by chaining two latches enabled on opposite halves of the clock: the first follows D while the clock is low, and the second passes that value on when the clock rises. The net effect is that the flip-flop <b>captures D only at the rising edge of the clock</b> and holds it for the rest of the cycle. Line up 8 flip-flops sharing one clock and you have an 8-bit <b>register</b>.</p>
   <p>A register usually also has a <b>write enable</b>. When it's off, the register keeps its old value even though the clock keeps ticking. Look at how that's built: it's just the mux from Lesson 2, feeding the register's own output back in.</p>
   <figure class="fig"><div class="sc">
     <svg viewBox="0 0 760 190" role="img" aria-label="Register with write enable: a mux selects new data or the register's own old value">
@@ -307,7 +333,7 @@
   </ol>
   <div class="pitfall"><b>"At the same instant" is the synchronous teaching abstraction.</b> A real flip-flop needs its input stable for a <b>setup time</b> before the edge and a <b>hold time</b> after it, and the clock reaches different registers at slightly different moments (<b>clock skew</b>). Designers budget for all three; as long as those constraints are met, the simple model gives the right answer.</div>
   <figure class="fig"><div class="sc"><svg id="timingSvg" viewBox="0 0 760 236" role="img" aria-label="Timing diagram: register output Q changes only at rising clock edges, capturing input D"></svg></div>
-    <figcaption><b>Q changes only at rising edges.</b> D can change at any time, even mid-cycle, but Q ignores it until the next edge. The shaded <b>setup window</b> before each edge is the time D must be stable before the flip-flop can capture it reliably.</figcaption></figure>
+    <figcaption><b>Q changes only at rising edges.</b> D may change between capture windows, even mid-cycle, but it must stay stable during the <b>setup</b> interval before the capturing edge and the <b>hold</b> interval after it (both shaded). Q ignores D until the next edge. In this ideal model Q updates exactly at the edge; in real hardware Q becomes valid a short <b>clock-to-Q</b> delay after the edge (the small slanted arrows), the same delay that appears in the critical-path example below.</figcaption></figure>
 
   <h3 class="part">Try it: registers read old values</h3>
   <p>Because all registers capture at the same instant, each next-value computation sees the <b>old</b> values of every register, never a half-updated mix. This is very different from lines of code running one after another. Pick a rule, predict the next values, then tick the clock:</p>
@@ -337,11 +363,26 @@
     </svg></div>
     <figcaption><b>Timing is physics, not a setting.</b> (A simplified calculation: it ignores clock skew, hold constraints and manufacturing and temperature variation.) Making the clock faster requires shortening the critical path: faster transistors, fewer gates in a row, or cutting the path into pieces with registers in between. That last option is <i>pipelining</i>, and it's the first lesson of Unit 3.</figcaption></figure>
 
+  <h3 class="part">A tiny addressed memory, built from registers</h3>
+  <p>How does an address pick one location? Build a four-word memory from four registers and the parts we already have. Two more ideas are needed. A <b>read mux</b> with four inputs uses the 2-bit address as its select, so exactly one register's value reaches <i>read data</i>. A <b>decoder</b> turns a 2-bit number into four wires, exactly one of which is 1 (it's just four AND gates, one per pattern); combined with a <i>write enable</i>, it turns on the write enable of exactly one register.</p>
+  <figure class="fig"><div class="sc">
+    <svg viewBox="0 0 760 270" role="img" aria-label="Four registers sharing write data. A decoder driven by the write address and write enable enables one register; a 4-to-1 mux driven by the read address selects one register's output as read data">
+      <text x="236" y="16" class="mid sm">write data = 99</text><path d="M236 22 V222" class="w"/>
+      <text x="14" y="96" class="xs">write enable = 1</text><path d="M14 104 H116" class="wp dash" marker-end="url(#ah)"/>
+      <text x="14" y="150" class="xs">write addr = 10</text><path d="M14 158 H116" class="w" marker-end="url(#ah)"/>
+      <rect x="120" y="60" width="80" height="150" class="bx"/><text x="160" y="130" class="mid bd">decoder</text><text x="160" y="146" class="mid xs">2 → 4</text>
+      <g id="amRegs"></g>
+      <polygon points="520,40 556,56 556,214 520,230" class="bx"/><text x="538" y="140" class="mid xs">mux</text>
+      <path d="M538 262 V224" class="w" marker-end="url(#ah)"/><text x="548" y="258" class="sm">read address = 01</text>
+      <path d="M556 135 H640" class="wt" style="stroke-width:2.2" marker-end="url(#aht)"/><text x="648" y="130" class="sm bd tte">read data</text><text x="648" y="146" class="sm bd tte">= 42</text>
+    </svg></div>
+    <figcaption><b>M[address] as a circuit.</b> <b>Write:</b> write address 10 (= 2) with write enable 1 makes the decoder raise only its line 2, so at the next clock edge only R2 captures the write data: 5 becomes 99. The other registers see the same data but aren't enabled, so they keep their values. <b>Read:</b> read address 01 (= 1) sets the mux to pass R1, so read data is 42, with no clock edge needed. This is a teaching implementation; large SRAM and DRAM arrays use more specialized structures, but they perform the same two jobs.</figcaption></figure>
+
   <h3 class="part">Registers, memory, datapath, control</h3>
   <p>Both registers and memory hold state, but at different scales:</p>
   <div class="tbl"><table>
     <tr><th></th><th>Register</th><th>Memory array</th></tr>
-    <tr><td>Size</td><td>One value (say 8–64 bits); a register file has a few dozen</td><td>Thousands to billions of locations</td></tr>
+    <tr><td>Size</td><td>One value (say 8–64 bits); a simple CPU typically has a few dozen architectural general-purpose registers or fewer</td><td>Thousands to billions of locations</td></tr>
     <tr><td>How you pick one</td><td>By its wiring or a small register number</td><td>By an address</td></tr>
     <tr><td>Access</td><td>Small and directly selected, so typically the fastest storage; register files often have several read ports</td><td>Larger and addressed, so typically slower; how many accesses it serves at once depends on the design</td></tr>
   </table></div>
@@ -440,11 +481,40 @@
   <h3 class="part">Fetch, decode, execute</h3>
   <p>NIB-8 spends three clock ticks on every instruction. This is our teaching timing model, not a claim about real memory speeds:</p>
   <ol>
-    <li><b>Fetch.</b> The address mux sends PC to memory, and the byte that comes back is captured in IR. At the same edge, PC ← PC + 1. Both updates use the <i>old</i> PC, just like in Lesson 3.</li>
+    <li><b>Fetch.</b> The address mux sends PC to memory, and the byte that comes back is captured in IR. At the same edge, PC ← (PC + 1) mod 16: the 4-bit PC wraps from 15 to 0. Both updates use the <i>old</i> PC, just like in Lesson 3.</li>
     <li><b>Decode.</b> Control looks at IR's opcode and prepares the right selects. Nothing visible changes.</li>
     <li><b>Execute.</b> The instruction's effect happens: ACC, memory or PC changes, or the machine halts.</li>
   </ol>
   <div class="pitfall">One <b>instruction cycle</b> (fetch, decode, execute) here takes three <b>clock cycles</b>. The two terms are easy to blur. Also notice that PC already points to the <i>next</i> instruction while the current one executes. That's why a jump simply overwrites PC.</div>
+
+  <h3 class="part">Inside the control box</h3>
+  <p>"Control decodes the instruction" isn't magic, and it doesn't need another processor inside. The controller is a small state machine: a <b>phase register</b> plus combinational logic. Each cycle, that logic reads the current phase, the opcode in IR and whether ACC is zero, and produces two things: the <b>control signals</b> for the datapath, and the <b>next phase</b>.</p>
+  <figure class="fig"><div class="sc">
+    <svg viewBox="0 0 760 260" role="img" aria-label="Controller: opcode, ACC-is-zero and halted enter decode logic together with the phase register; the logic outputs control signals and the next phase">
+      <text x="20" y="74" class="sm">opcode (IR bits 7–4)</text><path d="M20 82 H348" class="w" marker-end="url(#ah)"/>
+      <text x="20" y="124" class="sm">ACC = 0?</text><path d="M20 132 H348" class="w dash" marker-end="url(#ah)"/>
+      <text x="20" y="174" class="sm">halted</text><path d="M20 182 H212" class="w" marker-end="url(#ah)"/>
+      <rect x="200" y="30" width="330" height="206" class="pl" style="opacity:.35"/><text x="365" y="24" class="mid bd">Control</text>
+      <rect x="350" y="46" width="164" height="174" class="bx"/><text x="432" y="70" class="mid bd">decode logic</text><text x="432" y="86" class="mid xs">(AND / OR / NOT gates)</text>
+      <text x="432" y="118" class="mid xs">e.g. ACC write =</text><text x="432" y="132" class="mid xs">execute AND</text><text x="432" y="146" class="mid xs">(LOAD OR ADD OR SUB)</text>
+      <text x="432" y="176" class="mid xs">LOAD = NOT o3 AND NOT o2</text><text x="432" y="190" class="mid xs">AND NOT o1 AND o0</text>
+      <rect x="214" y="150" width="112" height="70" class="te"/><text x="270" y="172" class="mid sm bd">phase register</text><text x="270" y="190" class="mid xs">fetch → decode →</text><text x="270" y="204" class="mid xs">execute → fetch</text>
+      <path d="M326 185 H348" class="wt" marker-end="url(#aht)"/><path d="M432 220 V230 H270 V222" class="wt" marker-end="url(#aht)"/><text x="350" y="246" class="mid xs tte">next phase (unchanged once halted)</text>
+      <g id="ctlOut"></g>
+    </svg></div>
+    <figcaption><b>Decoding is a Boolean function.</b> Every control signal is some combination of the phase bits, the four opcode bits and ACC = 0?. Recognizing LOAD (opcode 0001) is one AND gate over the opcode bits and their inverses. The phase register steps fetch → decode → execute → fetch on each clock edge; once halted is set, the controller stops asserting any write.</figcaption></figure>
+  <p>The whole controller fits in one table. A dash means the signal doesn't matter; every write enable not listed is 0.</p>
+  <div class="tbl"><table>
+    <tr><th>Phase / instruction</th><th>Memory address from</th><th>ALU op</th><th>Writes enabled</th><th>Next phase</th></tr>
+    <tr><td>fetch (every instruction)</td><td class="m">PC</td><td class="m">—</td><td>IR ← M[PC]; PC ← PC + 1 (next-PC mux selects +1)</td><td>decode</td></tr>
+    <tr><td>decode</td><td class="m">—</td><td class="m">—</td><td>none</td><td>execute</td></tr>
+    <tr><td>execute LOAD</td><td class="m">IR.addr</td><td class="m">pass B</td><td>ACC</td><td>fetch</td></tr>
+    <tr><td>execute ADD / SUB</td><td class="m">IR.addr</td><td class="m">add / sub</td><td>ACC</td><td>fetch</td></tr>
+    <tr><td>execute STORE</td><td class="m">IR.addr</td><td class="m">—</td><td>memory (write data = ACC)</td><td>fetch</td></tr>
+    <tr><td>execute JMP</td><td class="m">—</td><td class="m">—</td><td>PC (next-PC mux selects IR.addr)</td><td>fetch</td></tr>
+    <tr><td>execute JZ</td><td class="m">—</td><td class="m">—</td><td>PC (selects IR.addr) <i>only if</i> ACC = 0</td><td>fetch</td></tr>
+    <tr><td>execute HALT or unknown</td><td class="m">—</td><td class="m">—</td><td>halted ← 1</td><td>stays put</td></tr>
+  </table></div>
 
   <h3 class="part">Run it: the NIB-8 simulator</h3>
   <p>Pick a program, then press <b>Tick</b> one clock edge at a time. Before each tick, predict what will change. Memory cells are editable: type a hex byte (one or two digits, 0–9 and A–F) into any cell to change the program or its data, and the machine resets. <b>Reset</b> restarts from the memory as you've edited it; clicking a program button restores that program's original bytes.</p>
@@ -455,6 +525,7 @@
         <p class="readout" id="memNote" style="margin-top:8px;min-height:1.2em"></p>
         <p class="readout" style="margin-top:4px"><span style="outline:2px solid var(--ink);padding:0 4px">outlined</span> = PC · <span style="background:var(--te-soft);padding:0 4px">teal</span> = read · <span style="background:var(--cu-soft);padding:0 4px">copper</span> = written</p></div>
       <div>
+        <p class="readout" style="margin:0 0 4px">Highlighted: <b>last completed phase</b> · next phase: <b id="phNext">Fetch</b></p>
         <div class="phring" id="phring"><span>Fetch</span><span>Decode</span><span>Execute</span></div>
         <div class="regs" id="simRegs"></div>
         <p class="msg" id="simMsg"></p>
@@ -466,7 +537,7 @@
   </div><figcaption><b>Things to watch.</b> During fetch, PC advances while ACC doesn't move. ADD changes ACC but not memory. Only STORE changes memory. In the loops, JMP and JZ don't move any instructions around. They only change which address the next fetch uses.</figcaption></figure>
 
   <h3 class="part">Branches turn a sequence into a loop</h3>
-  <p>Without <code>JMP</code> and <code>JZ</code>, a program runs straight through memory once. With them, it can repeat and decide. The Countdown program is a loop that ends by testing ACC:</p>
+  <p>Without branches, execution follows consecutive addresses. In NIB-8, the four-bit PC wraps from 15 to 0, so a program with no HALT would eventually run through memory again. Branches let a program choose a different next address, including making a choice based on the data. The Countdown program is a loop that ends by testing ACC:</p>
   <figure class="fig"><div class="sc">
     <svg viewBox="0 0 760 196" role="img" aria-label="Countdown program as a flowchart: load, subtract, store, test for zero, jump back or halt">
       <rect x="20" y="60" width="110" height="46" class="bx"/><text x="75" y="80" class="mid bd">0: LOAD 8</text><text x="75" y="97" class="mid sm">ACC ← n</text>
@@ -499,12 +570,13 @@
     <p>The Multiply program (6 × 3) executes <b>24 instructions</b>. NIB-8 always takes <b>3 cycles</b> per instruction, so that's 72 ticks. At a hypothetical 100 MHz clock (10 ns per tick), it runs in <b>720 ns</b>.</p>
     <p>A faster clock would help only if the circuit could still meet its timing (Lesson 3). A smarter design could lower CPI by overlapping instructions (Unit 3). A better algorithm could lower the instruction count. <b>Clock frequency alone never tells you which machine finishes first.</b></p>
   </div>
+  <p>Two terms need care once we leave NIB-8. <b>Instruction count</b> means instructions actually <i>executed</i>, including every repetition of a loop, not the instructions written in the program: Multiply has 8 instructions in memory but executes 24. <b>CPI</b> is an average over that execution, total CPU cycles ÷ instructions executed. NIB-8's CPI is always 3, but on real machines it changes with the program and its data. At a fixed clock period the equation gives <b>CPU execution time</b>; a program's elapsed time can also include waiting for I/O or for the operating system to schedule it.</p>
 
   <div class="predict"><div class="ph"><b>Predict</b><span>Use the simulator only to check.</span></div><ol>
     <li>In "Add two numbers", right after the <b>6th tick</b>, what are PC, ACC and M[10]? Why hasn't M[10] changed yet?
       <details><summary>Show answer</summary><div class="ans"><p>Tick 6 completes the execute of <code>ADD 9</code>: <b>PC = 2, ACC = 42</b> (23 + 19), <b>M[10] = 0</b>. Only STORE writes memory, and STORE hasn't been fetched yet (ticks 7–9).</p></div></details></li>
     <li>Change the inputs to M[8] = 250 and M[9] = 10 (0xFA and 0x0A). What gets stored?
-      <details><summary>Show answer</summary><div class="ans"><p>260 mod 256 = <b>4</b>. NIB-8 keeps only 8 bits and has no overflow flag, so the program can't even tell that it wrapped.</p></div></details></li>
+      <details><summary>Show answer</summary><div class="ans"><p>260 mod 256 = <b>4</b>. NIB-8 stores 4 and provides no carry or overflow flag. This program performs no overflow check; detecting overflow would require additional software logic (for unsigned addition, checking whether the result is smaller than an operand) or assumptions about the inputs.</p></div></details></li>
     <li>How many instructions does Countdown (starting n = 3) execute, including HALT, and how many ticks?
       <details><summary>Show answer</summary><div class="ans"><p>LOAD, then three rounds of SUB-STORE-JZ, with JMP after the first two rounds only, then HALT: 1 + 3×3 + 2 + 1 = <b>13 instructions</b>, so <b>39 ticks</b>.</p></div></details></li>
     <li>In Multiply, what happens if the counter M[14] starts at 0?
@@ -530,7 +602,7 @@
     <tr><td>1</td><td>Binary encoding</td><td>—</td><td>Bits don't do anything</td></tr>
     <tr><td>2</td><td>Gates, mux, adder, ALU</td><td>—</td><td>No memory, so no sequence</td></tr>
     <tr><td>3</td><td>Registers + clock</td><td>Register contents</td><td>Fixed behaviour</td></tr>
-    <tr><td>4</td><td>Stored program</td><td>PC, IR, ACC, phase, halted</td><td>One accumulator: every intermediate result detours through memory</td></tr>
+    <tr><td>4</td><td>Stored program</td><td>PC, IR, ACC, phase, halted</td><td>One accumulator: keeping several working values requires frequent saves to and reloads from memory</td></tr>
   </table></div>
   <p>That last limitation is where Unit 2 begins. Look at the Multiply loop. It occupies eight instructions (addresses 0–7), and four of them, <code>LOAD 12</code>, <code>STORE 12</code>, <code>LOAD 14</code> and <code>STORE 14</code>, exist only to shuttle the product and the counter between memory and ACC, because there's only one place to keep a working value. (The final pass skips the <code>JMP</code>, so 6 × 3 still takes 8 + 8 + 7 loop instructions plus HALT = 24 instructions, 72 ticks.)</p>
   <h3 class="part">One more, unseen: a transfer exercise</h3>
@@ -739,15 +811,30 @@ const wc=v=>'w'+(v?' on1':'');
 (function(){
   const bus=(x1,x2,y,lab)=>`<path d="M${x1} ${y+15} L${x1+5} ${y} H${x2-5} L${x2} ${y+15} L${x2-5} ${y+30} H${x1+5} Z" class="bx"/><text x="${(x1+x2)/2}" y="${y+20}" class="mid bd">${lab}</text>`;
   let h='<text x="20" y="50" class="bd">CLK</text><text x="20" y="120" class="bd">D</text><text x="20" y="136" class="xs">input</text><text x="20" y="190" class="bd">Q</text><text x="20" y="206" class="xs">output</text>';
-  [120,280,440,600].forEach((e,i)=>{h+=`<rect x="${e-16}" y="98" width="16" height="34" class="te" style="opacity:.5;stroke:none"/><line x1="${e}" y1="22" x2="${e}" y2="214" class="w dash" style="stroke:var(--line)"/><path d="M${e} 132 L${e+6} 166" class="wt" marker-end="url(#aht)"/>`;});
+  [120,280,440,600].forEach((e,i)=>{h+=`<rect x="${e-16}" y="98" width="16" height="34" class="te" style="opacity:.5;stroke:none"/><rect x="${e}" y="98" width="7" height="34" class="pl" style="opacity:.6;stroke:none"/><line x1="${e}" y1="22" x2="${e}" y2="214" class="w dash" style="stroke:var(--line)"/><path d="M${e} 132 L${e+6} 166" class="wt" marker-end="url(#aht)"/>`;});
   h+='<path d="M80 60 H120 V30 H200 V60 H280 V30 H360 V60 H440 V30 H520 V60 H600 V30 H680 V60 H740" class="wc" style="stroke-width:2.2"/>';
   [[80,170,'5'],[178,330,'9'],[338,520,'2'],[528,740,'7']].forEach(([a,b,l])=>h+=bus(a,b,100,l));
   [[80,126,'0'],[134,286,'5'],[294,446,'9'],[454,606,'2'],[614,740,'7']].forEach(([a,b,l])=>h+=bus(a,b,168,l));
-  h+='<text x="104" y="92" class="xs">setup</text><text x="120" y="16" class="mid xs">rising edge</text>';
+  h+='<text x="117" y="92" class="end xs">setup</text><text x="124" y="92" class="xs tpl">hold</text><text x="130" y="160" class="xs tte">clk→Q</text><text x="120" y="16" class="mid xs">rising edge</text>';
   h+='<text x="528" y="146" class="sm tcu">D changes mid-cycle;</text><text x="528" y="159" class="sm tcu">Q waits for the next edge</text>';
   h+='<text x="740" y="230" class="end xs">time →</text>';
   svgEl('timingSvg',h);
 })();
+
+/* ---------- Lesson 4: controller outputs ---------- */
+(function(){const O=['address mux select (PC / IR.addr)','IR write','PC write','next-PC select (+1 / IR.addr)','ALU op (pass B / add / sub)','ACC write','memory write','set halted'];let h='';
+  O.forEach((t,i)=>{const y=48+i*24;h+=`<path d="M514 ${y} H560" class="wc" marker-end="url(#ahc)"/><text x="566" y="${y+4}" class="xs">${t}</text>`;});
+  document.getElementById('ctlOut').innerHTML=h;})();
+
+/* ---------- Lesson 3: tiny addressed memory ---------- */
+(function(){const V=[['17','17'],['42','42'],['5','99'],['8','8']];let h='';
+  V.forEach(([o,n],i)=>{const y=40+i*50,w=i===2,r=i===1;
+    h+=`<path d="M236 ${y+12} H318" class="w" marker-end="url(#ah)"/>`;
+    h+=`<path d="M200 ${80+i*36} H${260+i*6} V${y+28} H318" class="${w?'wc':'w dash'}" style="${w?'stroke-width:2.4':'opacity:.55'}" marker-end="url(#${w?'ahc':'ah'})"/>`;
+    h+=`<text x="206" y="${76+i*36}" class="xs ${w?'tcu':''}">en${i} = ${w?1:0}</text>`;
+    h+=`<rect x="320" y="${y}" width="120" height="38" class="${w?'cu':r?'te':'bx'}"/><text x="332" y="${y+24}" class="bd">R${i}</text><text x="428" y="${y+24}" class="end bd">${o===n?n:o+' → '+n}</text>`;
+    h+=`<path d="M440 ${y+19} H516" class="${r?'wt':'w'}" style="${r?'stroke-width:2.2':''}" marker-end="url(#${r?'aht':'ah'})"/><text x="514" y="${y+15}" class="end xs">${i}</text>`;});
+  document.getElementById('amRegs').innerHTML=h;})();
 
 /* ---------- Lesson 3: clock explorer ---------- */
 (function(){
@@ -810,7 +897,7 @@ const wc=v=>'w'+(v?' on1':'');
     if(s.phase===0){
       const old=s.pc;s.ir=s.mem[old];s.pc=(old+1)&15;s.ifetch++;s.phase=1;
       Object.assign(e,{ph:0,paths:['pc2am','am2mem','mem2ir','pc2inc','inc2pm','pm2pc'],blocks:['b-pc','b-am','b-mem','b-ir','b-inc','b-pm'],reads:[old],chg:['PC','IR'],
-        msg:`<b>Fetch.</b> IR ← M[${old}] = ${hex(s.ir)}${mn(s.ir)?` (${mn(s.ir)})`:''}. At the same edge PC ← ${old} + 1 = <b>${s.pc}</b>.`});
+        msg:`<b>Fetch.</b> IR ← M[${old}] = ${hex(s.ir)}${mn(s.ir)?` (${mn(s.ir)})`:''}. At the same edge PC ← (${old} + 1) mod 16 = <b>${s.pc}</b>${old===15?' (the 4-bit PC wraps)':''}.`});
     }else if(s.phase===1){
       const o=s.ir>>4,a=s.ir&15,m=mn(s.ir);s.phase=2;
       const hint={1:`next, ACC will receive M[${a}]`,2:`next, M[${a}] will receive ACC`,3:`next, ACC will become ACC + M[${a}]`,4:`next, ACC will become ACC − M[${a}]`,5:`next, PC will become ${a}`,6:`next, PC becomes ${a} only if ACC is 0 (it is ${s.acc})`,15:'next, the machine will halt'}[o];
@@ -837,6 +924,7 @@ const wc=v=>'w'+(v?' on1':'');
       const code=P.code.includes(i);c.className='cell'+(code?' code':'')+(i===s.pc&&!s.halted?' pc':'')+(ev&&ev.reads.includes(i)?' rd':'')+(ev&&ev.writes.includes(i)?' wr':'');
       c.querySelector('.dc').textContent=code?(mn(v)||'?'):`= ${v}`;});
     $$('#phring span').forEach((x,i)=>x.classList.toggle('on',!!ev&&ev.ph===i));
+    $('#phNext').textContent=s.halted?'none (halted)':['Fetch','Decode','Execute'][s.phase];
     const R=[['PC',s.pc],['IR',s.ir===null?'—':hex(s.ir)],['IR means',s.ir===null?'—':(mn(s.ir)||'?')],['ACC',`${s.acc}`],['halted',s.halted?'yes':'no']];
     $('#simRegs').innerHTML=R.map(([n,v])=>`<div class="reg ${ev&&ev.chg.includes(n==='IR means'?'IR':n)?'w':''}"><small>${n}</small><b>${v}</b></div>`).join('');
     $('#simMsg').innerHTML=ev?ev.msg:`<b>Ready.</b> Program: ${P.d}. PC = 0, so the first tick fetches the byte at address 0.`;
