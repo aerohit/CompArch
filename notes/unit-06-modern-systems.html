@@ -268,8 +268,8 @@
   <figure class="fig"><div class="widget">
     <div class="sc" style="padding:0"><svg id="rgSvg" viewBox="0 0 760 290" role="img" aria-label="Four ranks' four chunks with values and contributing ranks; this round's sends highlighted" style="min-width:560px"></svg></div>
     <div class="strip" id="rgStrip"></div>
+    <div class="ctrl" style="margin:0 0 10px"><button id="rgBack">◀ Back</button><button id="rgNext" class="pri">Next round ▶</button><button id="rgReset">Reset</button><span class="readout" id="rgOut"></span></div>
     <p class="msg" id="rgMsg"></p>
-    <div class="ctrl"><button id="rgBack">◀ Back</button><button id="rgNext" class="pri">Next round ▶</button><button id="rgReset">Reset</button><span class="readout" id="rgOut"></span></div>
   </div><figcaption><b>Contribution labels prove correctness.</b> Each cell shows its value and which ranks' data it contains; a cell is complete (solid) when it contains all four exactly once. Arrows show this round's sends. Some cells stay stale partial sums until the all-gather overwrites them. In this schedule R0 ends reduce-scatter owning chunk 1, R1 chunk 2, R2 chunk 3 and R3 chunk 0.</figcaption></figure>
 
   <h3 class="part">Derive the communication cost</h3>

@@ -258,12 +258,12 @@
     <div class="ctrl" style="margin:0 0 8px"><span class="readout">Trace:</span><button data-tr="pp">ping-pong</button><button data-tr="three">3 blocks, 1 set</button><button data-tr="fit">scan ×2 (fits)</button><button data-tr="big">scan ×2 (too big)</button></div>
     <div class="ctrl" style="margin:0 0 12px"><label class="rl" for="ctrace" style="flex:1">addresses (hex bytes 00–FF), editable<input id="ctrace" type="text" style="width:100%"></label></div>
     <p class="readout" id="ctErr" style="margin:0 0 8px;min-height:1.2em"></p>
+    <div class="ctrl" style="margin:0 0 10px"><button id="cback">◀ Back</button><button id="cstep" class="pri">Next access ▶</button><button id="crun">Run all</button><button id="creset">Reset</button></div>
     <div class="grid2">
       <div><p class="panel-t">Current access</p><div id="caddr"></div><p class="msg" id="cmsg" style="margin-top:8px"></p></div>
       <div><p class="panel-t">Cache contents</p><table class="ctab" id="ctab"></table></div>
     </div>
     <div class="strip" id="cstrip"></div>
-    <div class="ctrl"><button id="cback">◀ Back</button><button id="cstep" class="pri">Next access ▶</button><button id="crun">Run all</button><button id="creset">Reset</button></div>
     <div class="stat" id="cstat"></div>
   </div><figcaption><b>Model:</b> read-only byte accesses, one at a time. A miss fetches the whole 16-byte line and evicts the <b>least recently used</b> line in that set. Misses are labelled with the "3 Cs": <b>compulsory</b> (first touch of that block ever), <b>conflict</b> (a fully associative cache of the same size would have hit), or <b>capacity</b> (even fully associative would miss, because the data simply doesn't fit).</figcaption></figure>
   <p>Try "3 blocks, 1 set" in all three organizations. Direct-mapped and 2-way both miss every time. Two ways can't hold three blocks that all compete for one set, and LRU always evicts exactly the block needed next. Fully associative has room for all three. Now try "scan ×2 (too big)": 128 bytes can't fit in 64, so no organization saves the second pass. Those are capacity misses.</p>
@@ -480,13 +480,13 @@
   </ol>
   <p>The order of those two steps matters: sources are read <i>before</i> the destination is remapped. Step through the example (M[x10] = 7, x11 = 20, x12 = 5):</p>
   <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 10px"><button id="rnBack">◀ Back</button><button id="rnStep" class="pri">Rename next ▶</button><button id="rnReset">Reset</button></div>
     <div class="grid2">
       <div><p class="panel-t">Program → renamed</p><div class="asm" id="rnAsm" style="margin:0"></div></div>
       <div><p class="panel-t">Rename map (architectural → physical)</p><div class="maptab" id="rnMap"></div>
         <p class="panel-t" style="margin-top:12px">Free list</p><div class="freel" id="rnFree"></div></div>
     </div>
     <p class="msg" id="rnMsg"></p>
-    <div class="ctrl"><button id="rnBack">◀ Back</button><button id="rnStep" class="pri">Rename next ▶</button><button id="rnReset">Reset</button></div>
   </div><figcaption><b>After renaming,</b> I2 still points at p20 (the loaded x1) even though the map now says x1 → p22. I3 writes its new x1 into p22 without disturbing the value I2 needs. Only the real RAW links remain: I1 → I2, I3 → I4, and I4, I2 → I5.</figcaption></figure>
 
   <h3 class="part">Out-of-order issue: go around the blocked load</h3>
@@ -541,8 +541,8 @@
       <div><p class="panel-t">Committed (architectural) registers</p><div class="maptab" id="robCommit"></div></div>
       <div><p class="panel-t">Speculative map (for newly renamed work)</p><div class="maptab" id="robSpec"></div></div>
     </div>
+    <div class="ctrl" style="margin:0 0 10px"><button id="robPrev">◀ Previous cycle</button><button id="robNext" class="pri">Next cycle ▶</button></div>
     <p class="msg" id="robMsg"></p>
-    <div class="ctrl"><button id="robPrev">◀ Previous cycle</button><button id="robNext" class="pri">Next cycle ▶</button></div>
   </div><figcaption><b>I3 and I4 finish in cycles 2–3 but can't retire until I1, I2 ahead of them have.</b> In the fault case, cycle 5 finds the faulting load at the ROB head: all five instructions are squashed, including the finished I3 and I4, and the handler sees x1–x4 exactly as they were before I1. (The handler's own work isn't shown.)</figcaption></figure>
   <p>Notice two views of "x1". The <b>committed</b> x1 is 7 after I1 retires, then 24 after I3 retires. Meanwhile the <b>speculative map</b> already said x1 → p22 from the moment I3 was renamed, because any newly renamed instruction must read the newest version. Recovery copies the committed map back over the speculative one.</p>
   <p>These two views are conceptual. Real out-of-order cores store and recover this state in different ways: some keep a separate retirement map, some checkpoint the rename map at branches, and none need a separate architectural register file. What every design must provide is the essential promise: <b>precise, in-order architectural effects</b>.</p>
@@ -557,12 +557,12 @@
   <p>If p turns out to equal A, L2 must see the store's 9. The core can make L2 wait until every older store address is known (safe but slow), or it can <b>guess</b> that they don't overlap, run L2 early, and check afterwards. Step through both outcomes:</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 10px"><div class="seg" role="group" aria-label="Store address"><button data-p="A" aria-pressed="true">p turns out = A (conflict)</button><button data-p="B">p turns out = B (no conflict)</button></div></div>
+    <div class="ctrl" style="margin:0 0 10px"><button id="mdBack">◀ Back</button><button id="mdStep" class="pri">Next step ▶</button><span class="readout" id="mdCount"></span></div>
     <div class="grid2">
       <div><p class="panel-t">In-flight instructions</p><div class="memdep" id="mdRows"></div></div>
       <div><p class="panel-t">Memory &amp; store queue</p><div class="memw" id="mdMem"></div></div>
     </div>
     <p class="msg" id="mdMsg"></p>
-    <div class="ctrl"><button id="mdBack">◀ Back</button><button id="mdStep" class="pri">Next step ▶</button><span class="readout" id="mdCount"></span></div>
   </div><figcaption><b>The load queue remembers which loads ran early and from which addresses.</b> When an older store's address resolves, the core checks whether a younger load already read those bytes. If so, it's a <b>memory-ordering violation</b>: squash and replay. If an older store's address is known to match, and its data is ready, when the load runs, <b>store-to-load forwarding</b> hands the data over directly from the store queue. The wrong values 3 and 4 never retire. The last two steps separate <b>retiring</b> a store (committed for this thread) from <b>draining</b> it from the store buffer (visible to other cores).</figcaption></figure>
   <div class="pitfall">Retiring a store doesn't mean other cores can see it yet. It may still wait in a store buffer before reaching the cache. "Retired" (architecturally committed for this thread) and "globally visible" are different events. How multiple cores observe each other's memory operations is the memory-consistency topic of the next unit, and a ROB alone doesn't settle it.</div>
 

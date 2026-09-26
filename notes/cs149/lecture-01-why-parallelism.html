@@ -380,9 +380,9 @@ svg text.sw{fill:#fff!important}
     <div class="ctrl" style="margin:0 0 8px"><span class="readout">Access sequence:</span><div class="seg" role="group" aria-label="Example sequence"><button data-cq="e1" aria-pressed="true">Example 1</button><button data-cq="e2">Example 2</button><button data-cq="own">your own</button></div>
       <span class="readout" style="margin-left:8px">Cache size:</span><div class="seg" role="group" aria-label="Cache lines"><button data-cc="2" aria-pressed="true">2 lines</button><button data-cc="4">4 lines</button></div></div>
     <div class="ctrl" id="cqOwn" style="margin:0 0 8px;display:none"><input type="text" id="cqIn" value="0x0, 0x4, 0x8, 0x0, 0xC, 0x4" aria-label="Your addresses, 0x0 to 0xF, separated by commas" style="flex:1;min-width:220px;font:500 13px var(--mono);padding:5px 8px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:4px"><button id="cqGo">Use these addresses</button></div>
+    <div class="ctrl" style="margin:0 0 10px"><button id="cqBack">◀ Back</button><button id="cqNext" class="pri">Next access ▶</button><button id="cqAll">Run all</button><button id="cqReset">Reset</button><span class="readout" id="cqOut"></span></div>
     <div class="bytes" id="cqBytes"></div>
     <div class="tbl" style="margin-top:10px"><table id="cqTbl"></table></div>
-    <div class="ctrl"><button id="cqBack">◀ Back</button><button id="cqNext" class="pri">Next access ▶</button><button id="cqAll">Run all</button><button id="cqReset">Reset</button><span class="readout" id="cqOut"></span></div>
     <p class="msg" id="cqMsg"></p>
   </div><figcaption><b>Reading the table like the lecture's.</b> Each row is one access: the address, what the cache did, and which lines it holds afterwards (least recently used first). The coloured underline in the memory row marks each 4-byte line. Example 1 is the lecture's first sequence; Example 2 reads the whole 16-byte array and then address 0x0 again.</figcaption></figure>
   <p>The two examples show the two kinds of <b>locality</b> that make caches work:</p>

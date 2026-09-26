@@ -350,10 +350,10 @@ ready.store(true,                    int v = data;   // guaranteed to see 42
   <figure class="fig"><div class="widget">
     <div class="calc"><label class="rl" for="vN">elements N = <b id="vNv">10</b><input id="vN" type="range" min="1" max="20" value="10"></label>
       <div><span class="readout">vector width:</span> <div class="seg" role="group" aria-label="Width"><button data-vw="4" aria-pressed="true">4</button><button data-vw="8">8</button></div></div></div>
+    <div class="ctrl" style="margin:0 0 10px"><button id="vBack">◀ Back</button><button id="vStep" class="pri">Next group ▶</button><button id="vAll">Run all</button><button id="vReset">Reset</button></div>
     <div id="vArr" style="margin-top:12px"></div>
     <div id="vRegs" style="margin-top:10px"></div>
     <p class="msg" id="vMsg"></p>
-    <div class="ctrl"><button id="vBack">◀ Back</button><button id="vStep" class="pri">Next group ▶</button><button id="vAll">Run all</button><button id="vReset">Reset</button></div>
     <div class="stat" id="vStat"></div>
   </div><figcaption><b>a = [1, 2, 3, …], b = [100, 101, 102, …], so c[i] = 2i + 101.</b> Coloured underlines show which group handles each element. With 10 elements and width 4 there are 3 groups using 10 of 12 positions (83%). Width 8 needs only 2 groups but uses 10 of 16 (62.5%). Lower utilization doesn't prove it's slower, since fewer instructions may still win. SIMD also doesn't reduce the useful bytes: every element still needs two 4-byte inputs and one 4-byte output, 12 bytes each.</figcaption></figure>
 

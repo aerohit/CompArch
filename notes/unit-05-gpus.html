@@ -286,8 +286,8 @@
   <figure class="fig"><div class="widget">
     <div class="sc" style="padding:0"><svg id="tlSvg" viewBox="0 0 760 330" role="img" aria-label="Matrices A and B in global memory, the shared tiles As and Bs, each thread's private sum, and C" style="min-width:560px"></svg></div>
     <div class="strip" id="tlStrip"></div>
+    <div class="ctrl" style="margin:0 0 10px"><button id="tlBack">◀ Back</button><button id="tlNext" class="pri">Next step ▶</button><button id="tlReset">Reset</button><span class="readout" id="tlOut"></span></div>
     <p class="msg" id="tlMsg"></p>
-    <div class="ctrl"><button id="tlBack">◀ Back</button><button id="tlNext" class="pri">Next step ▶</button><button id="tlReset">Reset</button><span class="readout" id="tlOut"></span></div>
   </div><figcaption><b>Phases, not cycles.</b> The steps are conceptual phases of the algorithm, not hardware cycles, and threads don't necessarily move through them together. That's exactly why the barriers exist. Highlighted cells are the ones in use this step. Private sums survive from one tile to the next; C is written only once, at the end.</figcaption></figure>
   <p>After the first tile (k = 0, 1) the partial sums are [[7, 10], [23, 34]]. Thread (0, 0), for instance, computes 1 × 1 + 2 × 3 = 7. The second tile (k = 2, 3) adds 3 × 5 + 4 × 7 = 43 to it, giving 50. The final result is <b>[[50, 60], [114, 140]]</b>. Don't confuse C's two dimensions (2 × 2) with the reduction length (4).</p>
 

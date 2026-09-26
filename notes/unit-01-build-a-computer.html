@@ -520,6 +520,7 @@
   <p>Pick a program, then press <b>Tick</b> one clock edge at a time. Before each tick, predict what will change. Memory cells are editable: type a hex byte (one or two digits, 0–9 and A–F) into any cell to change the program or its data, and the machine resets. <b>Reset</b> restarts from the memory as you've edited it; clicking a program button restores that program's original bytes.</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 12px"><span class="readout">Program:</span><div class="seg" role="group" aria-label="Program"><button data-prog="add" aria-pressed="true">Add two numbers</button><button data-prog="count">Countdown</button><button data-prog="mul">Multiply</button></div></div>
+    <div class="ctrl" style="margin:0 0 10px"><button id="simBack">◀ Back</button><button id="simTick" class="pri">Tick ▶</button><button id="simInstr">Next instruction ▶▶</button><button id="simRun">Run</button><button id="simReset">Reset</button></div>
     <div class="sim">
       <div><p class="panel-t">Memory (hex, editable)</p><div class="memg" id="memg"></div>
         <p class="readout" id="memNote" style="margin-top:8px;min-height:1.2em"></p>
@@ -532,7 +533,6 @@
         <div class="counters" id="simCnt"></div>
       </div>
     </div>
-    <div class="ctrl"><button id="simBack">◀ Back</button><button id="simTick" class="pri">Tick ▶</button><button id="simInstr">Next instruction ▶▶</button><button id="simRun">Run</button><button id="simReset">Reset</button></div>
     <div class="tbl" style="margin-top:14px"><table id="simLog"></table></div>
   </div><figcaption><b>Things to watch.</b> During fetch, PC advances while ACC doesn't move. ADD changes ACC but not memory. Only STORE changes memory. In the loops, JMP and JZ don't move any instructions around. They only change which address the next fetch uses.</figcaption></figure>
 

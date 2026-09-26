@@ -165,8 +165,8 @@ svg text.sw{fill:#fff!important}
     <div class="ctrl" style="margin:0 0 8px"><span class="readout">Example:</span><div class="seg" role="group" aria-label="Example program"><button data-tp="add" aria-pressed="true">add two numbers</button><button data-tp="cnt">count down</button><button data-tp="mul">multiply 3 × 4</button><button data-tp="fib">Fibonacci pairs</button></div></div>
     <div class="sc" style="padding:0"><svg id="tSvg" viewBox="0 0 760 370" role="img" aria-label="TINY-4: instruction memory, a core with fetch/decode, decoded fields, ALU and execution context, and a clock panel with the instruction encoding" style="min-width:560px"></svg></div>
     <div class="strip" id="tStrip"></div>
+    <div class="ctrl" style="margin:0 0 10px"><button id="tBack">◀ Back</button><button id="tNext" class="pri">Next phase ▶</button><button id="tInst">Next instruction ▶▶</button><button id="tRun">Run ▶</button><div class="seg" role="group" aria-label="Run speed"><button data-ts="900">slow</button><button data-ts="350" aria-pressed="true">medium</button><button data-ts="60">fast</button></div><button id="tReset">Reset</button><span class="readout" id="tOut"></span></div>
     <p class="msg" id="tMsg"></p>
-    <div class="ctrl"><button id="tBack">◀ Back</button><button id="tNext" class="pri">Next phase ▶</button><button id="tInst">Next instruction ▶▶</button><button id="tRun">Run ▶</button><div class="seg" role="group" aria-label="Run speed"><button data-ts="900">slow</button><button data-ts="350" aria-pressed="true">medium</button><button data-ts="60">fast</button></div><button id="tReset">Reset</button><span class="readout" id="tOut"></span></div>
     <details class="tedit" open><summary>Edit the program</summary>
       <div class="grid2" style="margin-top:8px"><textarea id="tSrc" class="tsrc" spellcheck="false" aria-label="TINY-4 assembly program"></textarea>
         <div class="tref"><b>Syntax</b><br>One instruction per line, for example <code>ADD r0, r1</code>.<br>Registers r0 to r3; constants 0 to 15.<br><code>loop:</code> in front of an instruction makes a label that JNZ can jump to (or give the address as a number).<br><code>;</code> starts a comment.<br>At most 16 instructions.</div></div>
@@ -201,8 +201,8 @@ svg text.sw{fill:#fff!important}
     <div class="ctrl" style="margin:0 0 8px"><span class="readout">The load from x[2]:</span><div class="seg" role="group" aria-label="Load latency"><button data-s0m="0" aria-pressed="true">hits in L1 (~4 cycles)</button><button data-s0m="1">goes to DRAM (~248 cycles)</button></div></div>
     <div class="sc" style="padding:0"><svg id="s0Svg" viewBox="0 0 760 330" role="img" aria-label="Instruction memory, a core with fetch/decode, a decoded-instruction latch, an ALU and an execution context, and a data cache. The current phase is highlighted." style="min-width:560px"></svg></div>
     <div class="strip" id="s0Strip"></div>
+    <div class="ctrl" style="margin:0 0 10px"><button id="s0Back">◀ Back</button><button id="s0Next" class="pri">Next phase ▶</button><button id="s0Inst">Next instruction ▶▶</button><button id="s0Reset">Reset</button><span class="readout" id="s0Out"></span></div>
     <p class="msg" id="s0Msg"></p>
-    <div class="ctrl"><button id="s0Back">◀ Back</button><button id="s0Next" class="pri">Next phase ▶</button><button id="s0Inst">Next instruction ▶▶</button><button id="s0Reset">Reset</button><span class="readout" id="s0Out"></span></div>
   </div><figcaption><b>Handing off, box to box.</b> The highlighted box is doing the work in each phase, and the teal arrows show what it is receiving or sending. Watch the execution context: it changes only at <b>write back</b> and <b>advance PC</b>. Everything before that is preparation, which is what lets a core cancel an instruction, or switch to another thread, without damaging the program. Switch the load to DRAM and look at the utilisation readout at the end.</figcaption></figure>
 
   <h3>Staying in sync: what the clock does</h3>
@@ -269,11 +269,11 @@ svg text.sw{fill:#fff!important}
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 8px"><span class="readout">Capacity:</span><div class="seg" role="group" aria-label="Cache capacity"><button data-cap="2" aria-pressed="true">2 lines (8 B)</button><button data-cap="4">4 lines (16 B)</button></div>
       <span class="readout" style="margin-left:8px">Sequence:</span><button data-cs="loc">locality demo</button><button data-cs="scan">read array twice</button></div>
+    <div class="ctrl" style="margin:0 0 10px"><button id="cBack">◀ Back</button><button id="cStep" class="pri">Next access ▶</button><button id="cAll">Run all</button><button id="cReset">Reset</button><span class="readout" id="cOut"></span></div>
     <div class="bytes" id="cBytes"></div>
     <div class="slots" id="cSlots"></div>
     <p class="msg" id="cMsg"></p>
     <div class="strip" id="cStrip"></div>
-    <div class="ctrl"><button id="cBack">◀ Back</button><button id="cStep" class="pri">Next access ▶</button><button id="cAll">Run all</button><button id="cReset">Reset</button><span class="readout" id="cOut"></span></div>
   </div><figcaption><b>Two kinds of locality.</b> <b>Spatial</b>: loading one byte brings its whole line, so neighbouring bytes then hit. <b>Temporal</b>: reusing an address soon after using it hits. In "read array twice" with 2 lines, the second pass misses on every line, even though every byte was read moments before. The cache is too small to hold the whole array (a <b>capacity miss</b>). With 4 lines, the second pass hits everywhere.</figcaption></figure>
   <h3>The hierarchy, and why it matters</h3>
   <p>Real machines stack several caches: small, fast L1 next to each core, larger and slower L2, a big shared L3, and then DRAM. The instruction "load address X into R0" may be served by any of them. Here's what that costs on an Intel Kaby Lake desktop CPU at 4 GHz:</p>
