@@ -295,6 +295,7 @@
   </div>
 
   <h3 class="part">Feedback makes memory</h3>
+  <p>The missing storage begins with feedback: a circuit can use its own output to keep a value in place.</p>
   <p>Not every loop of gates remembers anything useful, so take a specific one: <b>two inverters, each feeding the other</b>. If the right-hand node is 1, the lower inverter makes the left-hand node 0, and the upper inverter turns that 0 back into 1. The loop agrees with itself, so it stays that way. The opposite state (right 0, left 1) is just as self-consistent. Two stable states: one bit of storage.</p>
   <p>The loop alone gives us no way to choose or change its value. It might settle in either state when powered on. To make useful storage, we need a way to <b>write</b> a chosen bit and then let the loop <b>hold</b> it. The mux from Lesson 2 provides exactly that choice.</p>
   <figure class="fig"><div class="sc">
@@ -320,7 +321,8 @@
       <text x="570" y="232" class="mid xs">flip-flop = two latches, opposite clock halves</text>
     </svg></div>
     <figcaption><b>From a loop that holds to a cell you can write.</b> The inverter loop stores a bit but gives no way to change it. Putting a mux in the loop (the same mux as Lesson 2) chooses between "take new data" and "keep what I have". That's a <b>D latch</b>: while enabled it's transparent, so Q follows D; when disabled it holds. This is a teaching construction; real latch circuits are built more compactly at the transistor level.</figcaption></figure>
-  <p>A latch changes <i>whenever</i> it's enabled, which is awkward when its output feeds logic that feeds its own input: a new output could flow around and change the input again. A <b>flip-flop</b> fixes this by chaining two latches enabled on opposite halves of the clock. In this rising-edge design, the first follows D while the clock is low; at the rising edge it closes, and the second passes along the first latch's held value. Later changes to D cannot pass through until the next rising edge. From outside, the flip-flop <b>captures D at the rising edge</b> and holds its output for the rest of the cycle. Line up 8 flip-flops sharing one clock and you have an 8-bit <b>register</b>.</p>
+  <p>A latch changes <i>whenever</i> it's enabled. That is awkward if its output passes through logic and returns to its own input: one change could flow around and cause another while we meant to take only one step.</p>
+  <p>A <b>flip-flop</b> controls that timing by chaining two latches enabled on opposite halves of the clock. In this rising-edge design, the first follows D while the clock is low. At the rising edge it closes, and the second passes along the first latch's held value. Later changes to D cannot pass through until the next rising edge. From outside, the flip-flop <b>captures D at the rising edge</b> and holds its output for the rest of the cycle. Line up 8 flip-flops sharing one clock and you have an 8-bit <b>register</b>.</p>
   <p>A register usually also has a <b>write enable</b>. When it's off, the register keeps its old value even though the clock keeps ticking. Look at how that's built: it's just the mux from Lesson 2, feeding the register's own output back in.</p>
   <figure class="fig"><div class="sc">
     <svg viewBox="0 0 760 190" role="img" aria-label="Register with write enable: a mux selects new data or the register's own old value">
@@ -375,7 +377,8 @@
     <figcaption><b>Timing is physics, not a setting.</b> (A simplified calculation: it ignores clock skew, hold constraints and manufacturing and temperature variation.) Making the clock faster requires shortening the critical path: faster transistors, fewer gates in a row, or cutting the path into pieces with registers in between. That last option is <i>pipelining</i>, and it's the first lesson of Unit 3.</figcaption></figure>
 
   <h3 class="part">A tiny addressed memory, built from registers</h3>
-  <p>How does an address pick one location? Build a four-word memory from four registers and the parts we already have. A <b>read mux</b> with four inputs uses the 2-bit read address as its select, so one register's value reaches <i>read data</i>. For writing, a <b>decoder</b> turns the 2-bit write address into four separate enable wires, exactly one of which is 1. For address <code>10</code> (2), only wire 2 is high. If the memory's overall write enable is on, only register 2 captures the supplied write data at the next clock edge. The read and write addresses can select different locations.</p>
+  <p>Lesson 1 used <code>M[address]</code> as if selecting a storage location were automatic. We can now build a four-word version from registers and the parts we already know. In the figure, we want to read word 1 while preparing to write 99 to word 2.</p>
+  <p>A <b>read mux</b> with four inputs uses the 2-bit read address <code>01</code> to pass register 1's value to <i>read data</i>. For writing, a <b>decoder</b> turns the write address <code>10</code> into four separate enable wires; only wire 2 is high. If the overall write enable is on, register 2 captures 99 at the next clock edge. The two addresses select different locations, so the read can return 42 while the write changes word 2.</p>
   <figure class="fig"><div class="sc">
     <svg viewBox="0 0 760 270" role="img" aria-label="Four registers sharing write data. A decoder driven by the write address and write enable enables one register; a 4-to-1 mux driven by the read address selects one register's output as read data">
       <text x="236" y="16" class="mid sm">write data = 99</text><path d="M236 22 V222" class="w"/>
@@ -398,7 +401,7 @@
     <tr><td>Access</td><td>Small and directly selected by instructions, so typically the fastest storage</td><td>Selected by a memory address; typically slower in real systems, with access time depending on the design</td></tr>
   </table></div>
   <p>A register file may itself use a small number to select a register, so the distinction is not simply "numbers versus no numbers." The useful distinction for this course is the <b>role</b>: working registers are operands that CPU instructions can name directly; memory supplies many addressed locations reached through memory operations. Exact size, speed and number of simultaneous accesses depend on the machine.</p>
-  <p>From here on we split a processor into two cooperating parts. The <b>datapath</b> holds and transforms values: registers, ALU, muxes and memory. The <b>control logic</b> chooses the ALU operation, mux inputs and write enables. We have built the pieces; Lesson 4 supplies the missing rule that chooses their actions over time: instructions read from memory.</p>
+  <p>We now have circuits that hold values and circuits that transform them. Together, registers, an ALU, muxes and memory form a <b>datapath</b>. <b>Control logic</b> chooses the ALU operation, mux inputs and write enables. So far those choices are built into a particular circuit, as with the counter above. Lesson 4 gives the same hardware a way to follow different sequences: instructions read from memory.</p>
 
   <div class="predict"><div class="ph"><b>Predict</b><span>Remember: all registers read old values.</span></div><ol>
     <li>A = 3, B = 9. At one edge, A ← A + B and B ← A. What are A and B afterwards?
