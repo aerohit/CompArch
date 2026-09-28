@@ -431,24 +431,29 @@
     <tr><td class="m">phase</td><td>Where the control is: fetch, decode, or execute.</td></tr>
     <tr><td class="m">halted</td><td>A flag that stops the machine.</td></tr>
   </table></div>
-  <p>Every instruction is one byte. The top 4 bits (the <b>opcode</b>) say what to do, and the bottom 4 bits say which memory address to do it with. That's why it's called NIB-8: an instruction is two <i>nibbles</i> (half-bytes).</p>
+  <p>On reset, NIB-8 starts with PC = 0, ACC = 0 and phase = fetch. Every instruction is one byte, split into two <b>nibbles</b> of four bits each. The upper nibble is the <b>opcode</b>, which chooses an action. The lower nibble usually supplies an address: a data location for LOAD, STORE, ADD or SUB, or a destination for JMP or JZ. HALT ignores it. The memory bytes themselves carry no "instruction" or "data" label. Fetching a byte using PC treats it as an instruction; reading that same location as an operand would treat it as data.</p>
   <figure class="fig narrow"><div class="sc">
     <svg viewBox="0 0 560 150" role="img" aria-label="Instruction byte 0x3A split into opcode 0011 meaning ADD and address 1010 meaning 10">
       <g id="fmtBits"></g>
       <text x="160" y="118" class="mid bd tcu">opcode 0011 = 3 → ADD</text><text x="400" y="118" class="mid bd tte">address 1010 = 10</text>
       <text x="280" y="142" class="mid">0x3A means "ADD 10": ACC ← ACC + M[10]</text>
     </svg></div></figure>
+  <p>In the table, <code>[a]</code> is a placeholder for one hexadecimal address digit (0 through F), <i>not</i> literal characters stored in the byte. For example, <code>0x1[a]</code> means an upper nibble of 1 followed by whichever address nibble the instruction uses.</p>
   <div class="tbl"><table>
     <tr><th>Instruction</th><th>Byte</th><th>What happens during execute</th></tr>
-    <tr><td class="m">LOAD a</td><td class="m">0x1a</td><td>ACC ← M[a]</td></tr>
-    <tr><td class="m">STORE a</td><td class="m">0x2a</td><td>M[a] ← ACC (ACC unchanged)</td></tr>
-    <tr><td class="m">ADD a</td><td class="m">0x3a</td><td>ACC ← (ACC + M[a]) mod 256</td></tr>
-    <tr><td class="m">SUB a</td><td class="m">0x4a</td><td>ACC ← (ACC − M[a]) mod 256</td></tr>
-    <tr><td class="m">JMP a</td><td class="m">0x5a</td><td>PC ← a</td></tr>
-    <tr><td class="m">JZ a</td><td class="m">0x6a</td><td>PC ← a <i>if</i> ACC = 0; otherwise nothing</td></tr>
+    <tr><td class="m">LOAD a</td><td class="m">0x1[a]</td><td>ACC ← M[a]</td></tr>
+    <tr><td class="m">STORE a</td><td class="m">0x2[a]</td><td>M[a] ← ACC (ACC unchanged)</td></tr>
+    <tr><td class="m">ADD a</td><td class="m">0x3[a]</td><td>ACC ← (ACC + M[a]) mod 256</td></tr>
+    <tr><td class="m">SUB a</td><td class="m">0x4[a]</td><td>ACC ← (ACC − M[a]) mod 256</td></tr>
+    <tr><td class="m">JMP a</td><td class="m">0x5[a]</td><td>PC ← a</td></tr>
+    <tr><td class="m">JZ a</td><td class="m">0x6[a]</td><td>PC ← a <i>if</i> ACC = 0; otherwise nothing</td></tr>
     <tr><td class="m">HALT</td><td class="m">0xF0</td><td>halted ← true. Any 0xF_ byte counts as HALT, since the low nibble is ignored.</td></tr>
   </table></div>
-  <p>Here "a" stands for whatever the low hex digit is, so <code>LOAD 8</code> is <code>0x18</code> and <code>STORE 10</code> is <code>0x2A</code>. Bytes with other opcodes aren't NIB-8 instructions. If one is ever fetched, our teaching rule is that the machine halts.</p>
+  <p>Thus <code>LOAD 8</code> is <code>0x18</code> and <code>STORE 10</code> is <code>0x2A</code>. <code>LOAD 8</code> means "read the byte <i>at address</i> 8," not "put the literal number 8 in ACC." This small machine has no instruction for loading an immediate constant; constants are placed in memory. Bytes with other opcodes aren't NIB-8 instructions. If one is fetched, our teaching rule is that the machine halts.</p>
+  <div class="worked">
+    <p><b>One program as memory contents.</b> Put <code>0x18</code>, <code>0x39</code>, <code>0x2A</code>, <code>0xF0</code> at addresses 0–3. Put the data 23 and 19 at addresses 8 and 9, and start address 10 at 0. The four instruction bytes mean <code>LOAD 8</code>, <code>ADD 9</code>, <code>STORE 10</code>, <code>HALT</code>.</p>
+    <p>LOAD brings M[8] = 23 into ACC. ADD reads M[9] = 19 and changes ACC to 42. STORE copies that 42 into M[10]; it does not change ACC. HALT stops. The addresses 8, 9 and 10 are written inside the instructions, while 23, 19 and eventually 42 are the <i>contents</i> at those addresses.</p>
+  </div>
 
   <h3 class="part">The datapath</h3>
   <p>Everything from the earlier lessons shows up here. There are registers (PC, IR, ACC), muxes (which address goes to memory, and which value becomes the next PC), an adder (PC + 1), an ALU, and a control unit that sets all the selects and enables.</p>
@@ -489,13 +494,14 @@
   <p>NIB-8 spends three clock ticks on every instruction. This is our teaching timing model, not a claim about real memory speeds:</p>
   <ol>
     <li><b>Fetch.</b> The address mux sends PC to memory, and the byte that comes back is captured in IR. At the same edge, PC ← (PC + 1) mod 16: the 4-bit PC wraps from 15 to 0. Both updates use the <i>old</i> PC, just like in Lesson 3.</li>
-    <li><b>Decode.</b> Control looks at IR's opcode and prepares the right selects. Nothing visible changes.</li>
+    <li><b>Decode.</b> Control looks at IR's opcode and determines the required selects and enables. The phase register advances to execute at the edge, but PC, IR, ACC and memory do not change.</li>
     <li><b>Execute.</b> The instruction's effect happens: ACC, memory or PC changes, or the machine halts.</li>
   </ol>
+  <p>Trace the first instruction of the example above. At tick 1, fetch reads M[0] = <code>0x18</code> into IR <i>and</i> advances PC from 0 to 1. At tick 2, decode recognizes opcode 1 (LOAD) and address 8. At tick 3, execute uses that address to read M[8] = 23 and captures 23 in ACC. Only then does the phase return to fetch, with PC still 1. The next three ticks fetch and execute <code>ADD 9</code>; the three after those execute <code>STORE 10</code>. Separating these moments makes it possible to say exactly which value each circuit sees.</p>
   <div class="pitfall">One <b>instruction cycle</b> (fetch, decode, execute) here takes three <b>clock cycles</b>. The two terms are easy to blur. Also notice that PC already points to the <i>next</i> instruction while the current one executes. That's why a jump simply overwrites PC.</div>
 
   <h3 class="part">Inside the control box</h3>
-  <p>"Control decodes the instruction" isn't magic, and it doesn't need another processor inside. The controller is a small state machine: a <b>phase register</b> plus combinational logic. Each cycle, that logic reads the current phase, the opcode in IR and whether ACC is zero, and produces two things: the <b>control signals</b> for the datapath, and the <b>next phase</b>.</p>
+  <p>"Control decodes the instruction" isn't magic, and it doesn't need another processor inside. The controller is a small state machine: a <b>phase register</b> plus combinational logic. Each cycle, that logic reads the current phase, the opcode in IR and whether ACC is zero, and produces two things: <b>control signals</b> for the datapath and the <b>next phase</b>. For instance, ACC's write enable is on during execute if the opcode is LOAD, ADD or SUB; it is off during STORE and JZ. No one has to issue those decisions by hand: the current bits determine the signals through gates.</p>
   <figure class="fig"><div class="sc">
     <svg viewBox="0 0 760 260" role="img" aria-label="Controller: opcode, ACC-is-zero and halted enter decode logic together with the phase register; the logic outputs control signals and the next phase">
       <text x="20" y="74" class="sm">opcode (IR bits 7–4)</text><path d="M20 82 H348" class="w" marker-end="url(#ah)"/>
@@ -541,7 +547,7 @@
       </div>
     </div>
     <div class="tbl" style="margin-top:14px"><table id="simLog"></table></div>
-  </div><figcaption><b>Things to watch.</b> During fetch, PC advances while ACC doesn't move. ADD changes ACC but not memory. Only STORE changes memory. In the loops, JMP and JZ don't move any instructions around. They only change which address the next fetch uses.</figcaption></figure>
+  </div><figcaption><b>Things to watch.</b> During fetch, PC advances while ACC doesn't move. ADD changes ACC but not memory. STORE can change memory; no other NIB-8 instruction writes to it. In the loops, JMP and JZ don't move any instructions around. They only change which address the next fetch uses.</figcaption></figure>
 
   <h3 class="part">Branches turn a sequence into a loop</h3>
   <p>Without branches, execution follows consecutive addresses. In NIB-8, the four-bit PC wraps from 15 to 0, so a program with no HALT would eventually run through memory again. Branches let a program choose a different next address, including making a choice based on the data. The Countdown program is a loop that ends by testing ACC:</p>
@@ -560,28 +566,29 @@
       <rect x="410" y="152" width="100" height="36" class="bx"/><text x="460" y="175" class="mid bd">4: JMP 1</text>
       <path d="M410 170 H215 V108" class="wc" marker-end="url(#ahc)"/><text x="310" y="164" class="mid sm tcu">PC ← 1: fetch SUB again</text>
     </svg></div>
-    <figcaption><b>The loop is in the PC, not in the memory.</b> Starting with n = 3, ACC goes 3 → 2 → 1 → 0. The circuit never changed. Only the numbers in memory did, and that's what programmability means.</figcaption></figure>
+    <figcaption><b>The loop is in the PC, not in the memory.</b> Starting with n = 3, ACC goes 3 → 2 → 1 → 0. STORE changes the data at M[8]; the instruction bytes stay put. The fixed circuit follows those bytes, and JZ or JMP changes which one PC selects next.</figcaption></figure>
+  <p>Try the Multiply program next. Its instruction bytes occupy addresses 0–8. The loop at 0–7 repeatedly adds M[13] = 6 to the growing product in M[12], then subtracts M[15] = 1 from the counter in M[14]. Because ACC can hold only one of these working values at a time, each pass must LOAD and STORE both the product and the counter. Starting from product 0 and counter 3, the first pass leaves (product, counter) = (6, 2), the second (12, 1), and the third (18, 0). JZ then skips the JMP and fetches HALT at address 8. The first two passes execute eight instructions each; the final pass executes seven, followed by HALT: <b>8 + 8 + 7 + 1 = 24 instructions</b>. If the counter began at 0, this particular loop would still run once before testing it.</p>
 
   <h3 class="part">What is an "execution context"?</h3>
-  <p>Suppose we want to pause a NIB-8 program and resume it later, or on a second NIB-8. What must we save? It depends on <i>where</i> we pause. At a clean <b>instruction boundary</b> (between an execute and the next fetch), the essential state is small:</p>
+  <p>Branches showed that a program's place is in PC, not in the physical position of an instruction. Now suppose we pause NIB-8 and later want it to continue. Which changing values must survive the pause? It depends on <i>where</i> we stop. At a clean <b>instruction boundary</b> (between an execute and the next fetch), the CPU's essential state is small:</p>
   <div class="ctxcols">
-    <div class="ctx-a"><p class="panel-t" style="color:var(--te)">Saved context (architectural)</p><ul><li><b>PC</b>: where to continue</li><li><b>ACC</b>: the working value</li><li><b>halted</b></li></ul><p class="panel-t" style="margin-top:10px">Must also still be there</p><ul><li>The same <b>memory</b> contents, left in place rather than copied</li></ul></div>
+    <div class="ctx-a"><p class="panel-t" style="color:var(--te)">Saved context (architectural)</p><ul><li><b>PC</b>: where to continue</li><li><b>ACC</b>: the working value</li><li><b>halted</b></li></ul><p class="panel-t" style="margin-top:10px">Must also be available</p><ul><li>The same <b>memory</b> contents: left in place for a pause on this machine, or shared or copied for a different machine</li></ul></div>
     <div class="ctx-b"><p class="panel-t">Can be dropped at a boundary</p><ul><li><b>IR</b>: the next fetch refills it</li><li><b>phase</b>: always "fetch next" at a boundary</li><li>ALU outputs and mux settings</li></ul></div>
   </div>
-  <p>Pause <i>mid-instruction</i>, after fetch but before execute, and PC + ACC is no longer enough: you'd also need IR and the phase. That's why real processors are careful to switch tasks only at well-defined boundaries. PC, ACC and halted are NIB-8's <b>saved execution context</b>. When an operating system switches between programs, it saves the equivalent registers of a real processor (Unit 2 shows this in detail). The program's memory is <i>not</i> part of that saved context: it stays where it is, and the OS keeps track of which memory belongs to which program so the same contents are there on resumption.</p>
+  <p>Pause <i>mid-instruction</i>, after fetch but before execute, and PC + ACC is no longer enough: you'd also need IR and the phase. That is why switching at an instruction boundary gives us a simpler state to save. PC, ACC and halted are NIB-8's <b>saved CPU context</b> at that boundary. Memory is separate from this small register snapshot, but correct resumption still needs the <i>same memory contents</i>. On this machine they can stay in place. A second independent NIB-8 would need access to the same memory or a copy of it. A real operating system saves a processor's necessary registers and preserves the program's memory and mapping while switching between tasks; Unit 2 develops that picture.</p>
 
   <h3 class="part">A first performance calculation</h3>
-  <p>Every program's run time breaks into three factors, which we'll use for the rest of the course:</p>
+  <p>For CPU execution time, three factors multiply together. We will use this accounting throughout the course:</p>
   <p style="text-align:center;font-family:var(--mono);font-size:15px">time = instructions executed × cycles per instruction (CPI) × seconds per cycle</p>
   <div class="worked">
-    <p>The Multiply program (6 × 3) executes <b>24 instructions</b>. NIB-8 always takes <b>3 cycles</b> per instruction, so that's 72 ticks. At a hypothetical 100 MHz clock (10 ns per tick), it runs in <b>720 ns</b>.</p>
+    <p>The Multiply program (6 × 3) executes <b>24 instructions</b>, counted above from its three loop passes and HALT. NIB-8 always takes <b>3 clock cycles</b> per instruction, so that's 72 ticks. At a hypothetical 100 MHz clock (10 ns per tick), its CPU execution time is <b>720 ns</b>.</p>
     <p>A faster clock would help only if the circuit could still meet its timing (Lesson 3). A smarter design could lower CPI by overlapping instructions (Unit 3). A better algorithm could lower the instruction count. <b>Clock frequency alone never tells you which machine finishes first.</b></p>
   </div>
-  <p>Two terms need care once we leave NIB-8. <b>Instruction count</b> means instructions actually <i>executed</i>, including every repetition of a loop, not the instructions written in the program: Multiply has 8 instructions in memory but executes 24. <b>CPI</b> is an average over that execution, total CPU cycles ÷ instructions executed. NIB-8's CPI is always 3, but on real machines it changes with the program and its data. At a fixed clock period the equation gives <b>CPU execution time</b>; a program's elapsed time can also include waiting for I/O or for the operating system to schedule it.</p>
+  <p>Two terms need care once we leave NIB-8. <b>Instruction count</b> means instructions actually <i>executed</i>, including every repetition of a loop, not merely the number of instructions stored in the program: Multiply has <b>nine</b> instructions in memory (eight in the loop plus HALT) but executes 24. <b>CPI</b>, cycles per instruction, is an average over that run: total CPU cycles ÷ instructions executed. NIB-8's CPI is always 3, but on real machines it changes with the program and its data. At a fixed clock period the equation gives <b>CPU execution time</b>; elapsed time can also include waiting for I/O or for the operating system to schedule the program.</p>
 
   <div class="predict"><div class="ph"><b>Predict</b><span>Use the simulator only to check.</span></div><ol>
     <li>In "Add two numbers", right after the <b>6th tick</b>, what are PC, ACC and M[10]? Why hasn't M[10] changed yet?
-      <details><summary>Show answer</summary><div class="ans"><p>Tick 6 completes the execute of <code>ADD 9</code>: <b>PC = 2, ACC = 42</b> (23 + 19), <b>M[10] = 0</b>. Only STORE writes memory, and STORE hasn't been fetched yet (ticks 7–9).</p></div></details></li>
+      <details><summary>Show answer</summary><div class="ans"><p>Tick 6 completes the execute of <code>ADD 9</code>: <b>PC = 2, ACC = 42</b> (23 + 19), <b>M[10] = 0</b>. STORE is fetched on tick 7 but does not write M[10] until its execute phase on tick 9.</p></div></details></li>
     <li>Change the inputs to M[8] = 250 and M[9] = 10 (0xFA and 0x0A). What gets stored?
       <details><summary>Show answer</summary><div class="ans"><p>260 mod 256 = <b>4</b>. NIB-8 stores 4 and provides no carry or overflow flag. This program performs no overflow check; detecting overflow would require additional software logic (for unsigned addition, checking whether the result is smaller than an operand) or assumptions about the inputs.</p></div></details></li>
     <li>How many instructions does Countdown (starting n = 3) execute, including HALT, and how many ticks?
