@@ -200,15 +200,16 @@
   </div>
 
   <h3 class="part">Why the order can look strange: store buffers</h3>
-  <p>Recall Lesson 15: a core can retire a store while the value is still sitting in its <b>store buffer</b>, waiting to be written to the cache where other cores can see it. Meanwhile the core keeps going, and a later <i>load</i> of a different address can complete right away. From another core's point of view, the load happened before the store.</p>
+  <p>Coherence gave every core an agreed history for x, but it did not say how operations on x and y must fit together. Recall Lesson 15: a core can retire a store while its value waits in a <b>store buffer</b> on the way to the coherent cache. The core can continue and load a <i>different</i> address before that store becomes visible to other cores. If two cores both do this, each may read an old value written by the other, even though each issued its own store first.</p>
   <figure class="fig"><div class="sc"><svg id="sbSvg" viewBox="0 0 760 200" role="img" aria-label="Each core has a store buffer between it and coherent memory; loads can bypass buffered stores to other addresses"></svg></div>
-    <figcaption><b>The store is committed for this thread, but not yet visible to others.</b> A load checks its own store buffer first, and otherwise reads coherent memory. Nothing here violates coherence: each address still has one agreed history. What changes is how operations on <i>different</i> addresses interleave.</figcaption></figure>
+    <figcaption><b>Follow the store before the load.</b> The store is committed for its thread but still waits in the buffer. A later load to another address can pass it. A load of the <i>same</i> address checks the thread's own buffer first, so the thread can still read its own recent write.</figcaption></figure>
 
   <h3 class="part">Sequential consistency: the intuitive baseline</h3>
-  <p>A <b>memory consistency model</b> is the rule that says which values loads are allowed to return. The most intuitive one is <b>sequential consistency (SC)</b>: imagine writing every thread's memory operations into <i>one</i> global list. Each thread's own operations must stay in program order on that list, and each load sees the most recent write to its address before it on the list. Real CPUs and languages mostly allow <i>more</i> behaviours than SC, for speed. x86, ARM, RISC-V, C++ and Java each define exactly which ones. Note that "SC" here is this abstract hardware model; C++'s <code>memory_order_seq_cst</code> is a related but separately defined language guarantee.</p>
+  <p>A <b>memory consistency model</b> says which values a load may return when threads access shared memory. Start with <b>sequential consistency (SC)</b>: imagine placing every thread's memory operations in one global list. Each thread's operations must keep their own program order in that list. A load reads the latest write to its address earlier in the list. If you cannot arrange the operations in such a list, the outcome is impossible under SC.</p>
+  <p>Real CPUs and programming languages often permit additional outcomes to avoid unnecessary waiting; their exact rules differ. Here SC is an abstract baseline for the explorer. C++'s <code>memory_order_seq_cst</code> is a related, but separately defined, language guarantee.</p>
 
   <h3 class="part">Try it: can both threads read zero?</h3>
-  <p>Start with x = 0, y = 0. Thread A does <code>x = 1</code>, then reads y into rA. Thread B does <code>y = 1</code>, then reads x into rB. Step the two threads in any order you like. In the store-buffer model you also decide when each buffer <b>drains</b> to memory. Every final (rA, rB) outcome you reach is recorded below.</p>
+  <p>Start with x = 0 and y = 0. Thread A writes <code>x = 1</code>, then reads y into rA. Thread B writes <code>y = 1</code>, then reads x into rB. Each thread's load asks whether it can see the other's write. Step the two threads in any order. In the store-buffer model, also choose when each buffer <b>drains</b>, making its store visible. The explorer records each final (rA, rB) pair.</p>
   <div class="assume">This explorer is an <b>abstract hardware execution</b>, not C++. Written as plain C++ variables, these accesses would be a data race, and the program's behaviour would be undefined. It is also not a complete x86 model: it shows only the store buffer, which is enough for this test.</div>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 10px"><div class="seg" role="group" aria-label="Machine model"><button data-mm="sc" aria-pressed="true">Sequentially consistent</button><button data-mm="sb">Store buffers (like x86-TSO)</button></div><button id="soWit">Play a (0, 0) witness</button></div>
@@ -218,19 +219,19 @@
     <p class="msg" id="soMsg"></p>
     <p class="panel-t" style="margin-top:12px">Outcomes reached (rA, rB)</p><div class="outc" id="soOut" aria-live="polite"></div>
   </div><figcaption><b>(0, 0) is impossible under SC but allowed with store buffers.</b> Under SC you can reach (0, 1), (1, 0) and (1, 1), but never (0, 0). With store buffers, both stores can wait in their buffers while both loads read the old zeros from memory. Every cache stayed coherent the whole time.</figcaption></figure>
-  <p>Here is a complete buffered run: A places x = 1 in A's store buffer; B places y = 1 in B's buffer; A loads y = 0 from memory; B loads x = 0 from memory; only then do the buffers drain. Each thread performed its own store before its load, yet neither store was visible to the other thread at load time. Under SC, the loads would have to see the most recent writes on one global list, so this (0, 0) run cannot be placed on that list.</p>
+  <p>For a (0, 0) run, first let A buffer x = 1 and B buffer y = 1. Neither store has reached coherent memory. A then reads y = 0; B reads x = 0. Let the buffers drain afterward. Each thread issued its store before its load, but neither load saw the other thread's still-buffered store. That is legal in this model; the cycle in the next figure shows why no SC list can describe it.</p>
   <p>The well-defined C++ counterpart uses atomics. With relaxed ordering, (0, 0) is a <b>defined, permitted</b> outcome, not undefined behaviour:</p>
   <pre class="code">std::atomic&lt;int&gt; x{0}, y{0};
 // thread A                                  // thread B
 x.store(1, std::memory_order_relaxed);       y.store(1, std::memory_order_relaxed);
 int rA = y.load(std::memory_order_relaxed);  int rB = x.load(std::memory_order_relaxed);
 // rA == 0 &amp;&amp; rB == 0 is allowed. Making all four operations memory_order_seq_cst forbids it.</pre>
-  <p>Why is (0, 0) impossible under SC? Follow the "must come before" arrows:</p>
+  <p>Follow the "must come before" arrows for (0, 0):</p>
   <figure class="fig narrow"><div class="sc"><svg id="cycSvg" viewBox="0 0 560 220" role="img" aria-label="The four ordering constraints form a cycle, so no single global order exists" style="min-width:460px"></svg></div>
     <figcaption><b>A cycle means no single global order exists.</b> Program order puts each store before its own thread's load. Each load reading 0 means it happened before the other thread's store. The four arrows chase each other in a circle, and a circle can't be laid out in one line.</figcaption></figure>
 
   <h3 class="part">Publishing data safely: release and acquire</h3>
-  <p>The practical question is usually "how does a consumer know the producer's data is ready?" Consider a <b>one-shot publication</b>. <code>ready</code> starts false, one producer writes <code>data = 42</code> and then sets <code>ready = true</code>, and data is never changed again. The consumer waits until it sees <code>ready</code>, then reads <code>data</code>. Both objects are initialized before either thread starts. In C++:</p>
+  <p>A more useful goal than forcing every operation into one global list is to order the operations that <i>communicate</i>. Suppose a producer writes <code>data = 42</code>, then signals that the data is ready. A consumer waits for that signal before reading the data. This is a <b>one-shot publication</b>: both objects start initialized, <code>ready</code> starts false, one producer sets it true, and no one changes <code>data</code> afterward. In C++:</p>
   <pre class="code">int data = 0;                       // ordinary, non-atomic
 std::atomic&lt;bool&gt; ready{false};
 
@@ -238,10 +239,11 @@ std::atomic&lt;bool&gt; ready{false};
 data = 42;                           while (!ready.load(std::memory_order_acquire)) { }
 ready.store(true,                    int v = data;   // guaranteed to see 42
             std::memory_order_release);</pre>
-  <p>The chain is <b>sequenced before → synchronizes with → sequenced before</b>: the write of data is sequenced before the release store; the acquire load that reads <code>true</code> synchronizes with that store; the read of data is sequenced after the acquire load.</p>
+  <p>The flag is a handoff. The producer's <b>release</b> store makes its earlier data write available to a consumer whose <b>acquire</b> load observes that store. Follow that handoff across the figure:</p>
   <figure class="fig"><div class="sc"><svg id="relSvg" viewBox="0 0 760 230" role="img" aria-label="Producer and consumer timelines connected by a release-acquire synchronizes-with edge"></svg></div>
     <figcaption><b>The chain that makes it safe.</b> The producer's write to data comes before its <b>release</b> store to ready (program order). The consumer's <b>acquire</b> load <i>reads that very store</i>, so the two synchronize. The consumer's read of data comes after (program order). Together these give "the write of 42 happens before the read of data". Remove release/acquire (make both "relaxed") and the chain breaks. In C++ that's a data race on <code>data</code>, and the program's behaviour is undefined.</figcaption></figure>
-  <p>Two subtleties. An acquire load that reads <code>false</code> establishes nothing: the relationship exists only with the specific store it read. And acquire/release says nothing about <i>timing</i>, so it doesn't promise the producer runs soon or that the wait ends. The compiler turns release and acquire into whatever instructions and fences the target CPU needs. For this pattern on x86 they often need no additional fence instruction, though they still constrain how the compiler may reorder code and aren't free in every sense. On ARM and RISC-V they may need special instructions or fences.</p>
+  <p>An acquire load that reads <code>false</code> has not observed the release store, so it establishes no handoff. That is why the consumer loops. Even the correct release/acquire pair makes no promise about <i>when</i> the producer will run or whether the wait will end.</p>
+  <p>The compiler enforces the language rule using the instructions the target CPU needs. For this pattern on x86, no extra fence instruction is often needed, though the operations still constrain compiler reordering. ARM and RISC-V may need special instructions or fences. The program states the required relationship; the implementation supplies the mechanism.</p>
 
   <h3 class="part">Lost updates, and the tools that fix different problems</h3>
   <p>Two threads each increment a shared counter using an atomic <i>load</i> followed by a separate atomic <i>store</i> (think <code>c.store(c.load() + 1)</code>). Each operation is atomic, so there's no data race, but the <i>pair</i> isn't:</p>
@@ -258,7 +260,7 @@ ready.store(true,                    int v = data;   // guaranteed to see 42
     <tr><td><b>Thread barrier</b> (e.g. <code>std::barrier</code>, used as <code>arrive_and_wait()</code>)</td><td>Everyone reaches the phase boundary before anyone continues (with <code>arrive_and_wait()</code>; the interface also allows <code>arrive()</code> without waiting), and a synchronizing barrier like <code>std::barrier</code> makes earlier work visible after it</td><td>Progress if some participants never arrive (deadlock)</td></tr>
     <tr><td><i>sleep, <code>volatile</code></i></td><td><i>Nothing about inter-thread ordering in C/C++</i></td><td><i>Not a substitute for any of the above</i></td></tr>
   </table></div>
-  <p>Making every field of a structure individually atomic doesn't preserve an invariant that spans several fields ("balance equals the sum of entries"). That's what a lock is for. Every tool here adds shared state and waiting, so choose by the relationship your algorithm needs, then measure the contention.</p>
+  <p>Making every field of a structure individually atomic does not preserve a rule spanning several fields, such as "balance equals the sum of entries". A lock can protect the whole update. Choose the tool for the relationship the algorithm needs, then measure its cost when threads contend for it.</p>
 
   <div class="predict"><div class="ph"><b>Predict</b><span>Name the relationship before the hardware.</span></div><ol>
     <li>With store buffers, why can rA and rB both be 0? Did any cache violate coherence?
