@@ -200,7 +200,7 @@
   </div>
 
   <h3 class="part">Why the order can look strange: store buffers</h3>
-  <p>Coherence gave every core an agreed history for x, but it did not say how operations on x and y must fit together. Recall Lesson 15: a core can retire a store while its value waits in a <b>store buffer</b> on the way to the coherent cache. The core can continue and load a <i>different</i> address before that store becomes visible to other cores. If two cores both do this, each may read an old value written by the other, even though each issued its own store first.</p>
+  <p>Coherence gave every core an agreed history for x, but it did not say how operations on x and y must fit together. Recall Lesson 15: a core can retire a store while its value waits in a <b>store buffer</b> on the way to the coherent cache. The core can continue and load a <i>different</i> address before that store becomes visible to other cores. If two cores both do this, each may read the old value at the other's address, even though each issued its own store first.</p>
   <figure class="fig"><div class="sc"><svg id="sbSvg" viewBox="0 0 760 200" role="img" aria-label="Each core has a store buffer between it and coherent memory; loads can bypass buffered stores to other addresses"></svg></div>
     <figcaption><b>Follow the store before the load.</b> The store is committed for its thread but still waits in the buffer. A later load to another address can pass it. A load of the <i>same</i> address checks the thread's own buffer first, so the thread can still read its own recent write.</figcaption></figure>
 
