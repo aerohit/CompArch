@@ -140,12 +140,13 @@
     <figcaption><b>Wide bands give noise margins.</b> The noise wobbles stay inside the valid bands, so the gate reads each level correctly and drives a clean 0 or 1. The signal does pass through the forbidden gap while it switches, which is fine: an input only needs a valid level when its value is sampled or relied on, after it has settled. The "1" is a <i>range</i> of voltages, not one magic value.</figcaption></figure>
 
   <h3 class="part">Place value in base 2</h3>
-  <p>With one bit we can tell apart two possibilities. With two bits, four (00, 01, 10, 11). With <i>n</i> bits, 2<sup>n</sup>. To read a bit pattern as an ordinary number, give each position a weight, just like decimal's ones, tens and hundreds, except the weights double: 1, 2, 4, 8, 16…</p>
+  <p>A <b>bit</b> is one 0-or-1 position. With one bit we can distinguish two patterns; with two bits, four (<code>00</code>, <code>01</code>, <code>10</code>, <code>11</code>). Each added bit doubles the possibilities, so <i>n</i> bits have 2<sup>n</sup> patterns. If we choose to read them as an <b>unsigned</b> (nonnegative) number, the rightmost position is worth 1, the next is worth 2, then 4, 8, and so on. Just as decimal <code>305</code> means 3 hundreds + 0 tens + 5 ones, binary <code>00101101</code> means 32 + 8 + 4 + 1 = <b>45</b>. Its leftmost zeros contribute nothing.</p>
   <figure class="fig"><div class="sc"><svg id="placeSvg" viewBox="0 0 760 150" role="img" aria-label="Binary 00101101 with weights 128 to 1 adds up to 45"></svg></div>
     <figcaption><b>Reading a byte.</b> Only the positions holding a 1 contribute their weight. Eight bits make a <b>byte</b>, which as an unsigned number ranges from 0 to 255. <b>Hexadecimal</b> is just shorthand: each hex digit stands for exactly four bits, so 0010 1101 is written 0x2D.</figcaption></figure>
+  <p>In hexadecimal, the digits after 9 are A through F, standing for 10 through 15. Split the byte into groups of four bits: <code>0010</code> is 2, and <code>1101</code> is 13, written D. Put them together as <code>0x2D</code>; the <code>0x</code> prefix says the digits are hexadecimal. This is a shorter spelling of the <i>same bits</i>, not another value stored alongside them.</p>
 
   <h3 class="part">Same bits, many meanings</h3>
-  <p>A bit pattern has no meaning by itself. <code>11111111</code> is 255 if we agree it's an unsigned number, −1 if we agree it's a signed number, and an instruction if it happens to be fetched as one. It could just as well be eight on/off flags or part of a character. <b>The operation that uses the bits decides how they are read.</b> Click the bits below and watch one pattern get four different readings at the same time, plus its hexadecimal spelling.</p>
+  <p>A bit pattern has no meaning by itself. <code>11111111</code> is 255 if read as an unsigned number and −1 if read as an 8-bit signed number. The same byte could be eight on/off flags, part of a character encoding, or an instruction fetched from memory. The bits have not changed; <b>the operation using them supplies the interpretation</b>. For example, adding two bytes treats them as numbers, while fetching a byte into an instruction register treats some of its bits as an operation code. Click the bits below to see several readings of one pattern, plus its hexadecimal spelling.</p>
   <figure class="fig"><div class="widget">
     <div class="bitrow" id="bits8"></div>
     <div class="interp" id="interp"></div>
@@ -153,16 +154,16 @@
   </div><figcaption><b>One pattern, four readings.</b> The last box uses NIB-8's instruction format from Lesson 4: the top four bits choose the operation and the bottom four bits give an address. The hardware never "knows" which reading is right. It just does what the current operation says with the bits.</figcaption></figure>
 
   <h3 class="part">Negative numbers: two's complement</h3>
-  <p>How should a fixed number of bits represent negatives? The scheme nearly every computer uses is <b>two's complement</b>: the top bit gets a <i>negative</i> weight. In 8 bits it's worth −128 instead of +128, so <code>11111111</code> = −128 + 64 + 32 + 16 + 8 + 4 + 2 + 1 = −1.</p>
+  <p>How can the same 8 bits also represent negative numbers? In <b>two's complement</b>, the highest bit has weight <i>−128</i> instead of +128; the other weights stay the same. Thus <code>11111111</code> means −128 + 64 + 32 + 16 + 8 + 4 + 2 + 1 = <b>−1</b>. A top bit of 0 still gives values 0 through 127; a top bit of 1 gives −128 through −1. The choice of signed or unsigned reading belongs to the operation, not to a hidden label inside the byte.</p>
   <p>The payoff is easiest to see on a wheel. Picture all 16 patterns of a 4-bit number around a circle. Adding 1 always moves one step clockwise, whichever reading you use. That's why <b>the same adder circuit works for signed and unsigned numbers</b>. The two readings only disagree about where the "cliff" is: the place where the numbers jump.</p>
   <figure class="fig"><div class="sc"><svg id="wheelSvg" viewBox="0 0 760 330" role="img" aria-label="Four-bit number wheel showing unsigned and signed readings of each pattern"></svg></div>
     <figcaption><b>The 4-bit wheel.</b> Outer labels are unsigned readings (0 to 15), inner labels are signed readings (−8 to 7), and the bit pattern sits on the ring between them. Unsigned values overflow at the top, going from 15 to 0. Signed values overflow at the bottom, going from 7 to −8.</figcaption></figure>
-  <p>Two handy facts follow. To negate a two's-complement number, <b>flip every bit and add 1</b>: 5 = <code>0101</code>, flipped is <code>1010</code>, plus 1 is <code>1011</code> = −5 (look it up on the wheel). And <b>subtraction reuses the adder</b>: A − B is A + (flipped B) + 1, so the ALU only needs a way to invert B and to set the adder's carry-in to 1. We'll use this in the ALU in Lesson 2.</p>
-  <p>The negation rule has one exception. An n-bit two's-complement number ranges from <b>−2<sup>n−1</sup> to 2<sup>n−1</sup> − 1</b>: −8 to +7 in 4 bits. There's no +8, so negating <code>1000</code> (−8) gives flipped <code>0111</code>, plus 1, which is <code>1000</code> again.</p>
+  <p>The wheel explains a useful trick. In four bits, adding <code>0001</code> to <code>1111</code> produces <code>1 0000</code>; keeping four bits leaves <code>0000</code>. So <code>1111</code> acts like −1 in four-bit arithmetic. More generally, flipping every bit of a 4-bit value <i>B</i> gives <code>1111 − B</code>; adding 1 makes <code>10000 − B</code>. Its low four bits therefore act like <i>−B</i>. For example, 5 is <code>0101</code>; flip to <code>1010</code> and add 1 to get <code>1011</code>, which reads as −5. This is why <b>subtraction can reuse addition</b>: A − B = A + (flipped B) + 1, discarding any fifth bit. Lesson 2 will build that into an ALU.</p>
+  <p>The flip-and-add-one bit rule still works at the edge of the range, but the mathematical answer may not fit. An n-bit two's-complement number ranges from <b>−2<sup>n−1</sup> to 2<sup>n−1</sup> − 1</b>: −8 to +7 in 4 bits. There's no +8, so flipping <code>1000</code> (−8) to <code>0111</code> and adding 1 yields <code>1000</code> again. The bits follow the rule; interpreting the result as +8 would be wrong because +8 has no 4-bit signed representation.</p>
   <p>Carry and signed overflow are also different things. <code>0111 + 0001</code> = <code>1000</code> has no carry out of the top bit, yet as signed numbers 7 + 1 came out as −8: <b>signed overflow without a carry</b>. <code>1111 + 0001</code> = <code>1 0000</code> does carry out, which means the <i>unsigned</i> sum 15 + 1 didn't fit, but as signed numbers it's −1 + 1 = 0, <b>a correct result despite the carry</b>. Signed overflow happens when two operands of the same sign produce a result of the other sign.</p>
 
   <h3 class="part">Fixed width means arithmetic wraps around</h3>
-  <p>An 8-bit register can't hold 300. When a result needs more bits than the register has, the extra high bits are simply dropped. The result is the true answer <b>modulo 2<sup>8</sup> = 256</b>.</p>
+  <p>An 8-bit register can hold only eight bits, so it cannot hold the unsigned number 300. If a calculation produces more bits, this machine keeps the low eight and drops the rest. In arithmetic terms, it keeps the <b>remainder after division by 2<sup>8</sup> = 256</b>, also called the result <b>modulo 256</b>. Imagine a counter that goes from 255 back to 0 rather than gaining a ninth digit.</p>
   <div class="worked">
     <p>200 + 100 = 300. In binary that's <code>1 0010 1100</code>, nine bits. Keep the low eight, <code>0010 1100</code>, and you get <b>44</b>, which is 300 − 256.</p>
     <p>Now read the <i>same</i> bits as signed: the 8-bit pattern that means 200 unsigned means −56 in two's complement, and −56 + 100 = 44. The same bits give the correct signed answer. Nothing overflowed in the signed reading, even though the unsigned reading wrapped.</p>
@@ -170,7 +171,8 @@
   <div class="pitfall">Our teaching machine wraps silently. Real instruction sets must <i>define</i> what happens on overflow, and programming languages add their own rules on top: some wrap, some trap, and in C, signed overflow is undefined. Don't assume every language behaves like this toy.</div>
 
   <h3 class="part">An address is not the value stored there</h3>
-  <p>Memory is a numbered row of storage locations. The <b>address</b> picks a location, and the <b>contents</b> are whatever bits are stored there. We write <code>M[6] = 42</code> to mean "the location at address 6 holds 42". For now this is abstract notation; Lesson 3 builds the hardware that actually stores the values. Mixing up the two is the most common beginner mistake in this whole subject.</p>
+  <p>To run a program, we will soon need to ask both "which storage location?" and "what value is in it?" Those are different questions, even when the address and the stored value are both written as numbers.</p>
+  <p>Memory is a collection of numbered storage locations. The <b>address</b> is the number used to select a location; the <b>contents</b> are the bits found there. We write <code>M[6] = 42</code> to mean "read address 6 and you get 42." That does <i>not</i> mean that 6 equals 42, or that the machine must next read address 42. Only an instruction that uses the returned value as another address would do that. This is abstract notation for now; Lesson 3 builds a small circuit that stores and selects the values.</p>
   <figure class="fig"><div class="sc">
     <svg viewBox="0 0 760 260" role="img" aria-label="Reading address 3 returns 6; using 6 as an address returns 42">
       <g id="memcol"></g>
@@ -182,7 +184,8 @@
       
     </svg></div>
     <figcaption><b>Address versus contents.</b> Reading address 3 gives 6. That 6 is only another address if some instruction <i>chooses</i> to use it as one. Following it leads to 42. A value used this way, one that holds an address, is a <b>pointer</b>; using it to read another location, M[M[3]], is a <b>dereference</b> (an indirect read).</figcaption></figure>
-  <p>A machine's widths are separate design choices: how many bits a register holds, how many bits an address has, how long an instruction is, and how many bytes one address names. They're often confused because they happen to match on some machines:</p>
+  <p>The drawing takes two reads: first <code>M[3] = 6</code>, then <code>M[6] = 42</code>, which we can write as <code>M[M[3]] = 42</code>. The second read happens only because we deliberately treat the first result as an address. This is a preview of pointers and indirect addressing; NIB-8's instructions later in this unit use their address field directly.</p>
+  <p>A machine's widths are separate design choices: how many bits a register holds, how many bits an address has, how long an instruction is, and how much storage one address names. For example, a 4-bit address can name 2<sup>4</sup> = 16 locations whether each location holds one bit, one byte, or something else. The choices happen to match on some machines, which makes them easy to confuse:</p>
   <div class="tbl"><table>
     <tr><th>Machine</th><th>Register width</th><th>Address names…</th><th>Instruction length</th></tr>
     <tr><td>NIB-8 (this unit)</td><td class="m">8 bits</td><td>one 8-bit word; 16 addresses</td><td class="m">8 bits</td></tr>
@@ -223,6 +226,7 @@
         <div class="ctrl"><button id="gA" class="pri">A = 0</button><button id="gB" class="pri">B = 0</button></div></div>
     </div>
   </div><figcaption><b>AND</b> is 1 only if both inputs are 1. <b>OR</b> is 1 if at least one is. <b>XOR</b> (exclusive or) is 1 if exactly one is, which makes it a "not-equal" detector. <b>NOT</b> flips its input. <b>NAND</b> is "not AND", and it's special: every other logic function can be built from NAND gates alone.</figcaption></figure>
+  <p>These gates work on one bit at a time. To apply AND to two bytes, line up their bits and use an AND gate for each position: <code>00001100 AND 00001010 = 00001000</code>. The 8's place is 1 in both inputs, so it is 1 in the result; all other positions give 0. This is a <b>bitwise</b> operation, different from treating the whole bytes as numbers and adding them.</p>
 
   <h3 class="part">The multiplexer: choosing a source</h3>
   <p>A <b>multiplexer</b> (mux) has several data inputs and a <b>select</b> input that picks which one passes through. It's the most important "boring" part in a processor. Every time the same wire needs to carry a value from different places at different times, a mux sits there, and the control logic flips its select signal.</p>
@@ -233,16 +237,16 @@
   </div><figcaption><b>A 2-to-1 mux on 8-bit values.</b> S = 0 passes A, and S = 1 passes B. Wider muxes (4-to-1, 8-to-1) just use more select bits.</figcaption></figure>
 
   <h3 class="part">Building addition: the full adder</h3>
-  <p>Adding binary numbers column by column is exactly like decimal: each column adds two digits plus a carry from the column to its right, and produces a sum digit and a carry to the left. A <b>full adder</b> is the circuit for one column. Its two outputs are:</p>
+  <p>Adding binary numbers column by column is like decimal addition: each column adds two digits plus any carry from the column to its right. For example, 1 + 1 is binary <code>10</code>: write sum bit 0 in this column and carry 1 into the next. If a carry also came in, 1 + 1 + 1 is binary <code>11</code>: write 1 and carry 1. A <b>full adder</b> does this for one column, taking A, B and carry-in as inputs. Its two outputs obey ordinary arithmetic <code>A + B + C<sub>in</sub> = sum + 2 × C<sub>out</sub></code>. Gates implement them with these Boolean formulas:</p>
   <p style="text-align:center;font-family:var(--mono);font-size:15px">sum = A ⊕ B ⊕ C<sub>in</sub> &nbsp;&nbsp;&nbsp; C<sub>out</sub> = A·B + C<sub>in</sub>·(A ⊕ B)</p>
-  <p>Read the carry formula in words: <i>a carry comes out if both inputs are 1 (the column <b>generates</b> a carry), or if exactly one is 1 and a carry came in (the column <b>propagates</b> it)</i>. Toggle the inputs and follow the highlighted wires:</p>
+  <p>In these <i>Boolean</i> formulas, ⊕ means XOR, · means AND, and + means OR; that last + is <i>not</i> numerical addition. Read the carry formula in words: a carry comes out if both inputs are 1 (the column <b>generates</b> a carry), or if exactly one is 1 and a carry came in (the column <b>propagates</b> it). Toggle the inputs and follow the highlighted wires:</p>
   <figure class="fig"><div class="widget">
     <div class="sc" style="padding:0"><svg id="faSvg" viewBox="0 0 760 290" role="img" aria-label="Gate-level full adder with live wire values"></svg></div>
     <div class="ctrl"><button id="faA" class="pri">A = 1</button><button id="faB" class="pri">B = 1</button><button id="faC" class="pri">Cin = 0</button><span class="readout" id="faOut"></span></div>
   </div><figcaption><b>A full adder from five gates.</b> Copper wires carry 1 and grey wires carry 0. The first XOR computes P = A ⊕ B ("exactly one input is 1"), and the first AND computes G = A·B ("both are 1"). The sum is P ⊕ C<sub>in</sub>. The carry-out is G OR (P AND C<sub>in</sub>).</figcaption></figure>
 
   <h3 class="part">Chaining columns: the ripple-carry adder, and why it takes time</h3>
-  <p>Connect four full adders so each carry-out feeds the next column's carry-in, and you can add 4-bit numbers. But gates aren't instantaneous. Each takes a small <b>propagation delay</b> to respond, and here each column must wait for the carry from the column before it. The carry <i>ripples</i> from right to left. Set some bits, then press <b>Watch it ripple</b>:</p>
+  <p>Connect four full adders so each carry-out feeds the next column's carry-in, starting with carry-in 0 at the rightmost column, and you can add 4-bit numbers. For <code>0111 + 0001</code>, the rightmost 1 + 1 produces sum 0 and carry 1; the next two columns each have a 1 and pass that carry left, giving <code>1000</code>. Gates aren't instantaneous: each takes a small <b>propagation delay</b> to respond, and each column may have to wait for its incoming carry. Set some bits, then press <b>Watch it ripple</b>:</p>
   <figure class="fig"><div class="widget">
     <div class="rip" id="rip"></div>
     <div class="ctrl"><button id="ripGo" class="pri">Watch it ripple</button><label class="rl" for="ripT">time elapsed: <span id="ripTv">9</span> gate delays<input type="range" id="ripT" min="0" max="9" value="9"></label></div>
@@ -250,13 +254,14 @@
   </div><figcaption><b>Hatched cells haven't settled yet.</b> In the worst case, the carry <i>out of</i> column <i>i</i> settles only after about 2<i>i</i> + 3 gate delays, so the final carry settles after 9. A 64-bit ripple adder would need over 100 gate delays. Real CPUs use faster carry structures instead, such as <i>carry-lookahead</i> adders, which compute carries in parallel using more gates. It's the first of many times we'll trade extra hardware for less waiting.</figcaption></figure>
 
   <h3 class="part">The ALU: many operations, one chosen result</h3>
-  <p>An <b>arithmetic logic unit</b> bundles several operations (add, subtract, AND, OR, XOR…) with a mux on the output. <b>In the simple circuit drawn here, every unit computes at once, on every input, all the time</b>, and the operation-select signal just decides which answer comes out. (Real ALUs vary: some share hardware between operations, or switch off units that aren't needed.) Subtraction reuses the adder: A − B = A + (NOT B) + 1, with the "+1" entering as the adder's first carry-in.</p>
+  <p>An <b>arithmetic logic unit</b> (ALU) offers several operations, such as add, subtract, AND, OR and XOR. In the circuit drawn here, the bitwise units and one adder work in parallel, and an output mux chooses the result requested by the <b>operation-select</b> signal. The adder is shared: for subtraction, the select signal makes it calculate A + (NOT B) + 1, with the "+1" entering as its first carry-in. So choosing SUB changes the adder's inputs as well as the mux selection. Real ALUs make different choices about sharing circuits and disabling unused work.</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 10px"><label class="rl" for="aluA">A (0–255)<input id="aluA" type="number" min="0" max="255" value="23"></label><label class="rl" for="aluB">B (0–255)<input id="aluB" type="number" min="0" max="255" value="19"></label>
       <div class="seg" role="group" aria-label="ALU operation"><button data-op="ADD" aria-pressed="true">ADD</button><button data-op="SUB">SUB</button><button data-op="AND">AND</button><button data-op="OR">OR</button><button data-op="XOR">XOR</button></div></div>
     <div class="sc" style="padding:0"><svg id="aluSvg" viewBox="0 0 760 270" role="img" aria-label="ALU with four units feeding an output multiplexer"></svg></div>
     <p class="msg" id="aluOut"></p>
-  </div><figcaption><b>Every unit computes, one result is chosen.</b> The grey values are computed and thrown away every time. That costs a little energy but saves time: no unit has to wait to be started. The answer still isn't instant. After A, B or the select signal changes, it takes the chosen unit's delay plus the mux's delay before the output is valid. The <b>zero flag</b> (is the result 0?) is the kind of extra output a later branch instruction can test.</figcaption></figure>
+  </div><figcaption><b>Several operations are ready; one result is chosen.</b> The bitwise units and the selected add/subtract variant compute in parallel; grey results are discarded. Parallel hardware costs energy but avoids starting each unit in sequence. The answer still takes time to travel through the chosen unit and output mux. The <b>Z output</b> indicates whether the selected result is zero; a processor could save that indication in a flag register for a later branch.</figcaption></figure>
+  <p>The demo's <b>Z</b> output is 1 when the chosen ALU result is zero. It is a combinational indication, not a value stored for later. Our NIB-8 machine in Lesson 4 does not have a saved zero flag: its <code>JZ</code> instruction checks whether the value already held in ACC is zero.</p>
 
   <h3 class="part">What we still can't do</h3>
   <p>Change an input, and after the delay the output changes. The adder doesn't keep its old answer anywhere. It's a <b>calculator circuit</b>, not yet a machine that can carry out a <i>sequence</i> of steps, because nothing holds a result so the next step can use it. That missing ingredient is the next lesson.</p>
@@ -268,7 +273,7 @@
     <li>What are the sum and carry-out of a full adder with A = 1, B = 1, C<sub>in</sub> = 1?
       <details><summary>Show answer</summary><div class="ans"><p>1 + 1 + 1 = 3 = binary <code>11</code>: <b>sum 1, carry 1</b>. Via the gates: P = 0, G = 1, sum = P ⊕ C<sub>in</sub> = 1, and carry = G + P·C<sub>in</sub> = 1. Set it in the full-adder demo to check.</p></div></details></li>
     <li>Compute 9 − 5 in 4 bits the way the ALU does, as A + NOT B + 1.
-      <details><summary>Show answer</summary><div class="ans"><p>9 = <code>1001</code>, 5 = <code>0101</code>, NOT 5 = <code>1010</code>. Then <code>1001</code> + <code>1010</code> + 1 = <code>1 0100</code>. Drop the fifth bit and you get <code>0100</code> = <b>4</b> ✓. The carry-out of 1 means "no borrow was needed".</p></div></details></li>
+      <details><summary>Show answer</summary><div class="ans"><p>As unsigned inputs, 9 = <code>1001</code> and 5 = <code>0101</code>. Flip 5 to <code>1010</code>; then <code>1001</code> + <code>1010</code> + 1 = <code>1 0100</code>. Drop the fifth bit to get <code>0100</code> = <b>4</b>. The carry-out of 1 means no unsigned borrow was needed. Although <code>1001</code> would read as −7 if signed, the four-bit adder still produces the same low bits; the interpretation changes, not the circuit.</p></div></details></li>
     <li>Why doesn't building a much faster adder, on its own, give us a programmable computer?
       <details><summary>Show answer</summary><div class="ans"><p>Speed isn't the missing piece. A combinational circuit has <b>no memory</b>, so it can't keep a result for a next step. It also has <b>no way to choose a different operation over time</b> except by someone changing its inputs by hand. Programmability needs <i>state</i> (Lesson 3) and <i>instructions that drive the select signals</i> (Lesson 4).</p></div></details></li>
   </ol></div>
@@ -287,6 +292,7 @@
 
   <h3 class="part">Feedback makes memory</h3>
   <p>Not every loop of gates remembers anything useful, so take a specific one: <b>two inverters, each feeding the other</b>. If the right-hand node is 1, the lower inverter makes the left-hand node 0, and the upper inverter turns that 0 back into 1. The loop agrees with itself, so it stays that way. The opposite state (right 0, left 1) is just as self-consistent. Two stable states: one bit of storage.</p>
+  <p>The loop alone gives us no way to choose or change its value. It might settle in either state when powered on. To make useful storage, we need a way to <b>write</b> a chosen bit and then let the loop <b>hold</b> it. The mux from Lesson 2 provides exactly that choice.</p>
   <figure class="fig"><div class="sc">
     <svg viewBox="0 0 760 250" role="img" aria-label="Left: two cross-coupled inverters holding Q = 1. Right: a D latch, where a mux chooses between new data D and the loop's own output">
       <text x="190" y="20" class="mid bd">1 · Two inverters in a loop: it holds</text>
@@ -310,7 +316,7 @@
       <text x="570" y="232" class="mid xs">flip-flop = two latches, opposite clock halves</text>
     </svg></div>
     <figcaption><b>From a loop that holds to a cell you can write.</b> The inverter loop stores a bit but gives no way to change it. Putting a mux in the loop (the same mux as Lesson 2) chooses between "take new data" and "keep what I have". That's a <b>D latch</b>: while enabled it's transparent, so Q follows D; when disabled it holds. This is a teaching construction; real latch circuits are built more compactly at the transistor level.</figcaption></figure>
-  <p>A latch changes <i>whenever</i> it's enabled, which is awkward when its output feeds logic that feeds its own input. A <b>flip-flop</b> fixes this by chaining two latches enabled on opposite halves of the clock: the first follows D while the clock is low, and the second passes that value on when the clock rises. The net effect is that the flip-flop <b>captures D only at the rising edge of the clock</b> and holds it for the rest of the cycle. Line up 8 flip-flops sharing one clock and you have an 8-bit <b>register</b>.</p>
+  <p>A latch changes <i>whenever</i> it's enabled, which is awkward when its output feeds logic that feeds its own input: a new output could flow around and change the input again. A <b>flip-flop</b> fixes this by chaining two latches enabled on opposite halves of the clock. In this rising-edge design, the first follows D while the clock is low; at the rising edge it closes, and the second passes along the first latch's held value. Later changes to D cannot pass through until the next rising edge. From outside, the flip-flop <b>captures D at the rising edge</b> and holds its output for the rest of the cycle. Line up 8 flip-flops sharing one clock and you have an 8-bit <b>register</b>.</p>
   <p>A register usually also has a <b>write enable</b>. When it's off, the register keeps its old value even though the clock keeps ticking. Look at how that's built: it's just the mux from Lesson 2, feeding the register's own output back in.</p>
   <figure class="fig"><div class="sc">
     <svg viewBox="0 0 760 190" role="img" aria-label="Register with write enable: a mux selects new data or the register's own old value">
@@ -326,11 +332,12 @@
     <figcaption><b>Write enable is a mux.</b> On each rising clock edge the register captures whatever D is. With enable = 0, D <i>is</i> the register's own old value, so nothing changes.</figcaption></figure>
 
   <h3 class="part">The synchronous model: everything changes at the edge</h3>
-  <p>Almost every processor follows one rhythm:</p>
+  <p>We can now describe a clocked machine with a simple rhythm:</p>
   <ol>
     <li><b>Between edges</b>, combinational logic reads the current register values and computes the <i>next</i> values. The outputs wobble while signals settle, and that's fine.</li>
     <li><b>At the edge</b>, every enabled register captures its next value <i>at the same instant</i>.</li>
   </ol>
+  <p>Think of an edge as a single handoff. If A holds 3 and B holds 9, and the wiring says <code>A ← A + B</code> and <code>B ← A</code>, the logic computes next-A = 12 and next-B = 3 from the <i>old</i> pair. At the edge, the pair becomes (12, 3) together. B never sees the newly written 12 during that update. This rule lets us trace a whole machine without guessing which register changes "first."</p>
   <div class="pitfall"><b>"At the same instant" is the synchronous teaching abstraction.</b> A real flip-flop needs its input stable for a <b>setup time</b> before the edge and a <b>hold time</b> after it, and the clock reaches different registers at slightly different moments (<b>clock skew</b>). Designers budget for all three; as long as those constraints are met, the simple model gives the right answer.</div>
   <figure class="fig"><div class="sc"><svg id="timingSvg" viewBox="0 0 760 236" role="img" aria-label="Timing diagram: register output Q changes only at rising clock edges, capturing input D"></svg></div>
     <figcaption><b>Q changes only at rising edges.</b> D may change between capture windows, even mid-cycle, but it must stay stable during the <b>setup</b> interval before the capturing edge and the <b>hold</b> interval after it (both shaded). Q ignores D until the next edge. In this ideal model Q updates exactly at the edge; in real hardware Q becomes valid a short <b>clock-to-Q</b> delay after the edge (the small slanted arrows), the same delay that appears in the critical-path example below.</figcaption></figure>
@@ -346,7 +353,7 @@
   </div><figcaption><b>Swap</b> works in one edge with no temporary variable. Step-by-step code needs a temporary (or a trick), because each line sees the previous line's result. <b>Counter</b> adds a write enable, so turn it off and the value holds while the clock keeps ticking. All arithmetic is 8-bit and wraps at 256.</figcaption></figure>
 
   <h3 class="part">Why the clock can't just go faster</h3>
-  <p>The clock period must be long enough for the <b>slowest</b> path between two registers to settle. That path is called the <b>critical path</b>. The period covers three delays: the first register's output appearing, the signal crossing the logic, and the setup time of the capturing register.</p>
+  <p>The <b>clock period</b> is the time from one rising edge to the next. It must be long enough for the slowest path from one register, through logic, to another register to settle. That is the <b>critical path</b>. In the example below, the sending register takes 60 ps to produce its output, the logic takes 700 ps, and the receiving register needs the input stable 40 ps before the next edge. The period must therefore be at least 60 + 700 + 40 = <b>800 ps</b>. A faster setting would not make the computation finish sooner; it would make the captured result unreliable.</p>
   <figure class="fig"><div class="sc">
     <svg viewBox="0 0 760 212" role="img" aria-label="Critical path: clock-to-output delay plus logic delay plus setup time sets the minimum clock period">
       <rect x="40" y="36" width="70" height="60" class="te"/><text x="75" y="70" class="mid bd">Reg</text>
@@ -364,7 +371,7 @@
     <figcaption><b>Timing is physics, not a setting.</b> (A simplified calculation: it ignores clock skew, hold constraints and manufacturing and temperature variation.) Making the clock faster requires shortening the critical path: faster transistors, fewer gates in a row, or cutting the path into pieces with registers in between. That last option is <i>pipelining</i>, and it's the first lesson of Unit 3.</figcaption></figure>
 
   <h3 class="part">A tiny addressed memory, built from registers</h3>
-  <p>How does an address pick one location? Build a four-word memory from four registers and the parts we already have. Two more ideas are needed. A <b>read mux</b> with four inputs uses the 2-bit address as its select, so exactly one register's value reaches <i>read data</i>. A <b>decoder</b> turns a 2-bit number into four wires, exactly one of which is 1 (it's just four AND gates, one per pattern); combined with a <i>write enable</i>, it turns on the write enable of exactly one register.</p>
+  <p>How does an address pick one location? Build a four-word memory from four registers and the parts we already have. A <b>read mux</b> with four inputs uses the 2-bit read address as its select, so one register's value reaches <i>read data</i>. For writing, a <b>decoder</b> turns the 2-bit write address into four separate enable wires, exactly one of which is 1. For address <code>10</code> (2), only wire 2 is high. If the memory's overall write enable is on, only register 2 captures the supplied write data at the next clock edge. The read and write addresses can select different locations.</p>
   <figure class="fig"><div class="sc">
     <svg viewBox="0 0 760 270" role="img" aria-label="Four registers sharing write data. A decoder driven by the write address and write enable enables one register; a 4-to-1 mux driven by the read address selects one register's output as read data">
       <text x="236" y="16" class="mid sm">write data = 99</text><path d="M236 22 V222" class="w"/>
@@ -379,15 +386,15 @@
     <figcaption><b>M[address] as a circuit.</b> <b>Write:</b> write address 10 (= 2) with write enable 1 makes the decoder raise only its line 2, so at the next clock edge only R2 captures the write data: 5 becomes 99. The other registers see the same data but aren't enabled, so they keep their values. <b>Read:</b> read address 01 (= 1) sets the mux to pass R1, so read data is 42, with no clock edge needed. This is a teaching implementation; large SRAM and DRAM arrays use more specialized structures, but they perform the same two jobs.</figcaption></figure>
 
   <h3 class="part">Registers, memory, datapath, control</h3>
-  <p>Both registers and memory hold state, but at different scales:</p>
+  <p>Both registers and memory hold bits. In a processor, a small set of named working registers is close to the arithmetic circuits, while a memory array offers locations selected by addresses. The four-word example and NIB-8's 16-word memory are intentionally tiny; practical main memories are vastly larger.</p>
   <div class="tbl"><table>
     <tr><th></th><th>Register</th><th>Memory array</th></tr>
-    <tr><td>Size</td><td>One value (say 8–64 bits); a simple CPU typically has a few dozen architectural general-purpose registers or fewer</td><td>Thousands to billions of locations</td></tr>
+    <tr><td>Size</td><td>One value per register (say 8–64 bits); a simple CPU exposes a small set of working registers to its instructions</td><td>Four locations in our example, 16 in NIB-8, often billions of byte locations in a real main memory</td></tr>
     <tr><td>How you pick one</td><td>By its wiring or a small register number</td><td>By an address</td></tr>
-    <tr><td>Access</td><td>Small and directly selected, so typically the fastest storage; register files often have several read ports</td><td>Larger and addressed, so typically slower; how many accesses it serves at once depends on the design</td></tr>
+    <tr><td>Access</td><td>Small and directly selected by instructions, so typically the fastest storage</td><td>Selected by a memory address; typically slower in real systems, with access time depending on the design</td></tr>
   </table></div>
-  <p>Exact latencies and port counts depend on the implementation. The lasting difference is size and how one item is selected: by a wire or a small register number, or by an address.</p>
-  <p>From here on we split a processor into two halves. The <b>datapath</b> holds and transforms values: registers, ALU, muxes, memory. The <b>control logic</b> decides, every cycle, which operation the ALU does, which input each mux selects, and which registers are enabled to write. We now have every ingredient for both.</p>
+  <p>A register file may itself use a small number to select a register, so the distinction is not simply "numbers versus no numbers." The useful distinction for this course is the <b>role</b>: working registers are operands that CPU instructions can name directly; memory supplies many addressed locations reached through memory operations. Exact size, speed and number of simultaneous accesses depend on the machine.</p>
+  <p>From here on we split a processor into two cooperating parts. The <b>datapath</b> holds and transforms values: registers, ALU, muxes and memory. The <b>control logic</b> chooses the ALU operation, mux inputs and write enables. We have built the pieces; Lesson 4 supplies the missing rule that chooses their actions over time: instructions read from memory.</p>
 
   <div class="predict"><div class="ph"><b>Predict</b><span>Remember: all registers read old values.</span></div><ol>
     <li>A = 3, B = 9. At one edge, A ← A + B and B ← A. What are A and B afterwards?
@@ -424,24 +431,29 @@
     <tr><td class="m">phase</td><td>Where the control is: fetch, decode, or execute.</td></tr>
     <tr><td class="m">halted</td><td>A flag that stops the machine.</td></tr>
   </table></div>
-  <p>Every instruction is one byte. The top 4 bits (the <b>opcode</b>) say what to do, and the bottom 4 bits say which memory address to do it with. That's why it's called NIB-8: an instruction is two <i>nibbles</i> (half-bytes).</p>
+  <p>On reset, NIB-8 starts with PC = 0, ACC = 0 and phase = fetch. Every instruction is one byte, split into two <b>nibbles</b> of four bits each. The upper nibble is the <b>opcode</b>, which chooses an action. The lower nibble usually supplies an address: a data location for LOAD, STORE, ADD or SUB, or a destination for JMP or JZ. HALT ignores it. The memory bytes themselves carry no "instruction" or "data" label. Fetching a byte using PC treats it as an instruction; reading that same location as an operand would treat it as data.</p>
   <figure class="fig narrow"><div class="sc">
     <svg viewBox="0 0 560 150" role="img" aria-label="Instruction byte 0x3A split into opcode 0011 meaning ADD and address 1010 meaning 10">
       <g id="fmtBits"></g>
       <text x="160" y="118" class="mid bd tcu">opcode 0011 = 3 → ADD</text><text x="400" y="118" class="mid bd tte">address 1010 = 10</text>
       <text x="280" y="142" class="mid">0x3A means "ADD 10": ACC ← ACC + M[10]</text>
     </svg></div></figure>
+  <p>In the table, <code>[a]</code> is a placeholder for one hexadecimal address digit (0 through F), <i>not</i> literal characters stored in the byte. For example, <code>0x1[a]</code> means an upper nibble of 1 followed by whichever address nibble the instruction uses.</p>
   <div class="tbl"><table>
     <tr><th>Instruction</th><th>Byte</th><th>What happens during execute</th></tr>
-    <tr><td class="m">LOAD a</td><td class="m">0x1a</td><td>ACC ← M[a]</td></tr>
-    <tr><td class="m">STORE a</td><td class="m">0x2a</td><td>M[a] ← ACC (ACC unchanged)</td></tr>
-    <tr><td class="m">ADD a</td><td class="m">0x3a</td><td>ACC ← (ACC + M[a]) mod 256</td></tr>
-    <tr><td class="m">SUB a</td><td class="m">0x4a</td><td>ACC ← (ACC − M[a]) mod 256</td></tr>
-    <tr><td class="m">JMP a</td><td class="m">0x5a</td><td>PC ← a</td></tr>
-    <tr><td class="m">JZ a</td><td class="m">0x6a</td><td>PC ← a <i>if</i> ACC = 0; otherwise nothing</td></tr>
+    <tr><td class="m">LOAD a</td><td class="m">0x1[a]</td><td>ACC ← M[a]</td></tr>
+    <tr><td class="m">STORE a</td><td class="m">0x2[a]</td><td>M[a] ← ACC (ACC unchanged)</td></tr>
+    <tr><td class="m">ADD a</td><td class="m">0x3[a]</td><td>ACC ← (ACC + M[a]) mod 256</td></tr>
+    <tr><td class="m">SUB a</td><td class="m">0x4[a]</td><td>ACC ← (ACC − M[a]) mod 256</td></tr>
+    <tr><td class="m">JMP a</td><td class="m">0x5[a]</td><td>PC ← a</td></tr>
+    <tr><td class="m">JZ a</td><td class="m">0x6[a]</td><td>PC ← a <i>if</i> ACC = 0; otherwise nothing</td></tr>
     <tr><td class="m">HALT</td><td class="m">0xF0</td><td>halted ← true. Any 0xF_ byte counts as HALT, since the low nibble is ignored.</td></tr>
   </table></div>
-  <p>Here "a" stands for whatever the low hex digit is, so <code>LOAD 8</code> is <code>0x18</code> and <code>STORE 10</code> is <code>0x2A</code>. Bytes with other opcodes aren't NIB-8 instructions. If one is ever fetched, our teaching rule is that the machine halts.</p>
+  <p>Thus <code>LOAD 8</code> is <code>0x18</code> and <code>STORE 10</code> is <code>0x2A</code>. <code>LOAD 8</code> means "read the byte <i>at address</i> 8," not "put the literal number 8 in ACC." This small machine has no instruction for loading an immediate constant; constants are placed in memory. Bytes with other opcodes aren't NIB-8 instructions. If one is fetched, our teaching rule is that the machine halts.</p>
+  <div class="worked">
+    <p><b>One program as memory contents.</b> Put <code>0x18</code>, <code>0x39</code>, <code>0x2A</code>, <code>0xF0</code> at addresses 0–3. Put the data 23 and 19 at addresses 8 and 9, and start address 10 at 0. The four instruction bytes mean <code>LOAD 8</code>, <code>ADD 9</code>, <code>STORE 10</code>, <code>HALT</code>.</p>
+    <p>LOAD brings M[8] = 23 into ACC. ADD reads M[9] = 19 and changes ACC to 42. STORE copies that 42 into M[10]; it does not change ACC. HALT stops. The addresses 8, 9 and 10 are written inside the instructions, while 23, 19 and eventually 42 are the <i>contents</i> at those addresses.</p>
+  </div>
 
   <h3 class="part">The datapath</h3>
   <p>Everything from the earlier lessons shows up here. There are registers (PC, IR, ACC), muxes (which address goes to memory, and which value becomes the next PC), an adder (PC + 1), an ALU, and a control unit that sets all the selects and enables.</p>
@@ -482,13 +494,14 @@
   <p>NIB-8 spends three clock ticks on every instruction. This is our teaching timing model, not a claim about real memory speeds:</p>
   <ol>
     <li><b>Fetch.</b> The address mux sends PC to memory, and the byte that comes back is captured in IR. At the same edge, PC ← (PC + 1) mod 16: the 4-bit PC wraps from 15 to 0. Both updates use the <i>old</i> PC, just like in Lesson 3.</li>
-    <li><b>Decode.</b> Control looks at IR's opcode and prepares the right selects. Nothing visible changes.</li>
+    <li><b>Decode.</b> Control looks at IR's opcode and determines the required selects and enables. The phase register advances to execute at the edge, but PC, IR, ACC and memory do not change.</li>
     <li><b>Execute.</b> The instruction's effect happens: ACC, memory or PC changes, or the machine halts.</li>
   </ol>
+  <p>Trace the first instruction of the example above. At tick 1, fetch reads M[0] = <code>0x18</code> into IR <i>and</i> advances PC from 0 to 1. At tick 2, decode recognizes opcode 1 (LOAD) and address 8. At tick 3, execute uses that address to read M[8] = 23 and captures 23 in ACC. Only then does the phase return to fetch, with PC still 1. The next three ticks fetch, decode and execute <code>ADD 9</code>; the three after those do the same for <code>STORE 10</code>. Separating these moments makes it possible to say exactly which value each circuit sees.</p>
   <div class="pitfall">One <b>instruction cycle</b> (fetch, decode, execute) here takes three <b>clock cycles</b>. The two terms are easy to blur. Also notice that PC already points to the <i>next</i> instruction while the current one executes. That's why a jump simply overwrites PC.</div>
 
   <h3 class="part">Inside the control box</h3>
-  <p>"Control decodes the instruction" isn't magic, and it doesn't need another processor inside. The controller is a small state machine: a <b>phase register</b> plus combinational logic. Each cycle, that logic reads the current phase, the opcode in IR and whether ACC is zero, and produces two things: the <b>control signals</b> for the datapath, and the <b>next phase</b>.</p>
+  <p>"Control decodes the instruction" isn't magic, and it doesn't need another processor inside. The controller is a small state machine: a <b>phase register</b> plus combinational logic. Each cycle, that logic reads the current phase, the opcode in IR and whether ACC is zero, and produces two things: <b>control signals</b> for the datapath and the <b>next phase</b>. For instance, ACC's write enable is on during execute if the opcode is LOAD, ADD or SUB; it is off during STORE and JZ. No one has to issue those decisions by hand: the current bits determine the signals through gates.</p>
   <figure class="fig"><div class="sc">
     <svg viewBox="0 0 760 260" role="img" aria-label="Controller: opcode, ACC-is-zero and halted enter decode logic together with the phase register; the logic outputs control signals and the next phase">
       <text x="20" y="74" class="sm">opcode (IR bits 7–4)</text><path d="M20 82 H348" class="w" marker-end="url(#ah)"/>
@@ -534,7 +547,7 @@
       </div>
     </div>
     <div class="tbl" style="margin-top:14px"><table id="simLog"></table></div>
-  </div><figcaption><b>Things to watch.</b> During fetch, PC advances while ACC doesn't move. ADD changes ACC but not memory. Only STORE changes memory. In the loops, JMP and JZ don't move any instructions around. They only change which address the next fetch uses.</figcaption></figure>
+  </div><figcaption><b>Things to watch.</b> During fetch, PC advances while ACC doesn't move. ADD changes ACC but not memory. STORE can change memory; no other NIB-8 instruction writes to it. In the loops, JMP and JZ don't move any instructions around. They only change which address the next fetch uses.</figcaption></figure>
 
   <h3 class="part">Branches turn a sequence into a loop</h3>
   <p>Without branches, execution follows consecutive addresses. In NIB-8, the four-bit PC wraps from 15 to 0, so a program with no HALT would eventually run through memory again. Branches let a program choose a different next address, including making a choice based on the data. The Countdown program is a loop that ends by testing ACC:</p>
@@ -553,28 +566,29 @@
       <rect x="410" y="152" width="100" height="36" class="bx"/><text x="460" y="175" class="mid bd">4: JMP 1</text>
       <path d="M410 170 H215 V108" class="wc" marker-end="url(#ahc)"/><text x="310" y="164" class="mid sm tcu">PC ← 1: fetch SUB again</text>
     </svg></div>
-    <figcaption><b>The loop is in the PC, not in the memory.</b> Starting with n = 3, ACC goes 3 → 2 → 1 → 0. The circuit never changed. Only the numbers in memory did, and that's what programmability means.</figcaption></figure>
+    <figcaption><b>The loop's instructions stay in memory; PC revisits them.</b> Starting with n = 3, ACC goes 3 → 2 → 1 → 0. STORE changes the data at M[8]; the instruction bytes stay put. The fixed circuit follows those bytes, and JZ or JMP changes which one PC selects next.</figcaption></figure>
+  <p>Try the Multiply program next. Its instruction bytes occupy addresses 0–8. The loop at 0–7 repeatedly adds M[13] = 6 to the growing product in M[12], then subtracts M[15] = 1 from the counter in M[14]. Because ACC can hold only one of these working values at a time, each pass must LOAD and STORE both the product and the counter. Starting from product 0 and counter 3, the first pass leaves (product, counter) = (6, 2), the second (12, 1), and the third (18, 0). JZ then skips the JMP and fetches HALT at address 8. The first two passes execute eight instructions each; the final pass executes seven, followed by HALT: <b>8 + 8 + 7 + 1 = 24 instructions</b>. If the counter began at 0, this particular loop would still run once before testing it.</p>
 
   <h3 class="part">What is an "execution context"?</h3>
-  <p>Suppose we want to pause a NIB-8 program and resume it later, or on a second NIB-8. What must we save? It depends on <i>where</i> we pause. At a clean <b>instruction boundary</b> (between an execute and the next fetch), the essential state is small:</p>
+  <p>Branches showed that a program's place is in PC, not in the physical position of an instruction. Now suppose we pause NIB-8 and later want it to continue. Which changing values must survive the pause? It depends on <i>where</i> we stop. At a clean <b>instruction boundary</b> (between an execute and the next fetch), the CPU's essential state is small:</p>
   <div class="ctxcols">
-    <div class="ctx-a"><p class="panel-t" style="color:var(--te)">Saved context (architectural)</p><ul><li><b>PC</b>: where to continue</li><li><b>ACC</b>: the working value</li><li><b>halted</b></li></ul><p class="panel-t" style="margin-top:10px">Must also still be there</p><ul><li>The same <b>memory</b> contents, left in place rather than copied</li></ul></div>
+    <div class="ctx-a"><p class="panel-t" style="color:var(--te)">Saved context (architectural)</p><ul><li><b>PC</b>: where to continue</li><li><b>ACC</b>: the working value</li><li><b>halted</b></li></ul><p class="panel-t" style="margin-top:10px">Must also be available</p><ul><li>The same <b>memory</b> contents: left in place for a pause on this machine, or shared or copied for a different machine</li></ul></div>
     <div class="ctx-b"><p class="panel-t">Can be dropped at a boundary</p><ul><li><b>IR</b>: the next fetch refills it</li><li><b>phase</b>: always "fetch next" at a boundary</li><li>ALU outputs and mux settings</li></ul></div>
   </div>
-  <p>Pause <i>mid-instruction</i>, after fetch but before execute, and PC + ACC is no longer enough: you'd also need IR and the phase. That's why real processors are careful to switch tasks only at well-defined boundaries. PC, ACC and halted are NIB-8's <b>saved execution context</b>. When an operating system switches between programs, it saves the equivalent registers of a real processor (Unit 2 shows this in detail). The program's memory is <i>not</i> part of that saved context: it stays where it is, and the OS keeps track of which memory belongs to which program so the same contents are there on resumption.</p>
+  <p>Pause <i>mid-instruction</i>, after fetch but before execute, and PC + ACC is no longer enough: you'd also need IR and the phase. That is why switching at an instruction boundary gives us a simpler state to save. PC, ACC and halted are NIB-8's <b>saved CPU context</b> at that boundary. Memory is separate from this small register snapshot, but correct resumption still needs the <i>same memory contents</i>. On this machine they can stay in place. A second independent NIB-8 would need access to the same memory or a copy of it. A real operating system saves a processor's necessary registers and preserves the program's memory and mapping while switching between tasks; Unit 2 develops that picture.</p>
 
   <h3 class="part">A first performance calculation</h3>
-  <p>Every program's run time breaks into three factors, which we'll use for the rest of the course:</p>
+  <p>For CPU execution time, three factors multiply together. We will use this accounting throughout the course:</p>
   <p style="text-align:center;font-family:var(--mono);font-size:15px">time = instructions executed × cycles per instruction (CPI) × seconds per cycle</p>
   <div class="worked">
-    <p>The Multiply program (6 × 3) executes <b>24 instructions</b>. NIB-8 always takes <b>3 cycles</b> per instruction, so that's 72 ticks. At a hypothetical 100 MHz clock (10 ns per tick), it runs in <b>720 ns</b>.</p>
+    <p>The Multiply program (6 × 3) executes <b>24 instructions</b>, counted above from its three loop passes and HALT. NIB-8 always takes <b>3 clock cycles</b> per instruction, so that's 72 ticks. At a hypothetical 100 MHz clock (10 ns per tick), its CPU execution time is <b>720 ns</b>.</p>
     <p>A faster clock would help only if the circuit could still meet its timing (Lesson 3). A smarter design could lower CPI by overlapping instructions (Unit 3). A better algorithm could lower the instruction count. <b>Clock frequency alone never tells you which machine finishes first.</b></p>
   </div>
-  <p>Two terms need care once we leave NIB-8. <b>Instruction count</b> means instructions actually <i>executed</i>, including every repetition of a loop, not the instructions written in the program: Multiply has 8 instructions in memory but executes 24. <b>CPI</b> is an average over that execution, total CPU cycles ÷ instructions executed. NIB-8's CPI is always 3, but on real machines it changes with the program and its data. At a fixed clock period the equation gives <b>CPU execution time</b>; a program's elapsed time can also include waiting for I/O or for the operating system to schedule it.</p>
+  <p>Two terms need care once we leave NIB-8. <b>Instruction count</b> means instructions actually <i>executed</i>, including every repetition of a loop, not merely the number of instructions stored in the program: Multiply has <b>nine</b> instructions in memory (eight in the loop plus HALT) but executes 24. <b>CPI</b>, cycles per instruction, is an average over that run: total CPU cycles ÷ instructions executed. NIB-8's CPI is always 3, but on real machines it changes with the program and its data. At a fixed clock period the equation gives <b>CPU execution time</b>; elapsed time can also include waiting for I/O or for the operating system to schedule the program.</p>
 
   <div class="predict"><div class="ph"><b>Predict</b><span>Use the simulator only to check.</span></div><ol>
     <li>In "Add two numbers", right after the <b>6th tick</b>, what are PC, ACC and M[10]? Why hasn't M[10] changed yet?
-      <details><summary>Show answer</summary><div class="ans"><p>Tick 6 completes the execute of <code>ADD 9</code>: <b>PC = 2, ACC = 42</b> (23 + 19), <b>M[10] = 0</b>. Only STORE writes memory, and STORE hasn't been fetched yet (ticks 7–9).</p></div></details></li>
+      <details><summary>Show answer</summary><div class="ans"><p>Tick 6 completes the execute of <code>ADD 9</code>: <b>PC = 2, ACC = 42</b> (23 + 19), <b>M[10] = 0</b>. STORE is fetched on tick 7 but does not write M[10] until its execute phase on tick 9.</p></div></details></li>
     <li>Change the inputs to M[8] = 250 and M[9] = 10 (0xFA and 0x0A). What gets stored?
       <details><summary>Show answer</summary><div class="ans"><p>260 mod 256 = <b>4</b>. NIB-8 stores 4 and provides no carry or overflow flag. This program performs no overflow check; detecting overflow would require additional software logic (for unsigned addition, checking whether the result is smaller than an operand) or assumptions about the inputs.</p></div></details></li>
     <li>How many instructions does Countdown (starting n = 3) execute, including HALT, and how many ticks?
@@ -592,7 +606,7 @@
 <section class="lesson" id="wrap" data-toc="Putting it together" data-n="✓">
   <div class="lesson-h"><div class="kicker">Unit 1 · Summary</div><h2>Putting it together</h2></div>
   <p>Explain the whole machine aloud using these two chains as prompts. When every arrow feels obvious, you're ready for Unit 2.</p>
-  <p style="margin-bottom:4px"><b>Data path</b>: what happens to values.</p>
+  <p style="margin-bottom:4px"><b>Data path</b>: a typical arithmetic result, from operands to a stored value.</p>
   <div class="chain"><span>bit patterns in registers and memory</span><i>→ selected by muxes as</i><span>operands</span><i>→ transformed by the</i><span>ALU</span><i>→</i><span>result</span><i>→ written back at the</i><span>clock edge</span></div>
   <p style="margin-bottom:4px"><b>Control path</b>: what decides which values move.</p>
   <div class="chain"><span>PC</span><i>→ addresses the next</i><span>instruction</span><i>→ fetched into</i><span>IR</span><i>→ decoded by</i><span>control</span><i>→ sets</i><span>mux selects, write enables, next PC</span></div>
@@ -604,7 +618,7 @@
     <tr><td>3</td><td>Registers + clock</td><td>Register contents</td><td>Fixed behaviour</td></tr>
     <tr><td>4</td><td>Stored program</td><td>PC, IR, ACC, phase, halted</td><td>One accumulator: keeping several working values requires frequent saves to and reloads from memory</td></tr>
   </table></div>
-  <p>That last limitation is where Unit 2 begins. Look at the Multiply loop. It occupies eight instructions (addresses 0–7), and four of them, <code>LOAD 12</code>, <code>STORE 12</code>, <code>LOAD 14</code> and <code>STORE 14</code>, exist only to shuttle the product and the counter between memory and ACC, because there's only one place to keep a working value. (The final pass skips the <code>JMP</code>, so 6 × 3 still takes 8 + 8 + 7 loop instructions plus HALT = 24 instructions, 72 ticks.)</p>
+  <p>That last limitation is where Unit 2 begins. Look at the Multiply loop. It occupies eight instructions (addresses 0–7), and four of them, <code>LOAD 12</code>, <code>STORE 12</code>, <code>LOAD 14</code> and <code>STORE 14</code>, exist only to shuttle the product and the counter between memory and ACC, because there's only one place to keep a working value. More working registers in Unit 2 will let us keep both values close to the ALU.</p>
   <h3 class="part">One more, unseen: a transfer exercise</h3>
   <p>Memory holds <code>M[0..4] = [0x18, 0x39, 0x64, 0x2A, 0xF0]</code>, with <code>M[8] = 250</code>, <code>M[9] = 6</code> and <code>M[10] = 99</code>. Everything else is 0, and the machine starts with PC = 0, ACC = 0. Decode the program by hand, then predict the final <b>PC</b>, <b>ACC</b> and <b>M[10]</b>, the number of instructions executed, and the number of ticks.</p>
   <div class="ctrl"><button id="exLoad" class="pri">Load it into the simulator</button><span class="readout">(after you've made your prediction)</span></div>
