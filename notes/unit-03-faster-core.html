@@ -182,7 +182,7 @@
   </div>
 
   <h3 class="part">A dependency is in the program; a hazard is in the schedule</h3>
-  <p>A <b>dependency</b> is a fact about the program: instruction 2 needs the value instruction 1 produces. A <b>hazard</b> is what happens when a hardware schedule would violate that fact, or needs something that isn't available. There are three kinds, each a different thing to wait for:</p>
+  <p>Lesson 8 let a new instruction enter every cycle because the instructions were independent. Now put <code>add x6, x5, x9</code> immediately after a load into x5. The add cannot use yesterday's x5; it needs the value this load will produce. That need is a <b>dependency</b>, a fact about the program. The attempted schedule creates a <b>hazard</b> when the needed value has not arrived. Other hazards arise when hardware or a branch decision is missing. Ask what the machine is waiting for:</p>
   <div class="tbl"><table>
     <tr><th>Hazard</th><th>Waiting for…</th><th>Example</th><th>Usual fix</th></tr>
     <tr><td><b>Data</b></td><td>a <i>value</i></td><td><code>add x6, x5, x9</code> right after the load of x5</td><td>forward it, stall if it doesn't exist yet</td></tr>
@@ -191,7 +191,7 @@
   </table></div>
 
   <h3 class="part">When is a value ready, and when is it needed?</h3>
-  <p>Every data-hazard question comes down to comparing two moments. In our model, an ALU result exists at the <b>end of E</b> and loaded data at the <b>end of M</b>. A consumer needs its operands at the <b>start of its own E</b>. <b>Forwarding</b> is a direct route from a producer's pipeline register to the consumer's ALU input; it avoids waiting for the value to be written to and reread from the register file. Without it, the value must reach W first. We assume W writes early in a cycle, so D can read the new value later in that same cycle.</p>
+  <p>For a data hazard, compare when the producer has a value with when the consumer needs it. In our model, an ALU result exists at the <b>end of E</b>, but loaded data exists only at the <b>end of M</b>. A consumer needs its operands at the <b>start of its own E</b>. In the figure, compare the arrows for an add and a load: which one reaches the next instruction in time? <b>Forwarding</b> gives a result a direct route from the producer's pipeline register to the consumer's ALU input, instead of making it wait to be written to and reread from the register file. Without forwarding, the value must reach W first. We assume W writes early enough that D can read it later in the same cycle.</p>
   <figure class="fig"><div class="sc"><svg id="readySvg" viewBox="0 0 760 196" role="img" aria-label="Producer and consumer timing: ALU result forwards with no stall; load result arrives one cycle too late"></svg></div>
     <figcaption><b>Why a load costs a bubble even with forwarding.</b> An add's result can be passed straight from the end of cycle 3 to the next instruction's E in cycle 4. A load's data only exists at the end of cycle 4, which is already too late for a cycle-4 E. Forwarding changes <i>where</i> a value comes from, not <i>when</i> it exists.</figcaption></figure>
   <p>Take a load followed immediately by an add that uses it. The load goes through F in cycle 1, D in 2, E in 3 and M in 4. The add would enter E in cycle 4, before the load's data exists. The hazard unit therefore <b>holds the add in D</b> for cycle 4, freezes the younger fetch behind it, and sends an <b>invalid bubble</b> into E. The older load keeps moving. In cycle 5, the add enters E and receives the value forwarded from the load's M/W pipeline register. The bubble costs one cycle, but no instruction is skipped or executed twice.</p>
@@ -209,7 +209,7 @@
   <p>Suppose instruction fetch and data access shared <b>one</b> single-ported memory. A load reaching M in cycle 4 would collide with a later instruction trying to fetch in cycle 4. Someone has to wait, and no amount of forwarding helps, because the problem is a missing resource, not a missing value. That's why real cores have separate L1 instruction and data caches.</p>
   <figure class="fig narrow"><div class="sc"><svg id="structSvg" viewBox="0 0 560 172" role="img" aria-label="Structural hazard: a load's memory stage and a later fetch collide on one memory port" style="min-width:460px"></svg></div>
     <figcaption><b>One memory port, two requests in cycle 4.</b> I4's fetch is pushed to cycle 5.</figcaption></figure>
-  <p>There's a recurring question behind every performance problem from here on: <b>is the machine waiting for a value, a resource, or a decision?</b> Each has different fixes.</p>
+  <p>So the first diagnostic question is <b>what is missing: a value, a resource, or a decision?</b> Forwarding helps the first only after a value exists; another port helps the second. Prediction will address the third. Even with those fixes, a load may have to wait far longer than one stage when its data is not nearby. That is the problem caches address next.</p>
 
   <div class="predict"><div class="ph"><b>Predict</b><span>Mark "value ready" and "value needed" first.</span></div><ol>
     <li>In the load → add → add program, why can't the loaded value reach the first add's E in cycle 4, even with forwarding? When can that add execute?
@@ -221,7 +221,7 @@
     <li>A load in M and a younger instruction's fetch both need the only memory port. What kind of hazard is it, and why doesn't forwarding fix it?
       <details><summary>Show answer</summary><div class="ans"><p>A <b>structural</b> hazard: two requests, one port. Forwarding moves existing values around, but it can't create a second port. Only more hardware (or waiting) helps.</p></div></details></li>
   </ol></div>
-  <p class="checkpoint">Before inserting a stall, mark when the producer <i>creates</i> the value and when the consumer <i>needs</i> it. The stall count is the gap, minus whatever forwarding can bridge.</p>
+  <p class="checkpoint">Before inserting a stall, mark when the producer <i>creates</i> the value and when the consumer <i>needs</i> it. Decide whether forwarding can deliver it by then; if it cannot, hold the consumer until it can.</p>
 </section>
 
 <!-- =============================== LESSON 10 =============================== -->
