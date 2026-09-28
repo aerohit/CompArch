@@ -117,7 +117,7 @@
   </div>
 
   <h3 class="part">Idle hardware</h3>
-  <p>In the multicycle machine from Unit 2, the fetch hardware sits idle while the ALU works, and the ALU sits idle while memory is read. Colour in which unit is busy each cycle and the waste is obvious:</p>
+  <p>In Unit 2's <b>multicycle</b> machine, only one instruction is active. Its fetch hardware sits idle while the ALU works, and the ALU sits idle while memory is read. The utilization picture below shows how overlapping <i>different</i> instructions can keep those units busy together. It assumes independent instructions that each use all five stages, so we can focus on the scheduling idea first.</p>
   <figure class="fig"><div class="sc"><svg id="utilSvg" viewBox="0 0 760 230" role="img" aria-label="Unit utilization: multicycle uses one unit per cycle; pipelined keeps all five busy"></svg></div>
     <figcaption><b>Same hardware, very different utilization.</b> Simplified so that every instruction uses all five phases (like a load). Left: one instruction at a time, so each unit is busy one cycle in five. Right: a new instruction enters every cycle, so once the pipe is full every unit is busy every cycle, each on a different instruction.</figcaption></figure>
 
@@ -130,11 +130,11 @@
     <tr><td class="m">M · memory</td><td>Load or store, if needed</td><td>loaded data or the carried result</td></tr>
     <tr><td class="m">W · writeback</td><td>Write the destination register, if any</td><td>—</td></tr>
   </table></div>
-  <p>Between stages sit <b>pipeline registers</b>. At every clock edge, each stage hands its instruction's intermediate values and control bits to the next. A <b>valid bit</b> marks whether a slot holds a real instruction or a bubble. The key mental shift is that <b>there is no single "current instruction" any more</b>. There are up to five, each in a different stage, each carrying its own identity.</p>
+  <p>Between stages sit <b>pipeline registers</b>. At every clock edge, each stage hands its instruction's intermediate values and control bits to the next. The instruction's PC and destination number travel with it so a result cannot accidentally be credited to a neighbor. A <b>valid bit</b> marks whether a slot holds a real instruction or a bubble, an empty slot used when the pipeline must wait. The key mental shift is that <b>there is no single "current instruction" any more</b>: up to five instructions can be in flight, each at a different stage.</p>
   <div class="pitfall">An <code>add</code> still passes through M even though it doesn't touch memory, and a store passes through W without writing a register. A stage is a <i>position in the hardware</i>, not a job every instruction must do.</div>
 
   <h3 class="part">Try it: fill, flow, drain</h3>
-  <p>Adjust the number of instructions and the timing. Move the cycle slider to see a snapshot of what each stage holds.</p>
+  <p>This explorer makes a <i>different</i> comparison from the utilization picture. Its unpipelined timing baseline is Unit 2's idealized <b>single-cycle</b> machine: five 1 ns pieces of logic in one long 5 ns cycle, with no registers <i>between</i> the pieces. The pipeline puts registers between them, so each cycle can be shorter but pays register overhead. Adjust the instruction count and timing, then move the cycle slider to see what each stage holds.</p>
   <figure class="fig"><div class="widget">
     <div class="calc">
       <label class="rl" for="p8n">instructions N = <b id="p8nv">6</b><input id="p8n" type="range" min="1" max="12" value="6"></label>
@@ -145,15 +145,15 @@
     <div class="sc" style="padding:10px 0 0"><svg id="p8grid" viewBox="0 0 760 300" role="img" aria-label="Pipeline timing diagram" style="min-width:560px"></svg></div>
     <div class="sc" style="padding:4px 0 0"><svg id="p8snap" viewBox="0 0 760 90" role="img" aria-label="Snapshot of the five stages at the selected cycle" style="min-width:560px"></svg></div>
     <div class="stat" id="p8stat"></div>
-  </div><figcaption><b>Model:</b> each stage's logic takes 1 ns (except E, if you change it), and a pipeline register adds the overhead. Instructions are independent, with no misses, branches or stalls. The unpipelined machine needs no stage registers and takes the full 5 ns (or more) per instruction.</figcaption></figure>
+  </div><figcaption><b>Model:</b> each stage's logic takes 1 ns (except E, if you change it), and a pipeline register adds the overhead. Instructions are independent, with no misses, branches or stalls. The timing baseline is a single-cycle unpipelined machine with no <i>interstage</i> registers; its full logic path takes 5 ns (or more) per instruction.</figcaption></figure>
 
   <h3 class="part">Latency, throughput, and the empty ends</h3>
   <p>Two measures that everyday language blurs:</p>
   <ul>
-    <li><b>Latency</b>: how long <i>one</i> instruction takes from start to finish. Here that's 5 × 1.1 = 5.5 ns, <i>longer</i> than the unpipelined 5 ns because of the stage registers.</li>
+    <li><b>Latency</b>: how long <i>one</i> instruction takes from start to finish. Here that's 5 × 1.1 = 5.5 ns, <i>longer</i> than the single-cycle baseline's 5 ns because of the interstage registers.</li>
     <li><b>Throughput</b>: how much work completes per unit time. Once the pipe is full, one instruction per 1.1 ns.</li>
   </ul>
-  <p>For N independent instructions in an ideal K-stage pipeline, the total is <b>N + K − 1 cycles</b>: K − 1 cycles to fill, then one completion per cycle. That formula already includes draining, so don't add it twice. A short program never gets near the ideal K× speedup:</p>
+  <p>For N independent instructions in an ideal K-stage pipeline, the total is <b>N + K − 1 cycles</b>. The first instruction finishes at the end of cycle K; each of the remaining N − 1 finishes one cycle later, so the last finishes in cycle K + N − 1. For example, four instructions in five stages take 4 + 5 − 1 = <b>8 cycles</b>. This count includes the empty start and the final drain; do not add either again. A short program cannot get close to the ideal K× speedup:</p>
   <figure class="fig"><div class="sc"><svg id="p8curve" viewBox="0 0 760 240" role="img" aria-label="Speedup versus number of instructions approaches an asymptote below the stage count"></svg></div>
     <figcaption><b>Speedup climbs toward a ceiling it never reaches.</b> With 5 stages and 0.1 ns overhead, the ceiling is 5 / 1.1 ≈ 4.55×, not 5×. And the slowest stage sets the clock: stretch E to 2 ns and every stage now gets 2.1 ns, and the ceiling collapses.</figcaption></figure>
   <div class="insight">In steady state, pipelining raises the <b>machine</b>'s throughput without making any <b>instruction</b> faster. In fact each instruction takes a little longer, and a short fragment can finish later than on the unpipelined machine because of the fill time and register overhead. That's worth remembering whenever someone confuses latency with throughput, which happens again with caches, GPUs and networks.</div>
