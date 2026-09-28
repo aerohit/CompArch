@@ -235,17 +235,17 @@
   </div>
 
   <h3 class="part">Why a hierarchy</h3>
-  <p>Fast memory is small and expensive per bit, and big memory is slow. No single technology is both, so machines stack several: registers, then one or more levels of cache, then DRAM, then storage. The names L1, L2 and L3 are just levels. Their sizes and policies differ between designs.</p>
+  <p>Forwarding cannot help an add until the load has received its data. If every load had to go all the way to main memory, many instructions would spend far longer waiting than executing. Fast memory is small and expensive per bit, while large memory is slower, so machines stack several kinds: registers, then one or more cache levels, then DRAM, then storage. Read the figure from top to bottom: the farther the data is, the more there is of it, but the longer the trip. L1, L2 and L3 simply name cache levels; their sizes and policies vary by design.</p>
   <figure class="fig"><div class="sc"><svg id="hierSvg" viewBox="0 0 760 230" role="img" aria-label="Memory hierarchy with rough sizes and latencies"></svg></div>
     <figcaption><b>Orders of magnitude, not specifications.</b> The gap between an L1 hit and a DRAM access is roughly 100×. A cache pays off when programs reuse what it holds: the same addresses again soon (temporal locality), or neighbouring bytes of a line it has just fetched (spatial locality). Even a single sequential pass hits on the later bytes of each line.</figcaption></figure>
 
   <h3 class="part">Locality: the bet caches make</h3>
-  <p>Caches bet on two habits real programs have. <b>Temporal locality</b>: something used now will probably be used again soon. <b>Spatial locality</b>: something <i>near</i> what was just used will probably be used soon. That's why a cache moves a whole <b>line</b> (typically 64 bytes) at a time: one miss fetches the neighbours too.</p>
+  <p>A small cache helps only if it tends to hold the next bytes the program wants. Programs often reuse a value soon after reading it: <b>temporal locality</b>. They also often read nearby addresses, as in an array scan: <b>spatial locality</b>. That is why a cache fetches a whole <b>line</b> (often 64 bytes) on a miss. For an aligned array of 4-byte integers, a 64-byte line holds 16 adjacent elements; the first access can miss and the next 15 can hit, provided the line remains in cache. In the plot, look for repeated heights (temporal reuse) and steadily rising addresses (spatial reuse).</p>
   <figure class="fig"><div class="sc"><svg id="locSvg" viewBox="0 0 760 210" role="img" aria-label="Address versus time plots showing spatial locality in an array scan and temporal locality in repeated variables"></svg></div>
     <figcaption><b>Plots of address against time.</b> A scan climbs steadily (spatial). A loop's few variables form flat bands (temporal). This pointer chase jumps to scattered, never-repeated addresses, so neither bet pays off. (Pointer chasing isn't inherently uncacheable: a chase through a small, compact set of nodes can cache well.)</figcaption></figure>
 
   <h3 class="part">How a cache finds a line</h3>
-  <p>We'll use a tiny, fully traceable cache: <b>8-bit addresses, 16-byte lines, 64 bytes of data</b> (4 lines). A cache holds copies of memory lines, so a <b>hit</b> means the requested line is already present and valid; a <b>miss</b> means it must be fetched from the next level, possibly replacing another line. Every address splits into three fields:</p>
+  <p>Once a cache has fetched a line, how does it find that line again? We'll use a tiny, fully traceable cache: <b>8-bit addresses, 16-byte lines, 64 bytes of data</b> (4 lines). A <b>hit</b> means the requested line is present and valid; a <b>miss</b> means the cache must fetch it from the next level, possibly replacing another line. To locate and identify a line, split each address into three fields:</p>
   <ul>
     <li><b>offset</b>: which byte within the 16-byte line (4 bits).</li>
     <li><b>index</b>: which <b>set</b> the line must live in.</li>
@@ -294,7 +294,7 @@
   </div><figcaption><b>Small miss rates matter a lot</b> when the penalty is large. At a 100 ns penalty, going from 2% to 4% misses adds 2 ns to <i>every</i> access, a whole extra hit time. This is a per-access model, not time per instruction. Real cores overlap misses with other work (Lesson 14), and many instructions make no data access at all.</figcaption></figure>
 
   <h3 class="part">Overlapping misses: memory-level parallelism</h3>
-  <p>The AMAT model charges each miss in full, one after another. A <b>nonblocking</b> cache doesn't have to work that way: it keeps a small table of outstanding misses (often called miss-status holding registers, MSHRs), so it can keep serving hits and send further misses to memory while earlier ones are still in flight. How many misses overlap is called <b>memory-level parallelism</b> (MLP). It's limited by the number of miss-tracking entries and by memory bandwidth, and above all by the program: a miss can only start once its <i>address</i> is known.</p>
+  <p>The AMAT calculation treated each miss as an added cost. Can a core make progress while a miss is outstanding? A <b>nonblocking</b> cache keeps a small table of outstanding misses (often called miss-status holding registers, MSHRs). It can serve hits and send further misses while an earlier one is still in flight. Overlapping misses is <b>memory-level parallelism</b> (MLP). The number of miss-tracking entries and memory bandwidth limit it, but so does the program: a second miss cannot start until its <i>address</i> is known. In the figure, compare two known addresses with a pointer chase whose second address comes from the first load.</p>
   <figure class="fig"><div class="sc">
     <svg viewBox="0 0 760 170" role="img" aria-label="Two independent load misses overlap and finish together; in a pointer chase the second miss can start only after the first returns">
       <text x="20" y="22" class="bd">independent loads</text><text x="20" y="38" class="xs">a[0] and a[64]</text>
@@ -320,6 +320,7 @@
       <details><summary>Show answer</summary><div class="ans"><p>They move bytes that might never be used, which consumes bandwidth and evicts useful lines. A problem if the program is bandwidth-limited or has poor spatial locality. A write-back cache needs a <b>dirty bit</b> per line, to know which lines must be written back when evicted.</p></div></details></li>
   </ol></div>
   <p class="checkpoint">Never call an access a hit until you've found its set and compared the valid tags there. Explain the difference between <b>capacity</b> and <b>placement flexibility</b>.</p>
+  <p>We have treated an address such as <code>0x4C</code> as if it directly named a memory byte. A real process normally uses a virtual address. Logically, the machine must also establish which physical bytes the process means and whether it may access them; the next lesson follows that decision.</p>
 </section>
 
 <!-- =============================== LESSON 11 =============================== -->
