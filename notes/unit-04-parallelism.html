@@ -286,7 +286,7 @@ ready.store(true,                    int v = data;   // guaranteed to see 42
   </div>
 
   <h3 class="part">Three ways to share a core</h3>
-  <p>In Unit 2, switching threads meant software (the OS) saving one thread's registers to memory and restoring another's, at a cost that varies but is far from free. Hardware multithreading instead keeps several <b>hardware contexts</b> physically resident, so switching between them costs little or nothing. Designs differ in <i>when</i> they switch:</p>
+  <p>In Unit 2, switching threads meant software (the OS) saving one thread's registers to memory and restoring another's, at a cost that varies but is far from free. Hardware multithreading instead keeps several <b>hardware contexts</b> physically resident. The core can choose among them without an OS save-and-restore operation, though selecting and sharing resources still have hardware costs. Designs differ in <i>when</i> they switch:</p>
   <figure class="fig"><div class="sc"><svg id="mtSvg" viewBox="0 0 760 250" role="img" aria-label="Issue-slot grids for coarse-grained, fine-grained and simultaneous multithreading"></svg></div>
     <figcaption><b>Issue slots over time</b> (4 slots per cycle, 8 cycles). <b>Coarse-grained</b> multithreading runs one thread until a long stall, such as a cache miss, then switches. <b>Fine-grained</b> picks a different thread every cycle, but still one thread per cycle. <b>Simultaneous (SMT)</b> fills one cycle's slots from several threads at once. These are hardware strategies, not new kinds of software thread.</figcaption></figure>
 
@@ -303,6 +303,7 @@ ready.store(true,                    int v = data;   // guaranteed to see 42
     <div class="sc" style="padding:0"><svg id="smtSvg" viewBox="0 0 760 170" role="img" aria-label="Cycle-by-port schedule of the two threads" style="min-width:560px"></svg></div>
     <p class="msg" id="smtMsg"></p>
   </div><figcaption><b>SMT fills a slot that one chain can't.</b> With 2 ports, one chain only ever has one ready add, so selecting one thread per cycle wastes a port every cycle. SMT issues from both and finishes in 4 cycles instead of 8. With only 1 port there's nothing to fill: both policies need 8 cycles, and SMT can't create an extra ALU.</figcaption></figure>
+  <p>Separate <b>finishing both threads</b> from <b>finishing one thread</b>. With two ports, A alone finishes its four adds in 4 cycles. Alternating one thread per cycle lets A finish in cycle 7 and B in cycle 8. Ideal SMT issues one add from each thread per cycle, so both finish in cycle 4. The 8-to-4 comparison measures combined throughput; whether a real thread's response time improves depends on what else it shares and waits for.</p>
   <div class="assume">Model assumptions: the two ALU ports are interchangeable; every add is ready except for its own thread's one-cycle dependency; and the model ignores the front end, retirement, cache misses and any cost of selecting a context. It illustrates issue slots, not a general SMT speedup prediction.</div>
 
   <h3 class="part">Throughput, not latency</h3>
