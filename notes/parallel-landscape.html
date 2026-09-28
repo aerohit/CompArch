@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Parallel Hardware and Programming Models</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="assets/notes.css">
+<script src="assets/notes.js"></script>
+<style>
+.stat{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:12px}
+.stat div{background:var(--panel2);border-radius:4px;padding:6px 10px;font:500 11px var(--mono);color:var(--mute)}
+.stat b{display:block;font-size:17px;color:var(--ink)}
+.code{font:500 12.5px/1.5 var(--mono);background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:10px 14px;overflow-x:auto;margin:12px 0;white-space:pre;color:var(--ink);max-width:100%}
+.pmgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start}
+@media (max-width:820px){.pmgrid{grid-template-columns:minmax(0,1fr)}}
+.pmgrid svg{width:100%;height:auto;min-width:0}
+.pmfacts{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;margin-top:12px}
+.pmfacts div{background:var(--panel2);border-radius:4px;padding:8px 10px;font-size:13.5px;line-height:1.4}
+.pmfacts small{display:block;font:600 10.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--mute);margin-bottom:2px}
+#pmSeg button,#mSeg button{margin-bottom:4px}
+.mixtab td,.mixtab th{font-size:13px}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar"><div class="in">
+  <a class="brand" href="index.html">Gates <span>→</span> GPUs · Notes</a>
+  <nav class="unitnav" aria-label="Units"><a href="index.html">Course map</a><a href="unit-01-build-a-computer.html">1 · Build a computer</a><a href="unit-02-registers-programs-contexts.html">2 · Programs &amp; contexts</a><a href="unit-03-faster-core.html">3 · A faster core</a><a href="unit-04-parallelism.html">4 · Parallelism</a><a href="unit-05-gpus.html">5 · GPUs</a><a href="unit-06-modern-systems.html">6 · Systems</a><a href="cs149/index.html">CS149 lectures</a></nav>
+  <button class="themebtn" type="button">☾ Dark</button>
+</div></header>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk"/></marker>
+  <marker id="ahc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkc"/></marker>
+  <marker id="aht" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkt"/></marker>
+  <marker id="ahp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkp"/></marker>
+  <marker id="ahb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mkb"/></marker>
+  <pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" style="fill:var(--panel2)"/><line x1="0" y1="0" x2="0" y2="6" style="stroke:var(--mute);stroke-width:1.2;opacity:.45"/></pattern>
+</defs></svg>
+
+<div class="wrap">
+<nav class="toc" aria-label="On this page"></nav>
+<main id="main">
+
+<header class="hero">
+  <div class="kicker">Reference · Hardware and programming models</div>
+  <h1>A map of <em>parallel</em> machines and programs</h1>
+  <p class="lede">"SIMD" and "SPMD" are two answers to two different questions. SIMD is one way hardware can run many operations at once; SPMD is one way to write a program that has many operations to run. There are several of each, and any real system mixes them. This page lays them all out, using the same small job for every machine and the same small computation for every programming model, so you can compare them side by side.</p>
+  <dl class="outcome">
+    <dt>You'll be able to</dt><dd>Place any parallel machine in Flynn's taxonomy and say where it doesn't fit. Predict how the same loop runs on a scalar core, SIMD, a vector unit, multiple cores, SMT, a GPU warp and a VLIW bundle, including what a branch does to each. Explain systolic arrays, dataflow and spatial hardware. Recognize ten programming models by their code, and say which hardware each maps onto naturally.</dd>
+    <dt>Background</dt><dd>Units 3–5 of these notes and CS149 Lectures 2–3. Each section links to the lesson that covers the idea in depth.</dd>
+  </dl>
+  <div class="insight">Keep asking two separate questions: <b>how does the hardware get many operations done at once?</b> and <b>how does the program express that there are many operations?</b> A compiler or runtime maps the second onto the first, and the same program can run on very different machines.</div>
+</header>
+
+<section class="lesson" id="p1" data-toc="Two separate questions" data-n="1" style="margin-top:36px">
+  <div class="lesson-h"><div class="kicker">Section 1</div><h2>Two separate questions, one mapping</h2></div>
+  <p>A <b>programming model</b> is the abstraction you write in: what "parallel" looks like in the code, how work is divided, and how the pieces communicate. A <b>hardware organization</b> is what physically executes instructions: how many instruction streams there are, and how many data elements each instruction touches. Between them sits a <b>compiler, runtime or library</b> that maps one onto the other.</p>
+  <figure class="fig"><div class="sc"><svg id="layerSvg" viewBox="0 0 760 250" role="img" aria-label="Programming models on top, hardware organizations at the bottom, and a mapping layer between them with example arrows" style="min-width:560px"></svg></div>
+    <figcaption><b>Many-to-many.</b> The same model can target different hardware: an SPMD program in ISPC compiles to SIMD lanes, while the same style in CUDA runs on GPU warps and in MPI runs across whole machines. And the same hardware runs many models: a multicore CPU happily runs threads, fork-join tasks, message passing or a SQL engine. The arrows show a few of the common pairings.</figcaption></figure>
+</section>
+
+<section class="lesson" id="p2" data-toc="Flynn's four boxes" data-n="2">
+  <div class="lesson-h"><div class="kicker">Section 2</div><h2>Hardware, first cut: Flynn's four boxes</h2></div>
+  <p>In 1966 Michael Flynn classified machines by two counts: how many <b>instruction streams</b> (program counters driving execution) and how many <b>data streams</b> (sets of operands being worked on). Each count is one or many, which gives four boxes. Click a box to see what it means.</p>
+  <figure class="fig"><div class="widget">
+    <div class="sc" style="padding:0"><svg id="flynnSvg" viewBox="0 0 760 330" role="img" aria-label="Flynn's taxonomy as a two-by-two grid: SISD, SIMD, MISD, MIMD, each with a small diagram of instruction streams feeding processing units" style="min-width:560px"></svg></div>
+    <p class="msg" id="flynnMsg"></p>
+  </div><figcaption><b>I = instruction stream, D = data stream, PU = processing unit.</b> The taxonomy is old and coarse, but still useful for a first question: is there one program counter or many, and does each instruction touch one value or many?</figcaption></figure>
+  <p>Real chips are combinations. A laptop CPU is <b>MIMD</b> across its cores and <b>SIMD</b> inside each core. A GPU is MIMD across its streaming multiprocessors and SIMD-like within each warp. The next section runs one job on seven concrete organizations to show the differences Flynn's boxes hide.</p>
+</section>
+
+<section class="lesson" id="p3" data-toc="Same job, seven machines" data-n="3">
+  <div class="lesson-h"><div class="kicker">Section 3</div><h2>The same job on seven machines</h2></div>
+  <p>The job: compute <code>y[i] = a[i] × b[i] + c</code> for eight elements, y0 … y7. Each element is one multiply-add, and the eight are independent. Every machine below has enough hardware to do some of them at once; what differs is <b>who decides what runs together</b> and <b>how many instructions it takes</b>. Pick a machine, then switch on the branch.</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 8px"><span class="readout">Machine:</span><div class="seg" role="group" aria-label="Machine" id="mSeg"></div></div>
+    <div class="ctrl" style="margin:0 0 8px"><span class="readout">Job:</span><div class="seg" role="group" aria-label="Job"><button data-br="0" aria-pressed="true">straight-line: y = a·b + c</button><button data-br="1">with a branch: if a &gt; 0 then a·b + c else c − a</button></div></div>
+    <div class="sc" style="padding:6px 0 0"><svg id="tlSvg" viewBox="0 0 760 240" role="img" aria-label="Cycle-by-cycle timeline of the selected machine executing the eight-element job" style="min-width:560px"></svg></div>
+    <div class="stat" id="tlStat"></div>
+    <p class="msg" id="tlMsg"></p>
+  </div><figcaption><b>Each row is a piece of execution hardware, each column a clock cycle.</b> A labelled cell is useful work on one element; a hatched cell is a slot that was occupied but did nothing useful (a masked lane or a predicated-off operation). With the branch on, elements y1, y2 and y5 take the "else" path. Teaching model: one operation per slot per cycle, no memory delays, and no loop or branch instructions counted.</figcaption></figure>
+  <div class="tbl"><table>
+    <tr><th>Machine</th><th>Who picks what runs together?</th><th>Where you meet it</th><th>Covered in</th></tr>
+    <tr><td><b>Scalar (SISD)</b></td><td>nobody: one operation at a time</td><td>the baseline of every CPU core</td><td><a href="unit-01-build-a-computer.html">Unit 1</a></td></tr>
+    <tr><td><b>SIMD</b></td><td>the programmer or compiler, writing wide instructions</td><td>x86 SSE/AVX, Arm NEON</td><td><a href="unit-04-parallelism.html#l19">Unit 4 · L19</a></td></tr>
+    <tr><td><b>Vector</b></td><td>the compiler; the hardware picks how many elements per beat</td><td>RISC-V V, Arm SVE, classic Cray machines</td><td><a href="unit-04-parallelism.html#l19">Unit 4 · L19</a></td></tr>
+    <tr><td><b>Multicore (MIMD)</b></td><td>the programmer or runtime, by starting threads</td><td>every modern CPU</td><td><a href="unit-04-parallelism.html#l16">Unit 4 · L16</a></td></tr>
+    <tr><td><b>SMT</b></td><td>the hardware, each cycle, from the resident threads</td><td>Intel Hyper-Threading, IBM POWER</td><td><a href="unit-04-parallelism.html#l18">Unit 4 · L18</a></td></tr>
+    <tr><td><b>SIMT (GPU warp)</b></td><td>the hardware groups scalar threads into warps</td><td>NVIDIA and AMD GPUs</td><td><a href="unit-05-gpus.html">Unit 5</a></td></tr>
+    <tr><td><b>VLIW</b></td><td>the compiler, packing independent operations into bundles</td><td>DSPs (e.g. Qualcomm Hexagon), Itanium</td><td>this page</td></tr>
+  </table></div>
+</section>
+
+<section class="lesson" id="p4" data-toc="Beyond the four boxes" data-n="4">
+  <div class="lesson-h"><div class="kicker">Section 4</div><h2>Beyond the four boxes: data moves, not instructions</h2></div>
+  <p>Every machine in Section 3 fetches instructions and reads operands from registers. Three important designs work differently: they cut down instruction fetch and register traffic by letting <b>data flow through a fixed arrangement</b> of arithmetic units.</p>
+  <h3 class="part">Systolic arrays: a grid that pumps data</h3>
+  <p>A <b>systolic array</b> is a grid of simple multiply-add cells, each connected only to its neighbours. Values enter at the edges and pulse one cell per clock, like blood through a heart (hence "systolic"). Each value is used by every cell it passes through, so one value read from memory feeds many operations. Google's TPU uses a large systolic array for matrix multiplication. Step through a 3 × 3 matrix product C = A × B:</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 10px"><button id="syBack">◀ Back</button><button id="syNext" class="pri">Next clock ▶</button><button id="syReset">Reset</button><span class="readout" id="syOut"></span></div>
+    <div class="sc" style="padding:0"><svg id="sySvg" viewBox="0 0 760 330" role="img" aria-label="Three by three systolic array: rows of A flow in from the left, columns of B from the top, each cell accumulates one element of C" style="min-width:560px"></svg></div>
+    <p class="msg" id="syMsg"></p>
+  </div><figcaption><b>Output-stationary systolic array.</b> Cell (i, j) keeps a running sum for C[i][j]. Row i of A enters from the left, delayed by i clocks; column j of B enters from the top, delayed by j clocks. The delays ("skew") make A[i][k] and B[k][j] arrive at cell (i, j) in the same clock. Each cell passes its A value right and its B value down. After 7 clocks all nine outputs are complete: 27 multiply-adds with each input value read from memory only once.</figcaption></figure>
+
+  <h3 class="part">Dataflow: fire when the inputs arrive</h3>
+  <p>A <b>dataflow</b> machine has no program counter. The program is a graph; each operation <b>fires as soon as all its inputs are available</b>, and its result travels as a token to the operations that need it. Independent operations fire in the same step automatically. Pure dataflow computers were a research direction in the 1970s–80s; today the idea lives on inside out-of-order cores (Unit 3), which run a small window of instructions in dataflow order, and in several AI accelerators that map whole computation graphs onto hardware.</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 10px"><button id="dfBack">◀ Back</button><button id="dfNext" class="pri">Next step ▶</button><button id="dfReset">Reset</button><span class="readout" id="dfOut"></span></div>
+    <div class="sc" style="padding:0"><svg id="dfSvg" viewBox="0 0 760 290" role="img" aria-label="Dataflow graph for (a + b) times (c − d) plus e times f, with nodes firing when their inputs are ready" style="min-width:560px"></svg></div>
+    <p class="msg" id="dfMsg"></p>
+  </div><figcaption><b>r = (a + b) × (c − d) + e × f</b> with a = 2, b = 3, c = 7, d = 4, e = 5, f = 2. Five operations, but only three steps: the graph's depth, not its size, sets the time when there's enough hardware. A sequential core would take five steps, one per operation.</figcaption></figure>
+
+  <h3 class="part">Spatial hardware: build the circuit for the loop</h3>
+  <p><b>FPGAs</b> (field-programmable gate arrays) and <b>CGRAs</b> (coarse-grained reconfigurable arrays) go further: instead of running instructions, you configure the chip into a circuit shaped like your computation. For <code>y = a × b + c</code> that's a multiplier wired to an adder, with registers between them so each stage can work on a different element.</p>
+  <figure class="fig"><div class="sc"><svg id="spSvg" viewBox="0 0 760 200" role="img" aria-label="A configured pipeline circuit: a multiplier then an adder, separated by registers, with elements flowing through one per clock" style="min-width:560px"></svg></div>
+    <figcaption><b>No instruction fetch, no decode, no register file.</b> After the pipeline fills, one finished element leaves every clock, and a new one enters. The price is flexibility: changing the computation means reconfiguring the hardware, which takes far longer than loading a new program. FPGAs are common in networking, signal processing and prototyping chips; clock rates are lower than CPUs', so the win comes from doing exactly the needed work in parallel.</figcaption></figure>
+  <div class="tbl"><table>
+    <tr><th>Design</th><th>What replaces instruction fetch</th><th>Strength</th><th>Weakness</th></tr>
+    <tr><td><b>Systolic array</b></td><td>a fixed grid; data pulses cell to cell</td><td>huge reuse for matrix multiply; tiny control cost</td><td>good only for regular, dense linear algebra</td></tr>
+    <tr><td><b>Dataflow</b></td><td>operations fire when their input tokens arrive</td><td>finds all the parallelism in a graph automatically</td><td>matching tokens to operations is costly in general-purpose hardware</td></tr>
+    <tr><td><b>Spatial (FPGA, CGRA)</b></td><td>a circuit configured for this computation</td><td>exactly the needed operators, deeply pipelined</td><td>slow to reconfigure; harder to program</td></tr>
+  </table></div>
+</section>
+
+<section class="lesson" id="p5" data-toc="Ten programming models" data-n="5">
+  <div class="lesson-h"><div class="kicker">Section 5</div><h2>Programming models: ten ways to write the same computation</h2></div>
+  <p>Now the other question. The computation: the <b>sum of squares</b> of eight numbers, x = [3, 1, 4, 1, 5, 9, 2, 6]. The answer is 9 + 1 + 16 + 1 + 25 + 81 + 4 + 36 = <b>173</b>. It has two parts every parallel program must handle: independent work (squaring each element) and combination (adding the results), which forces the workers to communicate. Pick a model and compare its code with the picture of how it divides the work.</p>
+  <figure class="fig"><div class="widget">
+    <div class="ctrl" style="margin:0 0 8px"><div class="seg" role="group" aria-label="Programming model" id="pmSeg" style="flex-wrap:wrap"></div></div>
+    <div class="pmgrid">
+      <div><p class="panel-t" id="pmLang"></p><pre class="code" id="pmCode" style="margin:4px 0 0"></pre></div>
+      <div><div class="sc" style="padding:0"><svg id="pmSvg" viewBox="0 0 460 300" role="img" aria-label="How the selected programming model divides the sum-of-squares work and combines the results"></svg></div></div>
+    </div>
+    <div class="pmfacts" id="pmFacts"></div>
+  </div><figcaption><b>Same answer, 173, every time.</b> What changes is who divides the work (you, a runtime, or a compiler), whether workers share memory or send messages, and how the partial sums meet. Colours mark which worker handles each element.</figcaption></figure>
+</section>
+
+<section class="lesson" id="p6" data-toc="Mix and match" data-n="6">
+  <div class="lesson-h"><div class="kicker">Section 6</div><h2>Mix and match: which model runs on which machine</h2></div>
+  <p>Models and machines aren't paired one-to-one. The table shows typical, real pairings; a blank cell means the combination is unusual, not impossible.</p>
+  <div class="tbl mixtab"><table>
+    <tr><th>Model ↓ · Hardware →</th><th>SIMD / vector unit</th><th>GPU (SIMT)</th><th>Multicore CPU</th><th>Cluster of machines</th></tr>
+    <tr><td><b>SPMD</b></td><td>ISPC, OpenMP <code>simd</code></td><td>CUDA, HIP, OpenCL</td><td>ISPC tasks, OpenMP</td><td>MPI programs are usually SPMD</td></tr>
+    <tr><td><b>Shared-memory threads</b></td><td></td><td></td><td>pthreads, <code>std::thread</code>, Java</td><td></td></tr>
+    <tr><td><b>Fork-join tasks</b></td><td></td><td>CUDA dynamic parallelism (rare)</td><td>Cilk, TBB, Java ForkJoin, OpenMP tasks</td><td>Ray, Dask</td></tr>
+    <tr><td><b>Data-parallel operations</b></td><td>NumPy's vectorized kernels</td><td>PyTorch, CuPy, Thrust</td><td>NumPy, parallel STL</td><td>Spark, Dask arrays</td></tr>
+    <tr><td><b>Message passing</b></td><td></td><td>NCCL collectives between GPUs</td><td>MPI on one node, actors (Erlang, Akka)</td><td>MPI, actors</td></tr>
+    <tr><td><b>Dataflow / graph</b></td><td>XLA fusing into vector code</td><td>JAX/XLA, TensorFlow, CUDA Graphs</td><td>TensorFlow, Halide</td><td>Apache Beam, TensorFlow distributed</td></tr>
+    <tr><td><b>Pipeline</b></td><td></td><td>CUDA streams overlapping copy and compute</td><td>Unix pipes, Go channels, TBB flow graph</td><td>pipeline-parallel model training</td></tr>
+    <tr><td><b>BSP</b></td><td></td><td>kernel-by-kernel phases</td><td>OpenMP loops with barriers</td><td>MPI iterations, Pregel</td></tr>
+    <tr><td><b>Declarative</b></td><td>vectorized database engines</td><td>GPU databases</td><td>SQL databases, DuckDB</td><td>distributed SQL, MapReduce</td></tr>
+  </table></div>
+  <p>Most real programs stack several. A typical training job uses <b>data-parallel</b> tensor operations, which a <b>graph</b> compiler fuses into <b>SPMD</b> kernels for a <b>SIMT</b> GPU, with <b>message-passing</b> collectives between GPUs in a <b>BSP</b> rhythm and a <b>pipeline</b> of copies overlapping compute (Unit 6). Recognizing each layer tells you where to look when something is slow.</p>
+
+  <div class="predict"><div class="ph"><b>Check yourself</b><span>Name the hardware or the model, then say why.</span></div><ol>
+    <li>A loop has a data-dependent branch that splits elements roughly half and half. Which machines from Section 3 slow down, and which don't?
+      <details><summary>Show answer</summary><div class="ans"><p><b>SIMD, vector, SIMT and predicated VLIW slow down</b>: they share one instruction stream across elements, so both paths run with masks and half the slots are wasted. <b>Scalar, multicore and SMT don't</b>, because each instruction stream follows only its own element's path.</p></div></details></li>
+    <li>Is SMT a kind of SIMD?
+      <details><summary>Show answer</summary><div class="ans"><p><b>No.</b> SMT runs several <i>instruction streams</i> (it's MIMD in Flynn's terms) that share one core's execution units. SIMD runs one instruction stream over many data elements. A core can have both at once.</p></div></details></li>
+    <li>Why can a systolic array do a matrix multiply with far fewer memory reads than a scalar core?
+      <details><summary>Show answer</summary><div class="ans"><p>Each value read from memory enters the grid once and is <b>reused by every cell it passes</b>: in a 3 × 3 array, each A and B value takes part in three multiply-adds. A scalar core would reload operands from registers or cache for every multiply-add.</p></div></details></li>
+    <li>An MPI program starts the same executable on every rank, each branching on its rank number. Which programming model is that?
+      <details><summary>Show answer</summary><div class="ans"><p><b>SPMD</b>, communicating by <b>message passing</b>. The two aren't exclusive: SPMD says how the program is structured (one program, many instances), message passing says how the instances share data.</p></div></details></li>
+    <li>Your sum-of-squares code is <code>np.sum(x * x)</code>. Who decided how to parallelize it?
+      <details><summary>Show answer</summary><div class="ans"><p>The <b>library</b> (NumPy and its compiled kernels), not you. That's the data-parallel model: you describe whole-array operations, and the implementation chooses the SIMD instructions, loop order and (in some libraries) threads.</p></div></details></li>
+  </ol></div>
+  <p class="checkpoint">For any parallel system, name the <b>programming model</b> you write in, the <b>hardware organization</b> it runs on, and the <b>layer</b> (compiler, runtime or library) that maps one onto the other.</p>
+  <div class="nextunit"><a href="index.html"><small>Back to</small>Course map</a><a href="cs149/lecture-03-bandwidth-spmd.html"><small>Related</small>CS149 L3 · Abstraction vs implementation →</a></div>
+</section>
+
+</main>
+</div>
+<script>
+(function(){
+const {$,$$}=NOTES;
+const T=(x,y,t,cls='mid xs',st='')=>`<text x="${x}" y="${y}" class="${cls}"${st?` style="${st}"`:''}>${t}</text>`;
+const R=(x,y,w,h,cls='bx',st='')=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" class="${cls}"${st?` style="${st}"`:''}/>`;
+const A=(d,cls='w',mk='ah')=>`<path d="${d}" class="${cls}" marker-end="url(#${mk})"/>`;
+const HATCH=(x,y,w,h)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" style="fill:url(#hatch);stroke:var(--line);stroke-width:.6"/>`;
+const set=(id,h)=>{const e=document.getElementById(id);if(e)e.innerHTML=h;};
+const setVB=(id,w,h,s)=>{const e=document.getElementById(id);e.setAttribute('viewBox',`0 0 ${w} ${h}`);e.innerHTML=s;};
+const HALO='paint-order:stroke;stroke:var(--panel);stroke-width:3px';
+
+/* 1 layers */
+(function(){let s='';
+  const M=['SPMD','threads','fork-join','data-parallel','message passing','graph','pipeline','declarative'],H=['SIMD / vector','GPU (SIMT)','multicore CPU','VLIW / DSP','systolic (TPU)','cluster'];
+  const mx=i=>20+i*92+42,hx=i=>20+i*124+56;
+  s+=T(380,14,'programming models: how you write it','mid xs bd');
+  M.forEach((m,i)=>{s+=R(20+i*92,20,84,34,'pl')+T(mx(i),41,m,'mid xs bd');});
+  s+=R(20,96,720,46,'bg2')+T(380,116,'compiler · runtime · library','mid sm bd')+T(380,133,'maps the model onto the machine','mid xs');
+  H.forEach((h,i)=>{s+=R(20+i*124,196,112,34,'te')+T(hx(i),217,h,'mid xs bd');});
+  s+=T(380,248,'hardware organizations: how it runs','mid xs bd');
+  const L=[[0,0,'ISPC'],[0,1,'CUDA'],[0,5,'MPI'],[1,2,'pthreads'],[2,2,'Cilk'],[3,1,'PyTorch'],[5,4,'XLA'],[7,2,'SQL engine']];
+  L.forEach(([a,b,t],k)=>{const x1=mx(a),x2=hx(b);s+=A(`M${x1} 56 L${x2} 194`,'wc','ahc');const f=0.28+0.1*(k%3),lx=x1+(x2-x1)*f,ly=56+(194-56)*f;s+=T(lx,ly+3,t,'mid xs',HALO+';font-weight:600');});
+  setVB('layerSvg',760,255,s);})();
+
+/* 2 Flynn */
+(function(){let cur='SIMD';
+  const INFO={SISD:'<b>SISD: one instruction stream, one data stream.</b> A plain sequential core: each instruction works on one set of operands. Every CPU core can run this way, and it\'s the baseline everything else is compared with.',
+    SIMD:'<b>SIMD: one instruction stream, many data streams.</b> One instruction drives many lanes, each on its own data element. x86 AVX, Arm NEON and SVE, and (with extra machinery) GPU warps. Cheap: the cost of fetching and decoding one instruction is shared by many operations. The catch: every lane must do the same thing.',
+    MISD:'<b>MISD: many instruction streams, one data stream.</b> Several units apply different operations to the same data. Almost no commercial machine is built this way; the examples usually given are redundant systems that compute the same thing several ways and vote, for fault tolerance. It\'s mostly there to complete the table.',
+    MIMD:'<b>MIMD: many instruction streams, many data streams.</b> Independent processors, each with its own program counter and data. Multicore CPUs, SMT threads, and clusters of machines. The most flexible, and the most expensive per operation, because every stream pays for its own fetch and decode.'};
+  function pict(k,x,y){let s='';const I=(x,y)=>R(x,y,30,20,'pl')+T(x+15,y+14,'I','mid xs bd'),P=(x,y)=>R(x,y,40,26,'te')+T(x+20,y+17,'PU','mid xs bd'),D=(x,y)=>R(x,y,30,20,'cu')+T(x+15,y+14,'D','mid xs bd');
+    if(k==='SISD'){s+=I(x+40,y)+A(`M${x+55} ${y+22} V${y+36}`)+P(x+35,y+38)+A(`M${x+55} ${y+88} V${y+68}`)+D(x+40,y+90);}
+    if(k==='SIMD'){s+=I(x+110,y);[0,1,2,3].forEach(j=>{const px=x+j*62;s+=A(`M${x+125} ${y+22} L${px+20} ${y+36}`)+P(px,y+38)+A(`M${px+20} ${y+88} V${y+68}`)+D(px+5,y+90);});}
+    if(k==='MISD'){[0,1,2].forEach(j=>{const px=x+20+j*80;s+=I(px+5,y)+A(`M${px+20} ${y+22} V${y+36}`)+P(px,y+38)+A(`M${x+135} ${y+88} L${px+20} ${y+68}`);});s+=D(x+120,y+90);}
+    if(k==='MIMD'){[0,1,2].forEach(j=>{const px=x+20+j*80;s+=I(px+5,y)+A(`M${px+20} ${y+22} V${y+36}`)+P(px,y+38)+A(`M${px+20} ${y+88} V${y+68}`)+D(px+5,y+90);});}
+    return s;}
+  function draw(){let s='';const C={SISD:[70,34],SIMD:[410,34],MISD:[70,184],MIMD:[410,184]};
+    s+=T(235,22,'one data stream','mid sm bd')+T(575,22,'many data streams','mid sm bd');
+    s+=T(24,104,'one instruction stream','mid xs bd','writing-mode:vertical-rl')+T(24,254,'many instruction streams','mid xs bd','writing-mode:vertical-rl');
+    Object.entries(C).forEach(([k,[x,y]])=>{const on=k===cur;s+=`<rect x="${x-30}" y="${y}" width="330" height="140" rx="6" class="${on?'lit':'bx'}" data-f="${k}" style="cursor:pointer" tabindex="0" role="button" aria-label="${k}" aria-pressed="${on}"/>`;
+      s+=T(x-18,y+22,k,'bd','pointer-events:none;font-size:16px')+`<g style="pointer-events:none">${pict(k,x+30,y+14)}</g>`;});
+    setVB('flynnSvg',760,330,s);$('#flynnMsg').innerHTML=INFO[cur];}
+  const pick=e=>{const r=e.target.closest('[data-f]');if(r){cur=r.dataset.f;draw();document.querySelector(`#flynnSvg [data-f="${cur}"]`).focus();}};
+  $('#flynnSvg').addEventListener('click',pick);$('#flynnSvg').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();pick(e);}});draw();})();
+
+/* 3 same job, seven machines */
+(function(){const BR=new Set([1,2,5]);let mk='simd',br=0;
+  const path=i=>BR.has(i)?'B':'A',lab=i=>`y${i}`;
+  const useful=(r,c,i)=>({r,c,t:lab(i)+(br?path(i):''),k:br&&path(i)==='B'?'pl':'te'});
+  const masked=(r,c,i)=>({r,c,t:lab(i),k:'m'});
+  const M={
+    scalar:{n:'Scalar (SISD)',build(){const cells=[];for(let i=0;i<8;i++)cells.push(useful(0,i+1,i));return {rows:['core ALU'],cells,cyc:8,streams:1,instr:8,msg:br?'The branch costs nothing extra here (in this model): each element simply follows its own path, one at a time. But one element per cycle means <b>8 cycles</b>.':'One instruction, one element, one cycle at a time: <b>8 cycles</b>, 8 instructions. The baseline.'};}},
+    simd:{n:'SIMD (4 lanes)',build(){const rows=['instruction','lane 0','lane 1','lane 2','lane 3'],cells=[],ins=[];let c=0;
+      for(let g=0;g<2;g++){if(!br){c++;ins.push([c,`vfma ${lab(4*g)}–${lab(4*g+3)}`]);for(let l=0;l<4;l++)cells.push(useful(l+1,c,4*g+l));}
+        else for(const p of ['A','B']){c++;ins.push([c,`path ${p}, masked`]);for(let l=0;l<4;l++){const i=4*g+l;cells.push(path(i)===p?useful(l+1,c,i):masked(l+1,c,i));}}}
+      return {rows,cells,ins,cyc:c,streams:1,instr:c,msg:br?'Every group of 4 contains both paths, so each group runs <b>both</b> instructions with a mask: 4 cycles instead of 2, and 8 of the 16 lane slots are masked, doing nothing useful. Divergence doubles the time here.':'One instruction does 4 elements: <b>2 cycles</b>, 2 instructions. The programmer or compiler chose the width-4 instructions.'};}},
+    vector:{n:'Vector (vl = 8, 2 lanes)',build(){const rows=['instruction','lane 0','lane 1'],cells=[],ins=[];let c=0;
+      const run=p=>{ins.push([c+1,p?`vfma, vl = 8, mask ${p} (4 beats)`:'vfma, vl = 8 (4 beats)',4]);for(let beat=0;beat<4;beat++){c++;for(let l=0;l<2;l++){const i=2*beat+l;cells.push(!p||path(i)===p?useful(l+1,c,i):masked(l+1,c,i));}}};
+      if(!br)run(null);else{run('A');run('B');}
+      return {rows,cells,ins,cyc:c,streams:1,instr:br?2:1,msg:br?'Two masked vector instructions, each streaming all 8 elements through the 2 lanes: <b>8 cycles</b>, half the lane slots wasted.':'<b>One instruction</b> covers all 8 elements. The hardware has only 2 lanes, so it streams them through in 4 beats: 4 cycles. The same binary would take 2 cycles on a machine with 4 lanes.'};}},
+    mimd:{n:'Multicore (4 cores)',build(){const rows=['core 0 (own PC)','core 1 (own PC)','core 2 (own PC)','core 3 (own PC)'],cells=[];
+      for(let k=0;k<4;k++)for(let j=0;j<2;j++)cells.push(useful(k,j+1,2*k+j));
+      return {rows,cells,cyc:2,streams:4,instr:8,msg:br?'Each core has its own program counter, so each follows only its own elements\' paths: still <b>2 cycles</b>. Divergence is free across cores, but every core pays for fetching and decoding its own instructions (8 in total).':'Four independent instruction streams, 2 elements each: <b>2 cycles</b>, but 8 instructions fetched and decoded, 4× the control hardware of one core.'};}},
+    smt:{n:'SMT (2 threads, 1 core)',build(){const rows=['ALU 0 ← thread A','ALU 1 ← thread B'],cells=[];
+      for(let j=0;j<4;j++){cells.push(useful(0,j+1,j));cells.push(useful(1,j+1,4+j));}
+      return {rows,cells,cyc:4,streams:2,instr:8,msg:br?'Each thread follows its own path, so the branch doesn\'t cost extra: <b>4 cycles</b>. SMT is MIMD inside one core: two instruction streams share its execution units.':'Two hardware threads share one core with 2 ALUs. Each cycle the core issues one operation from each: <b>4 cycles</b>. Its real payoff (Unit 4) comes when one thread stalls and the other fills the slot.'};}},
+    simt:{n:'GPU warp (SIMT, 8 threads)',build(){const rows=['warp instruction','lane 0','lane 1','lane 2','lane 3','lane 4','lane 5','lane 6','lane 7'],cells=[],ins=[];let c=0;
+      if(!br){c=1;ins.push([1,'fma (all 8 threads)']);for(let l=0;l<8;l++)cells.push(useful(l+1,1,l));}
+      else for(const p of ['A','B']){c++;ins.push([c,`path ${p}, lanes masked`]);for(let l=0;l<8;l++)cells.push(path(l)===p?useful(l+1,c,l):masked(l+1,c,l));}
+      return {rows,cells,ins,cyc:c,streams:'1 warp',instr:c,msg:br?'The programmer wrote 8 independent scalar threads with an <code>if</code>. The hardware still runs them as one warp, so it executes <b>both paths</b> with masks: 2 cycles instead of 1. Same cost as SIMD, but the masking is automatic.':'You write <b>one scalar thread</b> per element; the GPU groups 8 of them (32 on real GPUs) into a warp that shares one instruction: <b>1 cycle</b>.'};}},
+    vliw:{n:'VLIW (4-slot bundles)',build(){const rows=['bundle','slot 0','slot 1','slot 2','slot 3'],cells=[],ins=[];let c=0;
+      for(let g=0;g<2;g++){if(!br){c++;ins.push([c,`bundle ${c}`]);for(let l=0;l<4;l++)cells.push(useful(l+1,c,4*g+l));}
+        else for(const p of ['A','B']){c++;ins.push([c,`bundle ${c}: ${p}-ops`]);for(let l=0;l<4;l++){const i=4*g+l;cells.push(path(i)===p?useful(l+1,c,i):masked(l+1,c,i));}}}
+      return {rows,cells,ins,cyc:c,streams:1,instr:c,msg:br?'The compiler can\'t know which way each element goes, so it <b>predicates</b>: it schedules both paths\' operations and lets each one\'s predicate cancel it. Like SIMD, 4 bundles instead of 2.':'The <b>compiler</b> found four independent operations and packed them into one wide instruction (a bundle); the hardware just issues all four slots, with no dependency checking: <b>2 cycles</b>. Unlike SIMD, the four slots could hold four <i>different</i> operations.'};}}};
+  $('#mSeg').innerHTML=Object.entries(M).map(([k,m])=>`<button data-mk="${k}">${m.n}</button>`).join('');
+  function draw(){const r=M[mk].build(),nr=r.rows.length,x0=160,cw=Math.min(140,(740-x0)/Math.max(r.cyc,4)),rh=22,y0=28;let s='';
+    for(let c=1;c<=r.cyc;c++)s+=T(x0+(c-0.5)*cw,18,`cycle ${c}`,'mid xs');
+    r.rows.forEach((lb,i)=>{s+=T(x0-8,y0+i*(rh+4)+15,lb,'end xs'+(i===0&&r.ins?' bd':''));});
+    (r.ins||[]).forEach(([c,t,sp=1])=>{s+=R(x0+(c-1)*cw+1,y0,sp*cw-2,rh,'bg2')+T(x0+(c-1+sp/2)*cw,y0+15,t,'mid xs','font-size:10px');});
+    r.cells.forEach(({r:row,c,t,k})=>{const x=x0+(c-1)*cw+1,y=y0+row*(rh+4);s+=k==='m'?HATCH(x,y,cw-2,rh)+T(x+(cw-2)/2,y+15,t,'mid xs','fill:var(--mute)'):R(x,y,cw-2,rh,k)+T(x+(cw-2)/2,y+15,t,'mid xs bd');});
+    const H=y0+nr*(rh+4)+10;setVB('tlSvg',760,H,s);
+    const slots=r.cells.length,use=r.cells.filter(x=>x.k!=='m').length;
+    $('#tlStat').innerHTML=[['cycles',r.cyc],['instruction streams',r.streams],['instructions issued',r.instr],['useful slot share',Math.round(100*use/slots)+'%']].map(([a,b])=>`<div>${a}<b>${b}</b></div>`).join('');
+    $('#tlMsg').innerHTML=r.msg;
+    $$('[data-mk]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.mk===mk));$$('[data-br]').forEach(b=>b.setAttribute('aria-pressed',+b.dataset.br===br));}
+  $$('[data-mk]').forEach(b=>b.onclick=()=>{mk=b.dataset.mk;draw();});$$('[data-br]').forEach(b=>b.onclick=()=>{br=+b.dataset.br;draw();});draw();})();
+
+/* 4a systolic */
+(function(){const Am=[[1,2,0],[0,1,3],[2,0,1]],Bm=[[1,0,2],[3,1,0],[0,2,1]],N=3,TMAX=7;let t=0;
+  function draw(){const x0=330,y0=110,cs=78;let s='';
+    s+=T(x0+cs*1.5,20,'columns of B enter from the top (skewed)','mid xs bd')+T(x0-150,y0-14,'rows of A enter from the left','mid xs bd');
+    for(let i=0;i<N;i++)for(let j=0;j<N;j++){const k=t-1-i-j,act=t>0&&k>=0&&k<N;let acc=0;for(let q=0;q<N;q++)if(q<=t-1-i-j)acc+=Am[i][q]*Bm[q][j];
+      const done=t-1-i-j>=N-1,x=x0+j*cs,y=y0+i*cs;
+      s+=R(x,y,cs-8,cs-8,act?'cu':done?'okf':'bx')+T(x+(cs-8)/2,y+18,`C[${i}][${j}]`,'mid xs')+T(x+(cs-8)/2,y+42,acc,'mid bd','font-size:18px')+(act?T(x+(cs-8)/2,y+62,`+ ${Am[i][k]}×${Bm[k][j]}`,'mid xs tcu'):'');}
+    for(let i=0;i<N;i++)for(let k=0;k<N;k++){const d=i+k+1-t;if(d>0){const x=x0-d*34-6,y=y0+i*cs+20;s+=R(x,y,28,28,'te')+T(x+14,y+19,Am[i][k],'mid sm bd');}}
+    for(let j=0;j<N;j++)for(let k=0;k<N;k++){const d=j+k+1-t;if(d>0){const x=x0+j*cs+21,y=y0-d*30-4;if(y>26)s+=R(x,y,28,26,'pl')+T(x+14,y+18,Bm[k][j],'mid sm bd');}}
+    setVB('sySvg',760,y0+N*cs+6,s);
+    $('#syOut').textContent=`clock ${t} of ${TMAX}`;
+    const acts=[];for(let i=0;i<N;i++)for(let j=0;j<N;j++){const k=t-1-i-j;if(t>0&&k>=0&&k<N)acts.push(`(${i},${j})`);}
+    $('#syMsg').innerHTML=t===0?'<b>Before clock 1.</b> The A and B values wait at the edges, skewed so that matching pairs will meet. All accumulators are 0.':t<TMAX?`<b>Clock ${t}.</b> ${acts.length} cell${acts.length>1?'s':''} (${acts.join(', ')}) multiply the A value arriving from the left by the B value arriving from above and add it to their sum. Values then shift one cell right and down.`:'<b>Clock 7: done.</b> C = [[7, 2, 2], [3, 7, 3], [2, 2, 5]]. Every output was accumulated where it sits; the 27 multiply-adds happened in 7 clocks, with at most 9 running at once.';
+    $('#syBack').disabled=t===0;$('#syNext').disabled=t>=TMAX;}
+  $('#syNext').onclick=()=>{t++;draw();};$('#syBack').onclick=()=>{t--;draw();};$('#syReset').onclick=()=>{t=0;draw();};draw();})();
+
+/* 4b dataflow */
+(function(){const V={a:2,b:3,c:7,d:4,e:5,f:2};
+  const N=[{id:'n1',op:'+',in:['a','b'],lv:1,x:170,v:5},{id:'n2',op:'−',in:['c','d'],lv:1,x:380,v:3},{id:'n3',op:'×',in:['e','f'],lv:1,x:590,v:10},{id:'n4',op:'×',in:['n1','n2'],lv:2,x:275,v:15},{id:'n5',op:'+',in:['n4','n3'],lv:3,x:430,v:25}];
+  const IX={a:120,b:220,c:330,d:430,e:540,f:640},Y={0:30,1:110,2:180,3:250};let st=0;
+  const pos=id=>id in V?[IX[id],Y[0]+14]:(n=>[n.x,Y[n.lv]])(N.find(n=>n.id===id));
+  function draw(){let s='';
+    N.forEach(n=>n.in.forEach(src=>{const [x1,y1]=pos(src),[x2,y2]=[n.x,Y[n.lv]-18];const ready=src in V||N.find(m=>m.id===src).lv<=st;s+=`<path d="M${x1} ${y1+14} L${x2} ${y2}" class="${ready?'wt':'w'}" style="${ready?'':'opacity:.4'}" marker-end="url(#${ready?'aht':'ah'})"/>`;
+      if(ready){const mx=(x1+x2)/2,my=(y1+14+y2)/2,val=src in V?V[src]:N.find(m=>m.id===src).v;s+=`<circle cx="${mx}" cy="${my}" r="10" class="te"/>`+T(mx,my+4,val,'mid xs bd');}}));
+    Object.entries(IX).forEach(([k,x])=>{s+=R(x-18,Y[0]-4,36,30,'bg2')+T(x,Y[0]+16,`${k} = ${V[k]}`,'mid xs bd');});
+    N.forEach(n=>{const fired=n.lv<=st,now=n.lv===st;s+=`<circle cx="${n.x}" cy="${Y[n.lv]}" r="20" class="${now?'cu':fired?'okf':'bx'}" style="${now?'stroke-width:2.5':''}"/>`+T(n.x,Y[n.lv]+6,n.op,'mid bd','font-size:17px')+(fired?T(n.x+28,Y[n.lv]+4,`= ${n.v}`,'xs bd'):'');});
+    setVB('dfSvg',760,285,s);$('#dfOut').textContent=`step ${st} of 3`;
+    $('#dfMsg').innerHTML=st===0?'<b>Start.</b> Only the inputs have values. Any operation whose inputs are all present may fire.':st===1?'<b>Step 1.</b> a + b, c − d and e × f all have their inputs, so all three fire <b>at once</b>: 5, 3 and 10. No one scheduled them; readiness did.':st===2?'<b>Step 2.</b> The × node now has both its tokens (5 and 3) and fires: 15. The final + is still waiting for this result.':'<b>Step 3.</b> The final + fires: 15 + 10 = <b>25</b>. Five operations in three steps, the depth of the graph.';
+    $('#dfBack').disabled=st===0;$('#dfNext').disabled=st>=3;}
+  $('#dfNext').onclick=()=>{st++;draw();};$('#dfBack').onclick=()=>{st--;draw();};$('#dfReset').onclick=()=>{st=0;draw();};draw();})();
+
+/* 4c spatial */
+(function(){let s='';
+  s+=T(40,40,'input stream','xs bd');['a5,b5','a4,b4'].forEach((t,i)=>{s+=R(30+i*62,52,56,30,'bg2')+T(58+i*62,71,t,'mid xs');});
+  s+=A('M150 67 H196');s+=R(200,40,90,56,'cu')+T(245,64,'×','mid bd','font-size:20px')+T(245,84,'element 3','mid xs');
+  s+=A('M290 67 H316');s+=R(320,48,26,40,'pl')+T(333,72,'reg','mid xs','writing-mode:vertical-rl');
+  s+=A('M346 67 H376');s+=R(380,40,90,56,'cu')+T(425,64,'+ c','mid bd','font-size:18px')+T(425,84,'element 2','mid xs');
+  s+=A('M470 67 H496');s+=R(500,48,26,40,'pl')+T(513,72,'reg','mid xs','writing-mode:vertical-rl');
+  s+=A('M526 67 H566');['y1','y0'].forEach((t,i)=>{s+=R(570+i*62,52,56,30,'okf')+T(598+i*62,71,t,'mid xs bd');});s+=T(632,40,'output stream','mid xs bd');
+  s+=T(380,130,'a snapshot at clock 5: the multiplier works on element 3 while the adder finishes element 2','mid xs');
+  s+=T(380,152,'every clock: one element in, one element out, both operators busy','mid sm bd');
+  s+=T(380,178,'configured once, then no instruction fetch, decode or register-file traffic at all','mid xs');
+  setVB('spSvg',760,190,s);})();
+
+/* 5 programming models */
+(function(){const X=[3,1,4,1,5,9,2,6],SQ=X.map(v=>v*v),WC=['te','pl','cu','okf'];
+  const elems=(y,col,vals=X)=>vals.map((v,i)=>R(20+i*54,y,48,28,col?col(i):'bx')+T(44+i*54,y+19,v,'mid sm bd')).join('');
+  const box=(x,y,w,h,cls,t1,t2)=>R(x,y,w,h,cls)+T(x+w/2,y+(t2?h/2-2:h/2+4),t1,'mid xs bd')+(t2?T(x+w/2,y+h/2+12,t2,'mid xs'):'');
+  const D={
+    seq(){let s=T(230,14,'x','mid xs bd')+elems(20)+T(230,78,'one thread, running total after each element:','mid xs');let run=0;
+      SQ.forEach((q,i)=>{run+=q;s+=A(`M${44+i*54} 50 V92`)+R(20+i*54,94,48,26,'te')+T(44+i*54,112,run,'mid xs bd');if(i<7)s+=A(`M${68+i*54} 107 H${74+i*54}`);});
+      return s+T(230,160,'8 steps in a chain: each add waits for the previous one','mid xs')+box(170,200,120,40,'okf','total = 173');},
+    spmd(){const p=[0,1,2,3].map(k=>SQ[k]+SQ[k+4]);let s=T(230,14,'x (colour = program instance)','mid xs bd')+elems(20,i=>WC[i%4]);
+      [0,1,2,3].forEach(k=>{const x=20+k*110;[k,k+4].forEach(i=>s+=A(`M${44+i*54} 50 L${x+50} 118`));s+=box(x,120,100,44,WC[k],`instance ${k}`,`partial = ${p[k]}`);s+=A(`M${x+50} 166 L230 218`);});
+      return s+box(150,220,160,40,'okf','reduce_add → 173')+T(230,284,'one program, 4 instances; instance k takes i = k, k + 4','mid xs');},
+    threads(){const p=[0,1,2,3].map(t=>SQ[2*t]+SQ[2*t+1]);let s=T(230,14,'x (colour = thread)','mid xs bd')+elems(20,i=>WC[i>>1]);
+      [0,1,2,3].forEach(t=>{const x=20+t*110;s+=A(`M${44+2*t*54} 50 L${x+40} 104`)+A(`M${44+(2*t+1)*54} 50 L${x+60} 104`)+box(x,106,100,44,WC[t],`thread ${t}`,`p = ${p[t]}`)+A(`M${x+50} 152 L230 208`,'wc','ahc');});
+      return s+box(140,210,180,50,'bad','shared total = 173','updates serialized by a mutex')+T(230,284,'all threads read and write one shared memory','mid xs');},
+    forkjoin(){let s='';const N=(x,y,t,v,cls)=>box(x-52,y,104,40,cls,t,`= ${v}`);
+      s+=N(230,10,'sumsq(0, 8)',173,'okf');s+=A('M200 52 L120 84')+A('M260 52 L340 84');
+      s+=N(120,86,'sumsq(0, 4)',27,'bg2')+N(340,86,'sumsq(4, 8)',146,'bg2');
+      const L=[[60,'(0,2)',10,'te'],[175,'(2,4)',17,'pl'],[290,'(4,6)',106,'te'],[405,'(6,8)',40,'cu']];
+      s+=A('M100 128 L68 160')+A('M140 128 L170 160')+A('M320 128 L292 160')+A('M360 128 L400 160');
+      L.forEach(([x,t,v,c])=>{s+=N(x,162,t,v,c);});
+      s+=T(230,230,'each spawn may run on another core; idle cores steal waiting tasks','mid xs')+T(230,248,'colour = which core ran the leaf (core 0 ran two)','mid xs')+T(230,272,'results join back up the tree: 10 + 17 = 27, 106 + 40 = 146, 27 + 146 = 173','mid xs bd');return s;},
+    datapar(){let s=T(230,14,'x','mid xs bd')+elems(20)+A('M230 50 V70')+T(248,64,'map: v × v','xs bd')+elems(74,()=>'te',SQ);
+      const l1=[10,17,106,40],l2=[27,146];l1.forEach((v,k)=>{s+=A(`M${71+k*108} 104 L${71+k*108} 126`)+box(33+k*108,128,76,30,'pl',`${v}`);});
+      l2.forEach((v,k)=>{s+=A(`M${71+k*216} 160 L${125+k*216} 186`)+A(`M${179+k*216} 160 L${125+k*216} 186`)+box(85+k*216,188,80,30,'cu',`${v}`);});
+      return s+A('M125 220 L230 244')+A('M341 220 L230 244')+box(170,246,120,32,'okf','reduce → 173')+T(230,292,'you write whole-array operations; the library parallelizes','mid xs');},
+    mpi(){let s=box(130,8,200,34,'bg2','rank 0 holds x','[3, 1, 4, 1, 5, 9, 2, 6]')+T(344,64,'MPI_Scatter','xs tcu bd');const p=[10,17,106,40];
+      [0,1,2,3].forEach(k=>{const x=16+k*112;s+=A(`M230 44 L${x+50} 76`,'wc','ahc')+R(x,78,100,108,'bx','stroke-dasharray:4 3')+T(x+50,94,`rank ${k} memory`,'mid xs')+box(x+8,102,84,30,WC[k],`[${X[2*k]}, ${X[2*k+1]}]`)+box(x+8,142,84,30,WC[k],`p = ${p[k]}`);
+        s+=A(`M${x+50} 188 L230 236`,'wc','ahc');});
+      return s+T(322,222,'MPI_Reduce (messages)','xs tcu bd')+box(160,238,140,34,'okf','rank 0: 173')+T(230,292,'no shared memory: data moves only in messages','mid xs');},
+    graph(){let s=T(230,16,'traced graph','mid xs bd');s+=box(40,30,90,40,'bg2','x')+A('M130 50 H176')+box(180,30,100,40,'pl','square')+A('M280 50 H326')+box(330,30,90,40,'pl','sum');
+      s+=A('M230 76 V118','wc','ahc')+T(242,102,'compile: fuse square + sum','xs tcu bd');
+      s+=box(110,120,240,50,'cu','one fused kernel','reads x once, never stores the squares')+A('M230 172 V206')+box(170,208,120,34,'okf','total = 173');
+      return s+T(230,270,'you describe the computation; a compiler schedules it','mid xs');},
+    pipeline(){let s='';const S=['read','square','add'];S.forEach((t,k)=>{s+=box(30+k*150,8,120,32,['te','pl','cu'][k],t);if(k<2)s+=A(`M${150+k*150} 24 H${176+k*150}`);});
+      const x0=70,cw=38;for(let c=1;c<=10;c++)s+=T(x0+(c-0.5)*cw,64,c,'mid xs');S.forEach((t,k)=>{s+=T(x0-6,88+k*30,t,'end xs');});
+      for(let i=0;i<8;i++)for(let k=0;k<3;k++){const c=i+k+1;s+=R(x0+(c-1)*cw+1,72+k*30,cw-2,24,['te','pl','cu'][k])+T(x0+(c-0.5)*cw,88+k*30,k===1?SQ[i]:k===0?X[i]:'x'+i,'mid xs');}
+      return s+T(230,190,'three stages work on three different elements at once','mid xs')+T(230,210,'after filling, one element leaves every step','mid xs')+box(170,232,120,34,'okf','total = 173');},
+    bsp(){let s=T(80,16,'superstep 1: compute','xs bd');const p=[10,17,106,40];
+      [0,1,2,3].forEach(k=>{s+=box(20+k*110,24,96,40,WC[k],`worker ${k}`,`p = ${p[k]}`);});
+      s+=`<line x1="10" y1="92" x2="450" y2="92" class="wb dash"/>`+T(230,86,'barrier','mid xs tbad bd');
+      s+=T(80,114,'exchange: send partials','xs bd');[1,2,3].forEach(k=>{s+=A(`M${68+k*110} 66 C ${68+k*110} 140, 90 130, 70 162`,'wc','ahc');});
+      s+=`<line x1="10" y1="152" x2="450" y2="152" class="wb dash"/>`+T(300,146,'barrier','mid xs tbad bd');
+      s+=T(80,184,'superstep 2: combine','xs bd')+box(20,192,120,40,'okf','worker 0','10+17+106+40 = 173');
+      return s+T(230,270,'alternate: everyone computes, then everyone communicates','mid xs');},
+    declarative(){let s=box(60,6,340,34,'bg2','SELECT SUM(x * x) FROM samples;')+A('M230 42 V60')+T(248,56,'query planner','xs bd');
+      s+=box(160,62,140,32,'okf','final SUM → 173')+A('M230 128 V96')+box(160,130,140,30,'bg2','exchange (gather)');
+      [0,1,2,3].forEach(k=>{const x=18+k*110;s+=A(`M${x+48} 196 L230 162`)+box(x,198,96,40,WC[k],'partial SUM',`= ${[10,17,106,40][k]}`)+A(`M${x+48} 268 V240`)+box(x,270,96,26,'bx','scan rows '+(2*k)+'–'+(2*k+1));});
+      return s;}};
+  const MD=[
+    ['seq','Sequential (baseline)','C',`float total = 0;
+for (int i = 0; i < 8; i++)
+    total += x[i] * x[i];`,'nobody: one thread','none needed','a single running total','the reference every parallel version must match','a long chain of dependent adds'],
+    ['spmd','SPMD','ISPC',`export uniform float sumsq(uniform float x[],
+                           uniform int n) {
+    float partial = 0;          // one per instance
+    foreach (i = 0 ... n)       // gang splits the indices
+        partial += x[i] * x[i];
+    return reduce_add(partial); // combine the gang
+}`,'the compiler/runtime, by instance index','values combined by a cross-instance reduction','reduce_add','regular data-parallel loops on SIMD lanes or GPU threads','divergence, and forgetting that instances run in lockstep chunks'],
+    ['threads','Shared-memory threads','C++',`float total = 0;  std::mutex m;
+auto work = [&](int t) {
+    float p = 0;
+    for (int i = 2*t; i < 2*t + 2; i++) p += x[i] * x[i];
+    std::lock_guard<std::mutex> g(m);  // one update each
+    total += p;
+};
+std::vector<std::thread> ts;
+for (int t = 0; t < 4; t++) ts.emplace_back(work, t);
+for (auto& th : ts) th.join();`,'you, explicitly','reading and writing shared variables','a mutex- or atomic-protected shared total','irregular work on one machine','data races, lock contention, false sharing'],
+    ['forkjoin','Fork-join tasks','Cilk',`float sumsq(const float* x, int lo, int hi) {
+    if (hi - lo <= 2) {                    // small: serial
+        float s = 0;
+        for (int i = lo; i < hi; i++) s += x[i] * x[i];
+        return s;
+    }
+    int mid = (lo + hi) / 2;
+    float left = cilk_spawn sumsq(x, lo, mid);
+    float right = sumsq(x, mid, hi);
+    cilk_sync;                              // wait for the spawn
+    return left + right;
+}`,'you split recursively; a work-stealing runtime places tasks','return values joined up the call tree','the recursion itself','divide-and-conquer and unbalanced work','too many tiny tasks (overhead), shared mutable state'],
+    ['datapar','Data-parallel operations','NumPy / Spark',`total = np.sum(x * x)            # NumPy
+
+total = rdd.map(lambda v: v * v) \\
+           .reduce(lambda a, b: a + b)   # Spark`,'the library','hidden inside the library','a built-in reduction','array and table code; easy to write and fast','temporaries (x * x may be stored), and operations the library lacks'],
+    ['mpi','Message passing','MPI (C)',`// every rank runs this; rank 0 starts with x
+float mine[2], total;
+MPI_Scatter(x, 2, MPI_FLOAT, mine, 2, MPI_FLOAT,
+            0, MPI_COMM_WORLD);
+float p = mine[0] * mine[0] + mine[1] * mine[1];
+MPI_Reduce(&p, &total, 1, MPI_FLOAT, MPI_SUM,
+           0, MPI_COMM_WORLD);`,'you, by rank number','explicit messages between separate memories','MPI_Reduce, a collective','clusters: scales beyond one machine','communication cost and deadlocked sends/receives'],
+    ['graph','Dataflow / graph','JAX',`@jax.jit                      # trace, then compile
+def sumsq(x):
+    return jnp.sum(x * x)     # nodes: square, sum
+
+total = sumsq(x)              # may run as one fused kernel`,'a compiler, from the graph','edges of the graph','a graph node','ML and array pipelines where fusion saves memory traffic','code that doesn\'t trace cleanly (data-dependent control flow)'],
+    ['pipeline','Pipeline','Go',`c1, c2 := make(chan float64), make(chan float64)
+go func() { for _, v := range x { c1 <- v }; close(c1) }()
+go func() { for v := range c1 { c2 <- v * v }; close(c2) }()
+total := 0.0
+for v := range c2 { total += v }   // stage 3`,'you, by stage','channels or queues between stages','the last stage','streams of items with several processing steps','the slowest stage limits throughput'],
+    ['bsp','Bulk synchronous (BSP)','pseudocode',`// superstep 1: local compute
+p[w] = x[2w]*x[2w] + x[2w+1]*x[2w+1]
+barrier()
+// exchange: send p[w] to worker 0
+barrier()
+// superstep 2: worker 0 combines
+if (w == 0) total = p[0] + p[1] + p[2] + p[3]`,'you, by worker and phase','communication only between supersteps','a combine superstep','iterative algorithms: simulations, graph processing, training steps','stragglers: everyone waits for the slowest worker'],
+    ['declarative','Declarative (SQL)','SQL',`SELECT SUM(x * x) AS total
+FROM samples;`,'the query planner','the engine\'s exchange operators','a partial-then-final aggregate','data in tables; the engine picks the parallel plan','less control; performance depends on the planner']];
+  let cur='spmd';
+  $('#pmSeg').innerHTML=MD.map(m=>`<button data-pm="${m[0]}">${m[1]}</button>`).join('');
+  const esc=t=>t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  function draw(){const m=MD.find(x=>x[0]===cur);$('#pmLang').textContent=m[2];$('#pmCode').innerHTML=esc(m[3]);
+    setVB('pmSvg',460,300,D[cur]());
+    $('#pmFacts').innerHTML=[['Who divides the work',m[4]],['How workers communicate',m[5]],['How results combine',m[6]],['Good for',m[7]],['Watch out for',m[8]]].map(([a,b])=>`<div><small>${a}</small>${b}</div>`).join('');
+    $$('[data-pm]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.pm===cur));}
+  $$('[data-pm]').forEach(b=>b.onclick=()=>{cur=b.dataset.pm;draw();});draw();})();
+})();
+
+</script>
+</body>
+</html>

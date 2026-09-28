@@ -15,6 +15,7 @@ Interactive study notes that build a computer from logic gates up to modern mult
 | [Unit 5 · Understand GPUs](notes/unit-05-gpus.html) | SIMT and the thread hierarchy, occupancy, warp scheduling, divergence, coalescing and banks, tiling and barriers, Roofline and measurement |
 | [Unit 6 · Connect the modern system](notes/unit-06-modern-systems.html) | Matrix units and number formats, quantization, heterogeneous SoCs and shared memory, pipelining, packaging, HBM and NUMA, ring all-reduce and multi-GPU scaling |
 | [CS149 lecture companions](notes/cs149/index.html) | Self-contained pages following Stanford CS149 *Parallel Computing* (Fall 2023); Lecture 1: *Why Parallelism? Why Efficiency?*; Lecture 2: *A Modern Multi-Core Processor*; Lecture 3: *Multi-Core Part II + Parallel Programming Abstractions*; Lecture 7: *GPU Architecture & CUDA Programming*; Lecture 10: *Efficiently Evaluating DNNs* |
+| [Map of parallel machines and programs](notes/parallel-landscape.html) | Reference page: Flynn's taxonomy, one job on seven machines, systolic/dataflow/spatial hardware, and ten programming models on the same computation |
 
 Unit 7 (case studies) is planned.
 

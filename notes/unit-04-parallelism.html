@@ -409,7 +409,7 @@ ready.store(true,                    int v = data;   // guaranteed to see 42
     <li>A stream that already saturates memory bandwidth.
       <details><summary>Show answer</summary><div class="ans"><p><b>None of them.</b> The limit is bytes per second, not instructions. More cores, SMT or wider vectors just issue requests faster to a memory system that can't deliver them faster. Only more bandwidth or less traffic (reuse, smaller data types) helps.</p></div></details></li>
   </ol></div>
-  <p>A real program can use all four at once, and none of them speeds anything up just by existing. The next unit carries these distinctions into GPUs, where they're pushed to the extreme: thousands of logical threads, grouped for lockstep SIMD-style execution, scheduled across many hardware contexts, and limited by the memory traffic that feeds them.</p>
+  <p>A real program can use all four at once, and none of them speeds anything up just by existing. (For a side-by-side map of these and other hardware organizations, and of the programming models that target them, see <a href="parallel-landscape.html">A map of parallel machines and programs</a>.) The next unit carries these distinctions into GPUs, where they're pushed to the extreme: thousands of logical threads, grouped for lockstep SIMD-style execution, scheduled across many hardware contexts, and limited by the memory traffic that feeds them.</p>
   <h3 class="part">Model assumptions and further reading</h3>
   <p>Every explorer on this page is a teaching model: coherence steps are whole transactions, the ordering explorer models only store buffers, the SMT explorer models only issue ports, and the vector explorer models only groups and masks. For the precise rules, go to the primary sources:</p>
   <ul>
