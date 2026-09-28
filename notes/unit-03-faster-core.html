@@ -245,13 +245,14 @@
     <figcaption><b>Plots of address against time.</b> A scan climbs steadily (spatial). A loop's few variables form flat bands (temporal). This pointer chase jumps to scattered, never-repeated addresses, so neither bet pays off. (Pointer chasing isn't inherently uncacheable: a chase through a small, compact set of nodes can cache well.)</figcaption></figure>
 
   <h3 class="part">How a cache finds a line</h3>
-  <p>We'll use a tiny, fully traceable cache: <b>8-bit addresses, 16-byte lines, 64 bytes of data</b> (4 lines). Every address splits into three fields:</p>
+  <p>We'll use a tiny, fully traceable cache: <b>8-bit addresses, 16-byte lines, 64 bytes of data</b> (4 lines). A cache holds copies of memory lines, so a <b>hit</b> means the requested line is already present and valid; a <b>miss</b> means it must be fetched from the next level, possibly replacing another line. Every address splits into three fields:</p>
   <ul>
     <li><b>offset</b>: which byte within the 16-byte line (4 bits).</li>
     <li><b>index</b>: which <b>set</b> the line must live in.</li>
     <li><b>tag</b>: the rest of the address, stored alongside the line to identify <i>which</i> block is there.</li>
   </ul>
   <p>How many index bits there are depends on the organization. <b>Direct-mapped</b> has 4 sets of 1 line, so 2 index bits: each block has exactly one possible home. <b>2-way set-associative</b> has 2 sets of 2 lines, so 1 index bit: two possible homes. <b>Fully associative</b> has 1 set of 4 lines and no index bits: a block can go anywhere. The capacity is the same in every case. What changes is the <b>placement flexibility</b>, which costs extra tag comparisons.</p>
+  <p>For a direct-mapped lookup of byte address <code>0x4C</code>, first identify its 16-byte line, <code>0x40</code>–<code>0x4F</code>. The low hex digit C is the <b>offset</b> within that line. Line number 4 maps to set 4 mod 4 = <b>0</b>; the remaining upper bits give tag <b>1</b>. Look only in set 0: a valid line tagged 1 is a hit, and offset C selects the requested byte. An invalid line or a different tag is a miss. On a miss the cache fetches the whole 16-byte line, so a later read of <code>0x4D</code> can hit if the line has not been evicted.</p>
 
   <h3 class="part">Try it: a cache you can trace by hand</h3>
   <figure class="fig"><div class="widget">
@@ -267,7 +268,7 @@
     <div class="strip" id="cstrip"></div>
     <div class="stat" id="cstat"></div>
   </div><figcaption><b>Model:</b> read-only byte accesses, one at a time. A miss fetches the whole 16-byte line and evicts the <b>least recently used</b> line in that set. Misses are labelled with the "3 Cs": <b>compulsory</b> (first touch of that block ever), <b>conflict</b> (a fully associative cache of the same size would have hit), or <b>capacity</b> (even fully associative would miss, because the data simply doesn't fit).</figcaption></figure>
-  <p>Try "3 blocks, 1 set" in all three organizations. Direct-mapped and 2-way both miss every time. Two ways can't hold three blocks that all compete for one set, and LRU always evicts exactly the block needed next. Fully associative has room for all three. Now try "scan ×2 (too big)": 128 bytes can't fit in 64, so no organization saves the second pass. Those are capacity misses.</p>
+  <p>Try "3 blocks, 1 set" in all three organizations. Direct-mapped and 2-way both miss every time. Two ways cannot hold three blocks that all compete for one set, and LRU evicts the block needed next. Fully associative has room for all three. Now try "scan ×2 (too big)": the scan touches eight 16-byte lines, but the cache holds only four. On the second pass, the <i>first access to each line</i> misses again even in the fully associative cache: those are capacity misses. The following access within that newly fetched line can still hit through spatial locality. "Too big" does not mean <i>every byte access</i> misses.</p>
 
   <h3 class="part">Writes</h3>
   <p>Stores add two separate policy choices:</p>
@@ -281,7 +282,7 @@
   <p>Hardware can also <b>prefetch</b>, fetching lines it predicts you'll need. Good prefetches hide waiting. Wrong ones waste bandwidth and evict useful data.</p>
 
   <h3 class="part">A first cache performance model</h3>
-  <p>For a simple blocking, one-level cache, the <b>average memory access time</b> is <b>AMAT = hit time + miss rate × miss penalty</b>, where the penalty is the <i>additional</i> time a miss costs.</p>
+  <p>For a simple blocking, one-level cache, the <b>average memory access time</b> is <b>AMAT = hit time + miss rate × miss penalty</b>. Every access pays the hit lookup time; only the fraction that misses pays the <i>additional</i> miss penalty. With the default numbers below, that is 2 ns + 0.10 × 40 ns = <b>6 ns per access on average</b>. This is an average across hits and misses, not a promise that any individual access takes 6 ns.</p>
   <figure class="fig"><div class="widget">
     <div class="calc">
       <label class="rl" for="amH">hit time = <b id="amHv">2</b> ns<input id="amH" type="range" min="1" max="5" step="0.5" value="2"></label>
