@@ -135,14 +135,14 @@
 <section class="lesson" id="l21" data-toc="Occupancy, scheduling, divergence" data-n="21">
   <div class="lesson-h"><div class="kicker">Lesson 21</div><h2>Capacity, readiness, and useful issue</h2></div>
   <div class="card4">
-    <div class="c1"><span class="l">Limitation</span>A single warp waiting on memory leaves the SM idle for hundreds of cycles, and a branch that splits a warp leaves lanes idle.</div>
+    <div class="c1"><span class="l">Limitation</span>If no other warp is ready, a memory wait leaves issue slots idle. A branch that splits a warp leaves lanes idle too.</div>
     <div class="c2"><span class="l">New mechanism</span>Keep <b>many warps resident</b> and issue from whichever is ready. Execute divergent paths under an <b>active mask</b>.</div>
     <div class="c3"><span class="l">New state</span>Per-warp readiness (scoreboards), active masks and reconvergence information, and per-block resource allocations.</div>
     <div class="c4"><span class="l">Cost</span>Registers and shared memory limit how many warps fit. Masked lanes do no useful work.</div>
   </div>
 
   <h3 class="part">Resident, eligible, issued</h3>
-  <p>Three words that are easy to blur, and shouldn't be:</p>
+  <p>Lesson 20 showed that an SM can hold several warps. Holding them is useful only if at least one can make progress when another waits. Keep these three stages separate:</p>
   <ul>
     <li>A <b>resident</b> warp has been admitted to an SM and holds the resources it needs to stay there.</li>
     <li>An <b>eligible</b> warp can issue its next instruction <i>now</i>: its operands are ready, the execution unit it needs is free, and no synchronization is holding it back.</li>
@@ -151,7 +151,7 @@
   <p>A warp can be resident for hundreds of cycles without being eligible, typically while it waits for a load. <b>Occupancy</b> is the number of resident warps relative to the SM's maximum. It measures <i>capacity in use</i>, not useful work: an SM full of warps that are all waiting does nothing.</p>
 
   <h3 class="part">Try it: what fits on a teaching SM</h3>
-  <p>Our invented SM can hold at most <b>8 warps, 256 threads, 4 blocks, 8,192 registers</b> (32-bit) and <b>16 KiB of shared memory</b>. A block has T threads, each needing R registers, and the block needs S KiB of shared memory. Every limit gives a maximum number of blocks, and the smallest one wins:</p>
+  <p>Our invented SM has room for at most <b>8 warps, 256 threads, 4 blocks, 8,192 registers</b> (32-bit) and <b>16 KiB of shared memory</b>. Suppose a block has T threads, each using R registers, and the block reserves S KiB of shared memory. At T = 64, that block occupies two warp slots, 64 × R registers and S KiB. We can divide each SM capacity by the corresponding block cost; the smallest whole-block count decides how many blocks fit:</p>
   <div class="asm" style="max-width:720px"><div class="r"><span class="a"></span><span class="i">warps_per_block = ⌈T / 32⌉</span></div><div class="r"><span class="a"></span><span class="i">blocks = min(4, ⌊256 / T⌋, ⌊8 / warps_per_block⌋, ⌊8192 / (T × R)⌋, ⌊16 / S⌋)</span></div><div class="r"><span class="a"></span><span class="i">occupancy = blocks × warps_per_block / 8</span></div><div class="r"><span class="a"></span><span class="c">if S = 0 the block uses no shared memory: drop the ⌊16 / S⌋ term</span></div></div>
   <p>This is the <b>potential</b> occupancy the resource limits allow. The <b>achieved</b> occupancy measured on a real run can be lower, for example when the grid has too few blocks to fill every SM, or near the end as blocks finish and nothing replaces them.</p>
   <figure class="fig"><div class="widget">
@@ -167,7 +167,8 @@
   <div class="pitfall"><b>Occupancy is a means, not the goal.</b> Forcing the compiler to use fewer registers can raise occupancy but cause <b>spills</b>: values that no longer fit in registers are stored to thread-private memory and reloaded, adding instructions and memory traffic. Smaller tiles can raise occupancy while increasing repeated loads. The objective is the shortest time to a correct result, not the highest occupancy percentage.</div>
 
   <h3 class="part">Try it: hide latency by picking another ready warp</h3>
-  <p>A toy scheduler: <b>one instruction issue per cycle</b>. Every warp runs <code>LD → ADD → STORE</code>. A load issued in cycle <i>c</i> delivers its value at the start of cycle <i>c</i> + L. The ADD's result is ready the next cycle. Each cycle the scheduler issues from the <b>lowest-numbered eligible warp</b>. No bandwidth limits, no fetch delays. A warp counts as done when its STORE has <i>issued</i>: the model doesn't track when the store completes or becomes visible to other threads.</p>
+  <p>Start with just one warp executing <code>LD → ADD → STORE</code>. If its load issues in cycle 1 and takes four cycles, the ADD cannot use the value until cycle 5. Issue slots 2–4 sit empty. Other <i>ready</i> warps could fill those slots without shortening that first load.</p>
+  <p>The explorer makes this precise. It has <b>one issue slot per cycle</b>; a load issued in cycle <i>c</i> supplies its value at the start of cycle <i>c</i> + L, and an ADD supplies its result the next cycle. Among eligible warps, the scheduler chooses the lowest numbered. It omits bandwidth and fetch delays. A warp counts as done when its STORE <i>issues</i>, without modelling when that store completes or becomes visible.</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 8px"><span class="readout">Resident warps:</span><div class="seg" role="group" aria-label="Resident warps"><button data-ww="1">1</button><button data-ww="2">2</button><button data-ww="4" aria-pressed="true">4</button><button data-ww="8">8</button></div>
       <span class="readout" style="margin-left:8px">Load latency L:</span><div class="seg" role="group" aria-label="Load latency"><button data-wl="4" aria-pressed="true">4</button><button data-wl="8">8</button><button data-wl="16">16</button></div></div>
@@ -175,11 +176,12 @@
     <div class="stat" id="wsStat"></div>
     <p class="msg" id="wsMsg"></p>
   </div><figcaption><b>Latency stays; throughput rises.</b> Each row is a warp; the bottom row is the single issue slot, which is idle (hatched) when no warp is eligible. With L = 4, one warp takes 6 cycles and fills 3 of them; four warps take 12 cycles and fill every one. The load latency is unchanged; there is just other work to issue while it passes. No registers are saved or restored to switch: every warp's state stays resident.</figcaption></figure>
-  <p>For one warp at L = 4, issue its load in cycle 1. The data becomes ready at the start of cycle 5, so cycles 2–4 have no eligible instruction; the ADD issues in 5 and the STORE in 6. With four warps, the scheduler can issue four different loads in cycles 1–4. It has not made any load faster: it has filled the issue slots that would otherwise be empty.</p>
-  <p>Four warps complete four units of work in 12 cycles, so 1/3 unit per cycle. One warp completes one unit in 6 cycles: 1/6 per cycle. Aggregate <b>throughput</b> doubled in this example. Warp 0 still finishes at cycle 6, exactly as when it ran alone, but later warps wait their turn and finish later (warp 3 at cycle 12): throughput rose while some individual warps took <b>longer</b>. The number of warps needed grows with the latency: try L = 16. Real schedulers have several issue slots, pipelines with different latencies, and finite memory queues and bandwidth. Independent instructions <i>within</i> a warp help too. And no amount of ready warps can make a saturated memory channel deliver more bytes.</p>
+  <p>At L = 4, four warps can issue their loads in cycles 1–4. Warp 0's ADD issues in cycle 5 and its STORE in cycle 6; the scheduler then works through the other ready warps. All 12 issue slots are used. Four warps finish four units in 12 cycles (1/3 unit per cycle), compared with one warp's one unit in 6 cycles (1/6 per cycle). <b>Throughput doubles</b>, although warp 3 finishes later than it would alone. Load latency has not improved.</p>
+  <p>Try L = 16: more resident warps are needed to cover the longer wait. Real GPUs have multiple issue paths, other instruction latencies, and finite memory queues and bandwidth. Independent instructions within one warp can also fill gaps. Once a memory channel is saturated, however, issuing from more warps cannot make it transfer more bytes.</p>
 
   <h3 class="part">Try it: divergence wastes lanes</h3>
-  <p>When lanes of one warp take different branches, each lane must still get its own result. The hardware runs the paths one after the other under an <b>active mask</b>: lanes not on the current path are switched off, as in Lesson 19. (For short branches the compiler may use predicated instructions instead; the lane accounting is similar.) Our model has 8 lanes for legibility, not CUDA's 32. Each lane starts with value lane + 1. The <b>true</b> path does <code>+10, ×2</code> (2 instructions); the <b>false</b> path does <code>−1, ×3, +5</code> (3 instructions). A path with no active lanes is skipped.</p>
+  <p>A ready warp can still do less useful work than its width suggests. If some lanes take a branch and others do not, both groups need their results. The hardware runs each taken path under an <b>active mask</b>, switching off lanes that belong to the other path, as in Lesson 19. (A compiler may instead predicate a short branch; the lane accounting is similar.)</p>
+  <p>Use the 8-lane model below to see the cost; CUDA warps have 32 lanes. Each lane starts with its lane number + 1. The <b>true</b> path does <code>+10, ×2</code> (2 instructions); the <b>false</b> path does <code>−1, ×3, +5</code> (3 instructions). A path with no active lanes is skipped.</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 8px"><span class="readout">Preset:</span><div class="seg" role="group" aria-label="Branch presets"><button data-dv="half" aria-pressed="true">4 true, 4 false</button><button data-dv="all">all true</button><button data-dv="one">one true</button><button data-dv="none">all false</button></div><span class="readout">or click lanes to flip them</span></div>
     <div class="lanes" id="dvLanes"></div>
