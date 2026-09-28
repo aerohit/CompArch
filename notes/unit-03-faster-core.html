@@ -492,7 +492,7 @@
   </div>
 
   <h3 class="part">Three kinds of dependency, only one of them real</h3>
-  <p>Look at the register <i>names</i> in a program and you'll find three relationships between instructions:</p>
+  <p>Before scheduling instructions out of order, separate a <b>value dependency</b> from a conflict over a register name. <b>Read after write (RAW)</b> means a later instruction needs a value produced by an earlier one; it must wait for that value. <b>Write after read (WAR)</b> means a later instruction reuses a name that an earlier instruction still needs to read. <b>Write after write (WAW)</b> means two instructions write the same name, so their final writes must appear in program order. The last two are <i>name</i> dependencies: the values can live in separate places even though the instructions spell the same architectural register.</p>
   <figure class="fig"><div class="sc"><svg id="depSvg" viewBox="0 0 760 196" role="img" aria-label="RAW, WAR and WAW dependencies illustrated on a short program"></svg></div>
     <figcaption><b>RAW</b> (read after write) is a true flow of data: I2 really needs the value I1 produces. <b>WAR</b> and <b>WAW</b> exist only because the program <i>reuses the name</i> x1 for a new, unrelated value. Give that new value a different storage location and those constraints disappear.</figcaption></figure>
 
@@ -512,11 +512,14 @@
     </div>
     <p class="msg" id="rnMsg"></p>
   </div><figcaption><b>After renaming,</b> I2 still points at p20 (the loaded x1) even though the map now says x1 → p22. I3 writes its new x1 into p22 without disturbing the value I2 needs. Only the real RAW links remain: I1 → I2, I3 → I4, and I4, I2 → I5.</figcaption></figure>
+  <p>Here is the critical moment: I1 makes x1 → p20, so I2 records p20 as the source for <i>both</i> of its operands. Later I3 makes x1 → p22. That map change affects instructions renamed <i>after</i> I3, including I4; it does not change the sources already recorded for I2. I2 can therefore wait for the load while I3 produces a different x1 value. In program order, the final x1 is I3's 24, while I2 still computes 7 + 7 = 14.</p>
 
   <h3 class="part">Out-of-order issue: go around the blocked load</h3>
+  <p>Renaming removes the false name constraints, but it does not itself decide when work runs. The issue queue holds each renamed instruction and the physical-register tags of its inputs. When a producer finishes, its result becomes ready and waiting consumers of that tag can wake up. The scheduler can then choose a ready instruction even if an older instruction is still waiting for an operand. A consumer still cannot issue before its <i>actual</i> producer has made the value available.</p>
   <p>Now let the scheduler pick <b>any ready instruction</b>, oldest first, instead of only the next one in program order. Model: all five instructions are renamed and waiting before cycle 1. One instruction issues per cycle. The load issues in cycle 1 and its value is ready at the <b>end of cycle 4</b>. Adds take one cycle, and a result is usable the cycle after it's produced.</p>
   <figure class="fig"><div class="sc"><svg id="oooSvg" viewBox="0 0 760 372" role="img" aria-label="In-order versus out-of-order issue timelines for the renamed program"></svg></div>
     <figcaption><b>Same instructions, same answers, two fewer cycles.</b> Out of order, I3 and I4 run in cycles 2–3 while the load is outstanding, and everything finishes at the end of cycle 6 instead of 8. Both schedules end with x1 = 24, x2 = 14, x3 = 19, x4 = 33 <i>once results are accepted in program order</i>. The next lesson covers what "accepted" means.</figcaption></figure>
+  <p>Cycle 4 is idle in this model: I2 still needs the load's p20, and I5 needs I2's p21 as well as I4's p23. The load becomes ready only at the <i>end</i> of cycle 4, so I2 can issue in cycle 5 and I5 in cycle 6. Out-of-order issue filled two cycles of the load wait with useful work; it did not shorten the load itself or remove its true dependencies.</p>
 
   <h3 class="part">What new state this takes</h3>
   <div class="tbl"><table>
