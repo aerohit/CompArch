@@ -132,10 +132,11 @@
     <div class="sc" style="padding:8px 0 0"><svg id="amSvg" viewBox="0 0 760 250" role="img" aria-label="Amdahl speedup curve against number of cores" style="min-width:560px"></svg></div>
     <p class="msg" id="amOut"></p>
   </div><figcaption><b>The serial part becomes the whole story.</b> With 10% serial work, 4 cores give at most about 3.1×, and no number of cores can beat 10×. This is an upper bound under ideal assumptions. Real synchronization, load imbalance and shared-bandwidth limits pull you further below it. Changing the <i>algorithm</i> changes s, so the bound describes one specific task, not a permanent law about an application.</figcaption></figure>
+  <p>For example, suppose the task takes 100 time units on one core: 10 units are serial and 90 can be divided evenly. On four cores the ideal time is 10 + 90/4 = <b>32.5</b> units, so the speedup is 100/32.5 ≈ <b>3.08×</b>, not 4×. With infinitely many cores the parallel 90 approaches zero, but the 10 serial units remain, setting the 10× ceiling.</p>
 
   <h3 class="part">The new problem: copies that disagree</h3>
   <p>Suppose cores A and B have both cached the word x = 0. A writes x = 1 into its own cache. If B keeps reading its old copy forever, the two cores no longer share memory in any useful sense.</p>
-  <p><b>Cache coherence</b> is the promise that for each <i>single memory location</i>, all cores agree on one order of writes and eventually see the latest one. The common way to deliver it is an <b>invalidation protocol</b>, with one rule:</p>
+  <p><b>Cache coherence</b> keeps the copies of a <i>single memory location</i> consistent: writes to it have one order, and a core whose cached line has been invalidated cannot use its old copy for a later read. Once A's write has taken ownership in our model, B's next read must miss and obtain the current value. Coherence does not itself make B run another load, or order accesses to <i>different</i> addresses. The common way to implement it is an <b>invalidation protocol</b>, with one rule:</p>
   <div class="insight"><b>Many readers, or one writer, per line, never both.</b> Before a core may write a line, every other copy is invalidated. After that, a reader that misses gets the current data, even if it lives in another core's cache rather than in memory.</div>
   <p>Coherence works on whole <b>cache lines</b>, not individual variables. Keep that in mind, because it causes false sharing below. It also says nothing about the order of writes to <i>different</i> addresses. That's the next lesson.</p>
 
@@ -152,6 +153,7 @@
   <div class="assume">Two cores with private write-back caches. One 16-byte line holds two 4-byte words, x and y (in the "separate lines" layout, y moves to its own line). Each transaction completes before the next begins: no evictions, transient states or simultaneous requests. A read that misses enters S, even if no one else has the line (that's MSI, not MESI). If the other cache holds the line in M, a read makes it supply the data <i>and</i> update memory, and both end in S. A write steals ownership: the data moves cache to cache, and memory may stay stale.</div>
 
   <h3 class="part">Try it: two caches, one line</h3>
+  <p>Trace the textbook preset as a pair of states (A, B). Both start <b>(I, I)</b>. A's read gives <b>(S, I)</b>; B's read gives <b>(S, S)</b>. A then requests ownership to write x = 1, invalidating B and leaving <b>(M, I)</b>. Memory can still hold 0 because A has the only valid copy. When B reads again, A supplies 1 and writes it back in this model, leaving <b>(S, S)</b> with memory updated to 1. The state tells you who may use a copy; the data value tells you what the read returns.</p>
   <p>Click reads and writes, or play a preset. Watch the states, where the current value actually lives, and the counters.</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 10px"><span class="readout">Layout:</span><div class="seg" role="group" aria-label="Layout"><button data-lay="same" aria-pressed="true">x and y in one line</button><button data-lay="sep">separate lines</button></div>
