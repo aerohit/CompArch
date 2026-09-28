@@ -425,10 +425,10 @@
     <div class="c3"><span class="l">New state</span>PC, instruction register, accumulator, a halted flag, and the control phase.</div>
     <div class="c4"><span class="l">Cost</span>Every instruction pays for fetch and decode, and everything funnels through one accumulator and one memory.</div>
   </div>
-  <p>Here's the big idea of this unit. Instead of wiring the sequence of operations into the circuit, <b>store the sequence as numbers in memory</b>, and build one fixed circuit that reads a number, works out what it means, and does it. Change the numbers, and the same hardware does something completely different.</p>
+  <p>The counter from Lesson 3 has state, but its wiring always tells it to do the same thing. Making it count down or stop at zero would require different control. A stored-program machine keeps those choices as <b>numbers in memory</b>. One fixed circuit fetches a number, decodes it, and performs the requested action; change the numbers and the circuit follows a different sequence.</p>
 
   <h3 class="part">Meet NIB-8</h3>
-  <p>Our machine is small enough that its entire specification fits in one table:</p>
+  <p>Our machine is small enough that its entire specification fits in one table. Keep an eye on two values in particular: PC chooses <i>which instruction</i> comes next, while ACC holds the <i>working data</i> that arithmetic changes.</p>
   <div class="tbl"><table>
     <tr><th>Part</th><th>What it is</th></tr>
     <tr><td class="m">M[0] … M[15]</td><td>16 memory words of 8 bits each. <b>Instructions and data share this memory.</b></td></tr>
@@ -463,7 +463,8 @@
   </div>
 
   <h3 class="part">The datapath</h3>
-  <p>Everything from the earlier lessons shows up here. There are registers (PC, IR, ACC), muxes (which address goes to memory, and which value becomes the next PC), an adder (PC + 1), an ALU, and a control unit that sets all the selects and enables.</p>
+  <p>Read the diagram in two passes. To fetch an instruction, the address mux sends PC to memory; the returned byte enters IR, and the small adder prepares PC + 1. To execute LOAD or ADD, the same memory instead receives the address in IR. Its data goes to the ALU, whose result can enter ACC. One memory serves both jobs because the mux selects an address source at the right time.</p>
+  <p>STORE takes another route, sending ACC's value to memory. JMP and a taken JZ overwrite PC with an address from IR. The <b>control unit</b> chooses these routes and enables writes; it does not move data by itself. The simulator will light up the route used on each tick.</p>
   <figure class="fig"><div class="sc">
     <svg id="dp" viewBox="0 0 760 360" role="img" aria-label="NIB-8 datapath: memory, address mux, PC with incrementer and next-PC mux, instruction register, control, accumulator and ALU">
       <rect id="b-mem" class="blk bx" x="20" y="40" width="172" height="282"/><text x="106" y="232" class="mid hd">Memory</text><text x="106" y="250" class="mid sm">16 words × 8 bits</text>
@@ -508,7 +509,8 @@
   <div class="pitfall">One <b>instruction cycle</b> (fetch, decode, execute) here takes three <b>clock cycles</b>. The two terms are easy to blur. Also notice that PC already points to the <i>next</i> instruction while the current one executes. That's why a jump simply overwrites PC.</div>
 
   <h3 class="part">Inside the control box</h3>
-  <p>"Control decodes the instruction" isn't magic, and it doesn't need another processor inside. The controller is a small state machine: a <b>phase register</b> plus combinational logic. Each cycle, that logic reads the current phase, the opcode in IR and whether ACC is zero, and produces two things: <b>control signals</b> for the datapath and the <b>next phase</b>. For instance, ACC's write enable is on during execute if the opcode is LOAD, ADD or SUB; it is off during STORE and JZ. No one has to issue those decisions by hand: the current bits determine the signals through gates.</p>
+  <p>"Control decodes the instruction" doesn't require another processor inside the box. The controller is a small state machine: a <b>phase register</b> plus combinational logic. That logic reads the current phase, the opcode in IR and whether ACC is zero. It produces <b>control signals</b> for the datapath and the <b>next phase</b>.</p>
+  <p>For example, during execute, LOAD enables a write to ACC and selects memory data as the ALU's output. STORE enables a write to memory and leaves ACC alone. Each decision follows from the current bits through gates; no one has to set the signals by hand. The diagram and table below spell out the choices.</p>
   <figure class="fig"><div class="sc">
     <svg viewBox="0 0 760 260" role="img" aria-label="Controller: opcode, ACC-is-zero and halted enter decode logic together with the phase register; the logic outputs control signals and the next phase">
       <text x="20" y="74" class="sm">opcode (IR bits 7–4)</text><path d="M20 82 H348" class="w" marker-end="url(#ah)"/>
@@ -537,7 +539,7 @@
   </table></div>
 
   <h3 class="part">Run it: the NIB-8 simulator</h3>
-  <p>Pick a program, then press <b>Tick</b> one clock edge at a time. Before each tick, predict what will change. Memory cells are editable: type a hex byte (one or two digits, 0–9 and A–F) into any cell to change the program or its data, and the machine resets. <b>Reset</b> restarts from the memory as you've edited it; clicking a program button restores that program's original bytes.</p>
+  <p>Start with <b>Add two numbers</b>. Before pressing <b>Tick</b>, predict the first three edges: which byte enters IR, when PC advances, and when ACC finally becomes 23. Then follow ADD and STORE the same way. Memory cells are editable: type a hex byte (one or two digits, 0–9 and A–F) into any cell to change the program or its data, and the machine resets. <b>Reset</b> restarts from the memory as you've edited it; clicking a program button restores that program's original bytes.</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 12px"><span class="readout">Program:</span><div class="seg" role="group" aria-label="Program"><button data-prog="add" aria-pressed="true">Add two numbers</button><button data-prog="count">Countdown</button><button data-prog="mul">Multiply</button></div></div>
     <div class="ctrl" style="margin:0 0 10px"><button id="simBack">◀ Back</button><button id="simTick" class="pri">Tick ▶</button><button id="simInstr">Next instruction ▶▶</button><button id="simRun">Run</button><button id="simReset">Reset</button></div>
@@ -574,7 +576,9 @@
       <path d="M410 170 H215 V108" class="wc" marker-end="url(#ahc)"/><text x="310" y="164" class="mid sm tcu">PC ← 1: fetch SUB again</text>
     </svg></div>
     <figcaption><b>The loop's instructions stay in memory; PC revisits them.</b> Starting with n = 3, ACC goes 3 → 2 → 1 → 0. STORE changes the data at M[8]; the instruction bytes stay put. The fixed circuit follows those bytes, and JZ or JMP changes which one PC selects next.</figcaption></figure>
-  <p>Try the Multiply program next. Its instruction bytes occupy addresses 0–8. The loop at 0–7 repeatedly adds M[13] = 6 to the growing product in M[12], then subtracts M[15] = 1 from the counter in M[14]. Because ACC can hold only one of these working values at a time, each pass must LOAD and STORE both the product and the counter. Starting from product 0 and counter 3, the first pass leaves (product, counter) = (6, 2), the second (12, 1), and the third (18, 0). JZ then skips the JMP and fetches HALT at address 8. The first two passes execute eight instructions each; the final pass executes seven, followed by HALT: <b>8 + 8 + 7 + 1 = 24 instructions</b>. If the counter began at 0, this particular loop would still run once before testing it.</p>
+  <p>Follow the first trip around the Countdown loop. LOAD puts 3 in ACC. SUB leaves 2; STORE writes that 2 to M[8]. JZ sees that ACC is not zero, so PC continues to JMP, which sends it back to SUB at address 1. ACC already holds the current count, so the loop need not LOAD it again. When SUB eventually leaves 0, JZ sends PC to HALT instead.</p>
+  <p>Countdown has only one changing value to keep in ACC. Try the Multiply program next: it has both a growing product in M[12] and a decreasing counter in M[14]. Its instruction bytes occupy addresses 0–8. The loop at 0–7 adds M[13] = 6 to the product, then subtracts M[15] = 1 from the counter. Because ACC holds only one working value at a time, each pass must LOAD and STORE both values.</p>
+  <p>Starting from product 0 and counter 3, the first pass leaves (product, counter) = (6, 2), the second (12, 1), and the third (18, 0). JZ then skips the JMP and fetches HALT at address 8. The first two passes execute eight instructions each; the final pass executes seven, followed by HALT: <b>8 + 8 + 7 + 1 = 24 instructions</b>. If the counter began at 0, this particular loop would still run once before testing it.</p>
 
   <h3 class="part">What is an "execution context"?</h3>
   <p>Branches showed that a program's place is in PC, not in the physical position of an instruction. Now suppose we pause NIB-8 and later want it to continue. Which changing values must survive the pause? It depends on <i>where</i> we stop. At a clean <b>instruction boundary</b> (between an execute and the next fetch), the CPU's essential state is small:</p>
@@ -612,7 +616,7 @@
 
 <section class="lesson" id="wrap" data-toc="Putting it together" data-n="✓">
   <div class="lesson-h"><div class="kicker">Unit 1 · Summary</div><h2>Putting it together</h2></div>
-  <p>Explain the whole machine aloud using these two chains as prompts. When every arrow feels obvious, you're ready for Unit 2.</p>
+  <p>Use <code>LOAD 8</code> as a final test. Explain aloud how the machine finds the instruction, reads M[8], and changes ACC at the execute edge. The two chains below are prompts: if an arrow seems mysterious, retrace that part in the datapath figure.</p>
   <p style="margin-bottom:4px"><b>Data path</b>: a typical arithmetic result, from operands to a stored value.</p>
   <div class="chain"><span>bit patterns in registers and memory</span><i>→ selected by muxes as</i><span>operands</span><i>→ transformed by the</i><span>ALU</span><i>→</i><span>result</span><i>→ written back at the</i><span>clock edge</span></div>
   <p style="margin-bottom:4px"><b>Control path</b>: what decides which values move.</p>
