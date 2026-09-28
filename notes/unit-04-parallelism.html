@@ -85,7 +85,7 @@
 <header class="hero">
   <div class="kicker">Unit 4 · Lessons 16–19</div>
   <h1>Add <em>parallelism</em></h1>
-  <p class="lede">Unit 3 squeezed every drop of independence out of <i>one</i> instruction stream. This unit adds more: more instruction streams on more cores, more hardware contexts sharing one core, and more data elements per instruction. Each is a different kind of parallelism, and each brings a new problem. Copies can disagree, operations can appear in surprising orders, threads compete for shared resources, and array lengths don't divide evenly.</p>
+  <p class="lede">Unit 3 found independent instructions within one thread. Eventually, dependencies and limited hardware leave little more to find there. This unit looks for work in other threads and in the elements of an array. We will put threads on separate cores, let them share one core, and group several data elements into one instruction. Each step gives the hardware more work to choose from, but also gives us a new question about sharing or coordination.</p>
   <dl class="outcome">
     <dt>You'll be able to</dt><dd>Tell apart multiple cores, multiple hardware contexts and multiple vector elements. Explain how cached copies of shared memory stay coherent, why that still isn't enough to order operations, and how software establishes the ordering it needs.</dd>
     <dt>Carries over</dt><dd>Caches and lines (Lesson 10), store buffers and retirement (Lesson 15), software threads and saved contexts (Lesson 7), issue ports and ILP (Lesson 13).</dd>
@@ -111,7 +111,8 @@
   </div>
 
   <h3 class="part">More cores, one memory</h3>
-  <p>A <b>multicore</b> processor puts several complete cores in one package, possibly spread across multiple dies (chiplets, which Unit 6 returns to). Each has its own PC, registers, pipeline and private caches, so each can run a different software thread at full speed. What they share is further out: usually a last-level cache, the on-chip interconnect, the memory controllers and the DRAM bandwidth. "Shared memory" means every core can <i>address</i> the same bytes. It doesn't mean every access costs the same, or that the caches are physically shared.</p>
+  <p>A <b>multicore</b> processor puts several cores in one package, sometimes on separate dies called chiplets (Unit 6 returns to them). Each core has its own PC, registers and pipeline, so it can run a different software thread. Caches nearest the cores are often private; farther out, the cores typically share a last-level cache, an interconnect, memory controllers and DRAM bandwidth.</p>
+  <p>When we say the cores share memory, we mean they can <i>address</i> the same bytes. It does not mean every access takes the same time. In the figure, each core reaches its nearby L1 before going through the shared interconnect. If two cores read the same address, both private caches may keep a copy. That is useful for speed, but it raises the question of what happens when one core writes.</p>
   <figure class="fig"><div class="sc">
     <svg viewBox="0 0 760 236" role="img" aria-label="Four cores, each with private L1 and L2, connected by an interconnect to a shared L3 and memory controller">
       <g id="mcCores"></g>
@@ -119,10 +120,11 @@
       <rect x="20" y="174" width="500" height="44" class="cu"/><text x="270" y="194" class="mid bd">shared L3 cache</text><text x="270" y="210" class="mid xs">shared capacity: one core's data can crowd out another's</text>
       <rect x="540" y="174" width="200" height="44" class="te"/><text x="640" y="194" class="mid bd">memory controllers</text><text x="640" y="210" class="mid xs">shared DRAM bandwidth</text>
     </svg></div>
-    <figcaption><b>Private near the core, shared further out.</b> This is one common organization; which cache levels are private or shared varies by design. Near-core caches are fast mainly because they're small, physically close and designed for low latency; being private also avoids contention with other cores. Privacy is what creates this lesson's problem: two private caches can each hold a copy of the same address.</figcaption></figure>
+    <figcaption><b>Private near the core, shared further out.</b> The exact cache levels vary by design. Near-core caches are fast because they are small, close and built for low latency; private ownership also avoids contention. Follow two paths from the cores to the shared L3: they can each cache the same address before either needs to travel that far again.</figcaption></figure>
 
   <h3 class="part">How much can more cores help? Amdahl's bound</h3>
-  <p>Split a fixed task across P equally fast cores. If a fraction <i>s</i> of the baseline single-core execution <b>time</b> must run serially (setup, a final combine step, a part nobody parallelized; not a fraction of source lines or of operations), then even with perfect scaling the best possible speedup is</p>
+  <p>Before dealing with shared data, check how much faster extra cores could make a <i>fixed</i> task. Suppose it takes 100 time units on one core: 10 units must run alone, while 90 can be divided evenly. Four cores reduce the parallel part to 90/4 = 22.5 units, but the serial 10 remain. Ideal time is therefore <b>32.5</b> units, for a speedup of 100/32.5 ≈ <b>3.08×</b>.</p>
+  <p>This is <b>Amdahl's bound</b>. Let <i>s</i> be the serial fraction of the original <i>execution time</i> (not of source lines or operations), and <i>P</i> the number of equally fast cores. If the parallel fraction divides perfectly and adds no overhead, then</p>
   <p style="text-align:center;font:600 17px var(--mono)">speedup ≤ 1 / (s + (1 − s) / P)</p>
   <figure class="fig"><div class="widget">
     <div class="calc">
@@ -131,17 +133,16 @@
     </div>
     <div class="sc" style="padding:8px 0 0"><svg id="amSvg" viewBox="0 0 760 250" role="img" aria-label="Amdahl speedup curve against number of cores" style="min-width:560px"></svg></div>
     <p class="msg" id="amOut"></p>
-  </div><figcaption><b>The serial part becomes the whole story.</b> With 10% serial work, 4 cores give at most about 3.1×, and no number of cores can beat 10×. This is an upper bound under ideal assumptions. Real synchronization, load imbalance and shared-bandwidth limits pull you further below it. Changing the <i>algorithm</i> changes s, so the bound describes one specific task, not a permanent law about an application.</figcaption></figure>
-  <p>For example, suppose the task takes 100 time units on one core: 10 units are serial and 90 can be divided evenly. On four cores the ideal time is 10 + 90/4 = <b>32.5</b> units, so the speedup is 100/32.5 ≈ <b>3.08×</b>, not 4×. With infinitely many cores the parallel 90 approaches zero, but the 10 serial units remain, setting the 10× ceiling.</p>
+  </div><figcaption><b>The serial part becomes the limit.</b> Set s to 10% and increase P. The curve approaches 10× because the original 10 serial time units cannot shrink. Synchronization, uneven work and shared-bandwidth limits can lower real speedup further. A different algorithm may change s; the curve describes this division of one task, not a fixed property of the application.</figcaption></figure>
 
   <h3 class="part">The new problem: copies that disagree</h3>
   <p>Suppose cores A and B have both cached the word x = 0. A writes x = 1 into its own cache. If B keeps reading its old copy forever, the two cores no longer share memory in any useful sense.</p>
-  <p><b>Cache coherence</b> keeps the copies of a <i>single memory location</i> consistent: writes to it have one order, and a core whose cached line has been invalidated cannot use its old copy for a later read. Once A's write has taken ownership in our model, B's next read must miss and obtain the current value. Coherence does not itself make B run another load, or order accesses to <i>different</i> addresses. The common way to implement it is an <b>invalidation protocol</b>, with one rule:</p>
+  <p><b>Cache coherence</b> addresses this problem one location at a time. Writes to x have one agreed order. When A takes ownership to write x = 1, B's old cache line becomes <b>invalid</b>: B cannot use those old bits for its next load of x. That load misses and obtains the current value. A common way to enforce this is an <b>invalidation protocol</b>, built around one rule:</p>
   <div class="insight"><b>Many readers, or one writer, per line, never both.</b> Before a core may write a line, every other copy is invalidated. After that, a reader that misses gets the current data, even if it lives in another core's cache rather than in memory.</div>
-  <p>Coherence works on whole <b>cache lines</b>, not individual variables. Keep that in mind, because it causes false sharing below. It also says nothing about the order of writes to <i>different</i> addresses. That's the next lesson.</p>
+  <p>The permission applies to a whole <b>cache line</b>, not just x. That detail will explain false sharing. Coherence also does not make B run another load, or by itself order accesses to <i>different</i> addresses; we will need a separate rule for those in Lesson 17.</p>
 
   <h3 class="part">A deliberately small protocol: MSI</h3>
-  <p>Each cache labels each line it knows about with one of three states:</p>
+  <p>How does a cache know whether it may use its copy? In the small <b>MSI</b> protocol, each cached line carries a state that describes its permission. The state is separate from the data value stored in the line:</p>
   <div class="tbl"><table>
     <tr><th>State</th><th>Meaning in this cache</th><th>May read?</th><th>May write?</th></tr>
     <tr><td class="m"><span class="badge b-I">I</span> Invalid</td><td>No usable copy. Old bits may physically remain, but must not be used.</td><td>No: miss</td><td>No</td></tr>
@@ -149,12 +150,13 @@
     <tr><td class="m"><span class="badge b-M">M</span> Modified</td><td>The <i>only</i> valid copy, possibly newer than memory.</td><td>Yes</td><td>Yes</td></tr>
   </table></div>
   <figure class="fig"><div class="sc"><svg id="msiSvg" viewBox="0 0 760 250" role="img" aria-label="MSI state machine for one line in one cache"></svg></div>
-    <figcaption><b>One line, as seen by one cache.</b> Teal arrows are this core's own reads and writes. Copper arrows are requests from <i>other</i> cores that this cache observes. Real protocols add more states (the E in MESI, the O in MOESI), transient states for requests in flight, and acknowledgements. MSI keeps just the core invariant.</figcaption></figure>
+    <figcaption><b>Follow one cache's permission.</b> Teal arrows are this core's reads and writes; copper arrows are requests from another core. A read can move I → S. A write needs M, so a writer with S must first make other copies invalid. The diagram shows stable states after requests complete; real protocols also track requests in flight.</figcaption></figure>
   <div class="assume">Two cores with private write-back caches. One 16-byte line holds two 4-byte words, x and y (in the "separate lines" layout, y moves to its own line). Each transaction completes before the next begins: no evictions, transient states or simultaneous requests. A read that misses enters S, even if no one else has the line (that's MSI, not MESI). If the other cache holds the line in M, a read makes it supply the data <i>and</i> update memory, and both end in S. A write steals ownership: the data moves cache to cache, and memory may stay stale.</div>
 
   <h3 class="part">Try it: two caches, one line</h3>
-  <p>Trace the textbook preset as a pair of states (A, B). Both start <b>(I, I)</b>. A's read gives <b>(S, I)</b>; B's read gives <b>(S, S)</b>. A then requests ownership to write x = 1, invalidating B and leaving <b>(M, I)</b>. Memory can still hold 0 because A has the only valid copy. When B reads again, A supplies 1 and writes it back in this model, leaving <b>(S, S)</b> with memory updated to 1. The preset's final step has B write x = 2: it invalidates A, leaves <b>(I, M)</b>, and memory still holds 1. The state tells you who may use a copy; the data value tells you what the read returns.</p>
-  <p>Click reads and writes, or play a preset. Watch the states, where the current value actually lives, and the counters.</p>
+  <p>Trace the textbook preset using a pair of states, (A, B). Both begin <b>(I, I)</b>. A reads x and gets a copy: <b>(S, I)</b>. B reads x too: <b>(S, S)</b>. Two readers are allowed.</p>
+  <p>Now A writes x = 1. It requests ownership, invalidates B, and ends at <b>(M, I)</b>. Memory may still say 0; A's M copy is the current one. When B reads again, it misses. In this model A supplies 1 and writes it back, so the pair returns to <b>(S, S)</b> and memory becomes 1. Finally B writes x = 2, leaving <b>(I, M)</b> while memory still says 1. Throughout the trace, the state says <i>who may use a copy</i>; the data value says <i>what a read returns</i>.</p>
+  <p>Play the preset below, then try your own reads and writes. Watch where the current value lives after each step, as well as the state letters.</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 10px"><span class="readout">Layout:</span><div class="seg" role="group" aria-label="Layout"><button data-lay="same" aria-pressed="true">x and y in one line</button><button data-lay="sep">separate lines</button></div>
       <span class="readout" style="margin-left:8px">Presets:</span><button data-pre="text">textbook trace</button><button data-pre="false">false sharing</button></div>
@@ -170,7 +172,7 @@
   <figure class="fig"><div class="sc"><svg id="fsSvg" viewBox="0 0 760 180" role="img" aria-label="False sharing: two counters in one line ping-pong between cores; padded counters stay put"></svg></div>
     <figcaption><b>The line ping-pongs.</b> A classic real-world case is per-thread counters stored next to each other in an array. The fix is to pad or align each thread's hot data to its own line, or to change which data each thread writes. Padding costs memory and can hurt locality, so use the <i>actual</i> machine's line size (often 64 bytes; our 16 is a teaching choice).</figcaption></figure>
 
-  <div class="worked"><p><b>What an extra state buys: MESI's E.</b> In our MSI model, a read miss always enters S, even when no other cache has the line. If that core then writes, it must send an ownership request so any other copies are invalidated, although there are none. MESI adds <b>Exclusive (E)</b>: a clean line that this cache knows no other cache holds. A lone reader receives E, and a later local write changes E to M <i>silently</i>, with no message. That saves a request for the very common read-then-write pattern on private data. (MOESI adds <b>Owned (O)</b>: a dirty line shared with others, where one designated owner supplies the data and is responsible for writing it back, so memory needn't be updated when a modified line becomes shared. Our MSI explorer doesn't do this: its M → S read updates memory.)</p></div>
+  <div class="worked"><p><b>What an extra state buys: MESI's E.</b> Our MSI model sends an ownership request when a core reads a line and later writes it, even if no other core has a copy. MESI adds <b>Exclusive (E)</b> for a clean line known to be held by only one cache. That core can change E → M on a local write without a message. For private data, a common read-then-write therefore avoids a needless request.</p><p>MOESI adds <b>Owned (O)</b> for a dirty line shared with readers. Its designated owner supplies the data and remains responsible for writing it back, so memory need not be updated when a modified line becomes shared. The MSI explorer takes the simpler route: its M → S read updates memory.</p></div>
 
   <div class="predict"><div class="ph"><b>Predict</b><span>Track permission, then data.</span></div><ol>
     <li>In the textbook trace, after "A writes x = 1": what are A's and B's states, what does memory hold, and where is the current value?
