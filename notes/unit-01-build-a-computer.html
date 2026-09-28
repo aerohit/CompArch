@@ -217,10 +217,10 @@
     <div class="c3"><span class="l">New state</span>Still none. Outputs depend only on the current inputs.</div>
     <div class="c4"><span class="l">Cost</span>Propagation delay. More functions need more gates, which means more area and energy.</div>
   </div>
-  <p>A <b>combinational circuit</b> computes its outputs purely from its <i>current</i> inputs. There's no history and no memory. When an input changes, the outputs change too, after a short physical delay while the signals settle. Everything in this lesson is combinational.</p>
+  <p>Lesson 1 gave us patterns that can stand for numbers. But writing <code>0111 + 0001 = 1000</code> on paper does not make any wires calculate it. We need a circuit that turns input bits into output bits. A <b>combinational circuit</b> does exactly that: its outputs depend only on its <i>current</i> inputs. Change an input and, after a short physical delay while the signals settle, the output changes too. It has no memory of earlier inputs.</p>
 
   <h3 class="part">Five gates on a bench</h3>
-  <p>A <b>gate</b> is a tiny circuit (a handful of transistors) that computes one logical function. Toggle the inputs and watch each gate's output lamp. The truth table highlights the row you're on.</p>
+  <p>A <b>gate</b> is a tiny circuit (a handful of transistors) that computes one logical function. Set A = 1 and B = 1 in the bench below. OR lights up, but XOR does not; change B to 0 and both light up. The truth table highlights each combination as you try it.</p>
   <figure class="fig"><div class="widget">
     <div class="grid2">
       <div class="sc" style="padding:0"><svg id="bench" viewBox="0 0 470 300" role="img" aria-label="Logic gates NOT, AND, OR, XOR and NAND with live outputs" style="min-width:380px"></svg></div>
@@ -231,7 +231,7 @@
   <p>These gates work on one bit at a time. To apply AND to two bytes, line up their bits and use an AND gate for each position: <code>00001100 AND 00001010 = 00001000</code>. The 8's place is 1 in both inputs, so it is 1 in the result; all other positions give 0. This is a <b>bitwise</b> operation, different from treating the whole bytes as numbers and adding them.</p>
 
   <h3 class="part">The multiplexer: choosing a source</h3>
-  <p>A <b>multiplexer</b> (mux) has several data inputs and a <b>select</b> input that picks which one passes through. It's the most important "boring" part in a processor. Every time the same wire needs to carry a value from different places at different times, a mux sits there, and the control logic flips its select signal.</p>
+  <p>A <b>multiplexer</b> (mux) has several data inputs and a <b>select</b> input that picks which one passes through. In the demo, A stays 7 and B stays 12; changing S alone changes which value reaches the output. A processor uses the same choice when one input must receive values from different sources at different times. Later, for example, a mux will let our memory receive either the address of an instruction or the address of data.</p>
   <figure class="fig narrow"><div class="widget">
     <div class="sc" style="padding:0"><svg id="muxSvg" viewBox="0 0 520 170" role="img" aria-label="A two-input multiplexer choosing between 7 and 12" style="min-width:420px"></svg></div>
     <div class="ctrl"><button id="muxS" class="pri">S = 0</button><span class="readout">Flip the select line. The data inputs never change, only which one reaches the output.</span></div>
@@ -239,7 +239,8 @@
   </div><figcaption><b>A 2-to-1 mux on 8-bit values.</b> S = 0 passes A, and S = 1 passes B. Wider muxes (4-to-1, 8-to-1) just use more select bits.</figcaption></figure>
 
   <h3 class="part">Building addition: the full adder</h3>
-  <p>Adding binary numbers column by column is like decimal addition: each column adds two digits plus any carry from the column to its right. For example, 1 + 1 is binary <code>10</code>: write sum bit 0 in this column and carry 1 into the next. If a carry also came in, 1 + 1 + 1 is binary <code>11</code>: write 1 and carry 1. A <b>full adder</b> does this for one column, taking A, B and carry-in as inputs. Its two outputs obey ordinary arithmetic <code>A + B + C<sub>in</sub> = sum + 2 × C<sub>out</sub></code>. Gates implement them with these Boolean formulas:</p>
+  <p>Adding binary numbers column by column works like decimal addition: each column adds two digits and any carry from the column to its right. For example, 1 + 1 is binary <code>10</code>: write 0 in this column and carry 1 into the next. If another 1 came in as a carry, 1 + 1 + 1 is <code>11</code>: write 1 and carry 1.</p>
+  <p>A <b>full adder</b> handles one such column. It takes A, B and carry-in, then produces a sum bit and carry-out. The two outputs must account for the value of the three inputs: <code>A + B + C<sub>in</sub> = sum + 2 × C<sub>out</sub></code>. Gates implement those outputs with these Boolean formulas:</p>
   <p style="text-align:center;font-family:var(--mono);font-size:15px">sum = A ⊕ B ⊕ C<sub>in</sub> &nbsp;&nbsp;&nbsp; C<sub>out</sub> = A·B + C<sub>in</sub>·(A ⊕ B)</p>
   <p>In these <i>Boolean</i> formulas, ⊕ means XOR, · means AND, and + means OR; that last + is <i>not</i> numerical addition. Read the carry formula in words: a carry comes out if both inputs are 1 (the column <b>generates</b> a carry), or if exactly one is 1 and a carry came in (the column <b>propagates</b> it). Toggle the inputs and follow the highlighted wires:</p>
   <figure class="fig"><div class="widget">
@@ -253,10 +254,11 @@
     <div class="rip" id="rip"></div>
     <div class="ctrl"><button id="ripGo" class="pri">Watch it ripple</button><label class="rl" for="ripT">time elapsed: <span id="ripTv">9</span> gate delays<input type="range" id="ripT" min="0" max="9" value="9"></label></div>
     <p class="readout" id="ripOut" style="margin:10px 0 0"></p>
-  </div><figcaption><b>Hatched cells haven't settled yet.</b> In the worst case, the carry <i>out of</i> column <i>i</i> settles only after about 2<i>i</i> + 3 gate delays, so the final carry settles after 9. A 64-bit ripple adder would need over 100 gate delays. Real CPUs use faster carry structures instead, such as <i>carry-lookahead</i> adders, which compute carries in parallel using more gates. It's the first of many times we'll trade extra hardware for less waiting.</figcaption></figure>
+  </div><figcaption><b>Hatched cells haven't settled yet.</b> Count columns from the right, starting at <i>i</i> = 0. In the worst case, the carry <i>out of</i> column <i>i</i> settles only after about 2<i>i</i> + 3 gate delays, so the fourth column's carry settles after 9. A 64-bit ripple adder would need over 100 gate delays. Real CPUs use faster carry structures instead, such as <i>carry-lookahead</i> adders, which compute carries in parallel using more gates. It's the first of many times we'll trade extra hardware for less waiting.</figcaption></figure>
 
   <h3 class="part">The ALU: many operations, one chosen result</h3>
-  <p>An <b>arithmetic logic unit</b> (ALU) offers several operations, such as add, subtract, AND, OR and XOR. In the circuit drawn here, the bitwise units and one adder work in parallel, and an output mux chooses the result requested by the <b>operation-select</b> signal. The adder is shared: for subtraction, the select signal makes it calculate A + (NOT B) + 1, with the "+1" entering as its first carry-in. So choosing SUB changes the adder's inputs as well as the mux selection. Real ALUs make different choices about sharing circuits and disabling unused work.</p>
+  <p>An adder solves one problem, but a program will need to choose among operations. An <b>arithmetic logic unit</b> (ALU) offers add, subtract, AND, OR and XOR. Try A = 23 and B = 19 below: ADD gives 42; SUB gives 4. The input values stay put. The <b>operation-select</b> signal determines which calculation's result reaches the output.</p>
+  <p>In this circuit, the bitwise units and one adder work in parallel, then an output mux makes that choice. The adder is shared: for subtraction, the select signal makes it calculate A + (NOT B) + 1, with the "+1" entering as its first carry-in. Choosing SUB therefore changes the adder's inputs <i>and</i> the mux selection. Real ALUs make different choices about sharing circuits and disabling unused work.</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 10px"><label class="rl" for="aluA">A (0–255)<input id="aluA" type="number" min="0" max="255" value="23"></label><label class="rl" for="aluB">B (0–255)<input id="aluB" type="number" min="0" max="255" value="19"></label>
       <div class="seg" role="group" aria-label="ALU operation"><button data-op="ADD" aria-pressed="true">ADD</button><button data-op="SUB">SUB</button><button data-op="AND">AND</button><button data-op="OR">OR</button><button data-op="XOR">XOR</button></div></div>
@@ -266,7 +268,7 @@
   <p>The demo's <b>Z</b> output is 1 when the chosen ALU result is zero. It is a combinational indication, not a value stored for later. Our NIB-8 machine in Lesson 4 does not have a saved zero flag: its <code>JZ</code> instruction checks whether the value already held in ACC is zero.</p>
 
   <h3 class="part">What we still can't do</h3>
-  <p>Change an input, and after the delay the output changes. The adder doesn't keep its old answer anywhere. It's a <b>calculator circuit</b>, not yet a machine that can carry out a <i>sequence</i> of steps, because nothing holds a result so the next step can use it. That missing ingredient is the next lesson.</p>
+  <p>Suppose the ALU has produced 42 and the next step needs that 42. Where will it find the value after we change the inputs for the next operation? The ALU doesn't keep its old answer; after the delay, its output changes with its inputs. We have built a <b>calculator circuit</b>, but a sequence of steps needs somewhere to hold each result. Lesson 3 adds that storage.</p>
   <div class="insight">This split between <b>parts that transform values</b> (ALUs, adders) and <b>parts that hold values</b> (registers, memories) survives all the way to GPUs. When we later ask why a chip is slow, the limit might be arithmetic, dependencies between operations, control flow, or moving data between the two kinds of part. Later units teach how to tell which.</div>
 
   <div class="predict"><div class="ph"><b>Predict</b><span>Trace it on paper first.</span></div><ol>
