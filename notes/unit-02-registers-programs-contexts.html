@@ -64,7 +64,7 @@
 <header class="hero">
   <div class="kicker">Unit 2 · Lessons 5–7</div>
   <h1>Registers, programs &amp; <em>execution contexts</em></h1>
-  <p class="lede">Unit 1 ended with a machine that works but chokes on its single accumulator. This unit gives it many registers and moves to a real instruction set (RISC-V). Then it separates three things that are easy to blur: the <b>contract</b> software relies on, the <b>hardware</b> that implements it, and the <b>conventions</b> that let pieces of software cooperate and be paused and resumed.</p>
+  <p class="lede">Unit 1's machine can calculate, but it can keep only one working value in its accumulator. Where does an earlier result go when the next calculation needs that space? We start by giving the machine registers, then use a real instruction set (RISC-V) to explore three layers: the <b>contract</b> a program relies on, the <b>hardware</b> that carries it out, and the <b>conventions</b> that let programs call functions and pause threads.</p>
   <dl class="outcome">
     <dt>You'll be able to</dt><dd>Trace where every value lives in a register machine, show that one instruction set can have very different hardware, and explain exactly what must be saved to return from a function or to resume a paused thread.</dd>
     <dt>Carries over</dt><dd>Everything from Unit 1: state, clock edges, fetch–decode–execute, PC, and the idea of a saved context.</dd>
@@ -87,10 +87,12 @@
     <div class="c4"><span class="l">Cost</span>Storage, read/write ports, wiring, and instruction bits to name registers. Registers are still finite, so values sometimes spill to memory.</div>
   </div>
 
+  <p>First, count what the one-accumulator machine has to do. Then we can see exactly which memory trips a register machine avoids.</p>
+
   <h3 class="part">The accumulator bottleneck, measured</h3>
   <p>Take a small calculation with values a = 10, b = 6, c = 3:</p>
   <p style="text-align:center;font:600 17px var(--mono)">y = (a + b) + (a − c) = 16 + 7 = 23</p>
-  <p>Suppose we evaluate the two parenthesized parts separately. On NIB-8, computing <code>a − c</code> overwrites the <code>a + b</code> already in ACC. To retain that first result, we <b>store it in a temporary memory location</b> named <code>t</code>, then read it back for the final ADD. The names <code>a</code>, <code>b</code>, <code>c</code>, <code>t</code> and <code>y</code> stand for distinct memory addresses; a real NIB-8 program would replace each name with its four-bit address.</p>
+  <p>Suppose we evaluate the two parenthesized parts separately. After <code>a + b</code>, ACC holds 16. But computing <code>a − c</code> will overwrite ACC. Where can 16 wait? NIB-8 must <b>store it in a temporary memory location</b>, <code>t</code>, and read it back for the final ADD. The names <code>a</code>, <code>b</code>, <code>c</code>, <code>t</code> and <code>y</code> stand for distinct memory addresses; a real NIB-8 program would use their four-bit addresses.</p>
   <div class="asm">
     <div class="r"><span class="a">0</span><span class="i">LOAD a</span><span class="c">ACC = 10</span></div>
     <div class="r"><span class="a">1</span><span class="i">ADD b</span><span class="c">ACC = 16</span></div>
@@ -100,10 +102,12 @@
     <div class="r"><span class="a">5</span><span class="i">ADD t</span><span class="c">ACC = 7 + 16 = 23</span></div>
     <div class="r"><span class="a">6</span><span class="i">STORE y</span><span class="c">write the answer</span></div>
   </div>
-  <p>That's seven instructions with <b>five data reads and two data writes</b>. Count the reads at LOAD a, ADD b, LOAD a, SUB c and ADD t; the two STORE instructions are the writes. Three accesses (STORE t, the second read of a, and ADD t) arise because ACC can hold just one working value. Reordering this particular arithmetic as <code>a + b + a − c</code> could avoid the temporary, so these counts describe <i>this evaluation order</i>, not a lower bound for all ways to compute y. Keeping the expression's structure fixed makes the storage difference visible.</p>
+  <p>Count the data accesses: <code>LOAD a</code>, <code>ADD b</code>, the second <code>LOAD a</code>, <code>SUB c</code> and <code>ADD t</code> make <b>five reads</b>; the two STORE instructions make <b>two writes</b>. Three of those accesses—<code>STORE t</code>, the second read of <code>a</code>, and <code>ADD t</code>—come from having only one place for a working value.</p>
+  <p>This is a comparison of storage choices for <i>this evaluation order</i>. Reordering the arithmetic as <code>a + b + a − c</code> could avoid the temporary. We keep the parenthesized parts separate so the cost of preserving both results is easy to see.</p>
 
   <h3 class="part">A register file</h3>
-  <p>A <b>register file</b> is a small array of fast registers selected by number. A <b>port</b> is an independent path for one access. The file drawn here has two read ports to supply two operands at once and one write port to accept one result at a clock edge. In <code>add x28, x5, x6</code>, <code>x5</code> and <code>x6</code> name the <b>source</b> registers (<code>rs1</code> and <code>rs2</code>), while <code>x28</code> names the <b>destination</b> (<code>rd</code>). The numbers 5 and 6 are register numbers, not the values being added: if x5 holds 10 and x6 holds 6, x28 receives 16. Real register files vary in their port counts.</p>
+  <p>Give each intermediate result its own nearby place to wait. A <b>register file</b> is a small array of fast registers, each selected by number. In <code>add x28, x5, x6</code>, <code>x5</code> and <code>x6</code> name the <b>source</b> registers (<code>rs1</code> and <code>rs2</code>); <code>x28</code> names the <b>destination</b> (<code>rd</code>). These numbers identify registers, not the values in them. If x5 holds 10 and x6 holds 6, the result written to x28 is 16.</p>
+  <p>Follow that instruction through the figure. Two <b>read ports</b>—independent paths out of the file—supply 10 and 6 to the ALU together. A write port carries 16 back into x28 at the clock edge. Real register files can have different port counts, but this two-read, one-write arrangement explains how an arithmetic instruction can use two register operands without reading data memory.</p>
   <figure class="fig"><div class="sc">
     <svg viewBox="0 0 760 250" role="img" aria-label="Register file with two read ports feeding the ALU and one write port for the result">
       <rect x="250" y="20" width="200" height="210" class="te"/><text x="350" y="42" class="mid hd">Register file</text>
@@ -118,10 +122,10 @@
       <path d="M640 110 H700 V244 H20 V210 H40" class="wc"/><text x="690" y="236" class="end sm tcu">16 goes back to x28</text>
     </svg></div>
     <figcaption><b>Two reads and one write every cycle.</b> Selecting a register by a 5-bit number is fast because the array is tiny and sits right next to the ALU. That is why intermediate values belong here and not in memory.</figcaption></figure>
-  <p>More registers aren't free. Each one costs storage and wiring, and every instruction needs more bits to name them: 32 registers need 5 bits per register field. The register file's delay also grows with its size and port count. That's why general-purpose register counts stay modest: baseline x86-64 has 16, AArch64 31, and RISC-V 32 (16 in its RV32E variant). (Intel's APX extension raises x86-64's count to 32.) These are <b>architectural</b> register names, the ones instructions can mention; the hardware may hold them in a larger physical register file, which later units explore.</p>
+  <p>Why not add hundreds of registers? Each one needs storage and wiring, and instructions need bits to name them: 32 choices require 5 bits in each register field. A larger file, especially one with more ports, can also be slower to access. RV32I therefore gives programs 32 <b>architectural</b> register names, x0–x31. They are the names instructions can mention; the hardware may use a larger physical register file internally, as Unit 3 will show.</p>
 
   <h3 class="part">Stepping onto a real instruction set: RV32I</h3>
-  <p>From here on we use <b>RISC-V</b>, specifically its 32-bit base integer instruction set, <b>RV32I</b>. An <b>instruction set architecture</b> (ISA) is the set of instructions and visible machine rules a program can rely on; Lesson 6 will distinguish that contract from the hardware underneath. RV32I is a real, openly documented ISA with 32-bit integer registers. Here is what changes from NIB-8:</p>
+  <p>To make the comparison concrete, we now move from the toy NIB-8 machine to <b>RISC-V</b>, specifically its 32-bit base integer instruction set, <b>RV32I</b>. An <b>instruction set architecture</b> (ISA) describes the instructions and visible machine rules a program can rely on. RV32I is a real, openly documented ISA; Lesson 6 will look at the hardware choices that can implement it. Here are the rules that change:</p>
   <div class="tbl"><table>
     <tr><th>Feature</th><th>NIB-8</th><th>RV32I</th></tr>
     <tr><td>Working registers</td><td>1 (ACC)</td><td>32, named <code>x0</code>–<code>x31</code>. <code>x0</code> always reads 0 and ignores writes.</td></tr>
@@ -144,7 +148,7 @@
   <p>A signed immediate can be negative: <code>addi sp, sp, -16</code> subtracts 16 from the stack pointer, as the call example in Lesson 7 will do. In contrast, <code>lw x6, 4(x10)</code> adds a positive offset to its base register. Both use a number encoded in the instruction; neither gets that number by reading data memory.</p>
 
   <h3 class="part">Four different kinds of number in one instruction</h3>
-  <p>A load instruction mixes several kinds of number, and they must be kept apart. Take <code>lw x6, 4(x10)</code> with x10 = 0x100. The offset 4 is a decimal byte count, so adding it to the hexadecimal address 0x100 gives 0x104; the result is an <b>address</b>, not the value to load.</p>
+  <p>What does <code>lw x6, 4(x10)</code> actually load? Suppose x10 holds 0x100. The offset 4 is a decimal byte count, so 0x100 + 4 = 0x104. That sum is an <b>address</b>, not the data. The load reads the word stored there and puts it in x6. Follow each number's role in the figure.</p>
   <figure class="fig"><div class="sc">
     <svg viewBox="0 0 760 256" role="img" aria-label="Anatomy of lw x6, 4(x10): register number, immediate offset, base register contents, effective address, loaded data">
       <g style="font-size:22px" class="bd"><text x="150" y="34" class="mid" style="font-size:22px">lw</text><text x="290" y="34" class="mid tcu" style="font-size:22px">x6,</text><text x="430" y="34" class="mid tpl" style="font-size:22px">4</text><text x="570" y="34" class="mid tte" style="font-size:22px">(x10)</text></g>
@@ -158,14 +162,15 @@
       <path d="M710 220 V238 H290 V150" class="wc dash" marker-end="url(#ahc)"/><text x="300" y="252" class="sm tcu">…and the loaded value 6 goes into x6</text>
     </svg></div>
     <figcaption><b>Five numbers, five roles.</b> 6 is a register number. 4 is an immediate, a constant baked into the instruction. 0x100 is the <i>contents</i> of x10. 0x104 is the <b>effective address</b> computed from them. The loaded word is whatever sits at 0x104, here b = 6. <code>lw</code> never loads the number 4 just because "4" appears in the instruction.</figcaption></figure>
-  <p>Because addresses name bytes, a 32-bit word occupies four consecutive addresses. These examples use a <b>little-endian</b> RISC-V memory system: the byte at the lowest address supplies the least significant eight bits. For example, storing the word <code>0x12345678</code> at address <code>0x104</code> puts byte <code>0x78</code> at 0x104, <code>0x56</code> at 0x105, <code>0x34</code> at 0x106 and <code>0x12</code> at 0x107. Reading a word from 0x104 assembles those four bytes back into <code>0x12345678</code>. The numeric value is the same; endianness determines its byte order in memory. (RISC-V instruction fetch is little-endian; a system can choose big-endian data memory, although these notes use little-endian data.)</p>
+  <p>The load reads four byte addresses because a 32-bit word contains four bytes. Which byte goes at the first address? In the <b>little-endian</b> data-memory layout used here, it is the least significant byte. Storing <code>0x12345678</code> at 0x104 therefore places <code>0x78</code> at 0x104, <code>0x56</code> at 0x105, <code>0x34</code> at 0x106 and <code>0x12</code> at 0x107.</p>
+  <p>Read the four bytes back as one word, and the value is still <code>0x12345678</code>. Endianness changes the order of bytes in memory, not the value of the assembled word. RISC-V instruction fetch is little-endian; systems may choose either byte order for data, so these examples explicitly use little-endian data.</p>
   <figure class="fig narrow"><div class="sc">
     <svg viewBox="0 0 560 130" role="img" aria-label="The word 0x12345678 stored little-endian at addresses 0x104 to 0x107">
       <g id="leBytes"></g>
     </svg></div><figcaption><b>Little-endian layout</b> of the word 0x12345678 at 0x104: bytes 78 56 34 12. The byte at the lowest address is the least significant; read from the highest address down to recover the value. (The word b = 6 in the load example above is stored the same way: 06 00 00 00.)</figcaption></figure>
 
   <h3 class="part">Try it: the same calculation, two machines</h3>
-  <p>Step through both versions and watch the memory-traffic counters. The register version keeps a in x5 the whole time, so it's never re-read, and both partial results stay in registers. The other side models <i>NIB-8's one-accumulator behavior</i> with larger, RV32I-like addresses so the two versions can show the same data locations. It is a comparison model, not a literal run on NIB-8's 16-word memory.</p>
+  <p>Before stepping, predict which accesses disappear if <code>a</code> and both partial results can stay in registers. Then watch the data-memory counters. The register version keeps <code>a</code> in x5, so it never re-reads it. The other side models <i>NIB-8's one-accumulator behavior</i> with larger, RV32I-like addresses so both versions can show the same data locations. It is a comparison model, not a literal run on NIB-8's 16-word memory.</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 12px"><div class="seg" role="group" aria-label="Machine"><button data-m="reg" aria-pressed="true">RV32I registers</button><button data-m="acc">Accumulator (NIB-8 style)</button></div></div>
     <div class="stepper">
@@ -178,7 +183,8 @@
   </div><figcaption><b>Same answer, less memory traffic:</b> 3 reads and 1 write instead of 5 and 2. That shows one benefit of registers. It doesn't prove a particular speedup, because the two machines differ in instruction width, clock and memory system, and a "memory access" later won't even mean "a trip to DRAM" (Unit 3's caches).</figcaption></figure>
 
   <h3 class="part">Registers are not variables</h3>
-  <p>The ISA knows nothing about the names in your source code. The <b>compiler</b> decides where each value lives at each moment. A variable might sit in a register for a while, be stored to memory, be kept in two places, or vanish entirely if it's optimized away. One register holds many different variables over a program's life. When a program needs more live values than there are registers, the compiler must <b>spill</b> some to memory and reload them later. (Real compilers first try to avoid this, for example by reordering computations so fewer values are live at once, or by recomputing a cheap value instead of saving it. The lesson stands: register pressure can create memory traffic.)</p>
+  <p>Source-code variable names do not appear in the ISA. The <b>compiler</b> decides where each value lives. In our calculation, x5 holds <code>a</code>; once <code>a</code> is no longer needed, the same register could hold an unrelated value. A variable might also live in memory, be copied in both places, or disappear if the compiler can compute the answer without storing it.</p>
+  <p>There is still a limit. If the program needs more values <i>alive at the same time</i> than it has available registers, some values must wait elsewhere. Saving a value to memory for later use is called a <b>spill</b>; using it again requires a load. Compilers try to reduce this pressure by reordering work or recomputing a cheap value. The figure shows why a register machine can still create data-memory traffic.</p>
   <figure class="fig"><div class="sc"><svg id="spillSvg" viewBox="0 0 760 170" role="img" aria-label="Ten live values competing for four registers: six are kept in memory"></svg></div>
     <figcaption><b>Register pressure.</b> Ten values are needed at once, but only four registers are free, so six have to live in memory. Assuming a fixed computation order, no recomputation and four available registers, that means extra loads, and stores for any value that doesn't already have a valid copy in memory: register pressure <i>can</i> create additional memory traffic. More registers relieve this. So does restructuring code so fewer values are live at the same time. GPUs face the same problem, and it's severe there (a later unit).</figcaption></figure>
 
@@ -194,7 +200,7 @@
     <li>A calculation needs 10 values alive at once but only 4 registers are free. Why does having registers still leave memory traffic?
       <details><summary>Show answer</summary><div class="ans"><p>If all ten values must be kept for later use, only four can occupy those registers at once. The others need another home, usually memory, and will be loaded when needed; a newly computed value may first have to be <b>spilled</b> there. Reordering the work or recomputing a cheap value can sometimes reduce these accesses. Register count alone does not determine the traffic.</p></div></details></li>
   </ol></div>
-  <p class="checkpoint">For any instruction, point at each number and say which it is: a register number, an immediate constant, a byte address, or the contents at that address.</p>
+  <p class="checkpoint">For any instruction, identify each number's job: register name, immediate constant, byte address, or data stored at an address. Then ask which working values must survive the next instruction. That question leads from registers to the execution rules in Lesson 6.</p>
 </section>
 
 <!-- =============================== LESSON 6 =============================== -->
