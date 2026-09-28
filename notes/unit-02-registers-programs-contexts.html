@@ -90,7 +90,7 @@
   <h3 class="part">The accumulator bottleneck, measured</h3>
   <p>Take a small calculation with values a = 10, b = 6, c = 3:</p>
   <p style="text-align:center;font:600 17px var(--mono)">y = (a + b) + (a − c) = 16 + 7 = 23</p>
-  <p>On NIB-8, the moment we compute a − c, the accumulator overwrites a + b. So we must <b>store it to a temporary memory location</b> and add it back later. Everything goes through memory:</p>
+  <p>Suppose we evaluate the two parenthesized parts separately. On NIB-8, computing <code>a − c</code> overwrites the <code>a + b</code> already in ACC. To retain that first result, we <b>store it in a temporary memory location</b> named <code>t</code>, then read it back for the final ADD. The names <code>a</code>, <code>b</code>, <code>c</code>, <code>t</code> and <code>y</code> stand for distinct memory addresses; a real NIB-8 program would replace each name with its four-bit address.</p>
   <div class="asm">
     <div class="r"><span class="a">0</span><span class="i">LOAD a</span><span class="c">ACC = 10</span></div>
     <div class="r"><span class="a">1</span><span class="i">ADD b</span><span class="c">ACC = 16</span></div>
@@ -100,10 +100,10 @@
     <div class="r"><span class="a">5</span><span class="i">ADD t</span><span class="c">ACC = 7 + 16 = 23</span></div>
     <div class="r"><span class="a">6</span><span class="i">STORE y</span><span class="c">write the answer</span></div>
   </div>
-  <p>That's seven instructions with <b>five data reads and two data writes</b>. Three of those accesses (STORE t, the re-read of a, and ADD t) exist only because there was nowhere else to keep a value. A clever programmer could reorder this particular sum as a + b + a − c and avoid the temporary. We keep the expression's structure fixed so the storage difference is visible.</p>
+  <p>That's seven instructions with <b>five data reads and two data writes</b>. Count the reads at LOAD a, ADD b, LOAD a, SUB c and ADD t; the two STORE instructions are the writes. Three accesses (STORE t, the second read of a, and ADD t) arise because ACC can hold just one working value. Reordering this particular arithmetic as <code>a + b + a − c</code> could avoid the temporary, so these counts describe <i>this evaluation order</i>, not a lower bound for all ways to compute y. Keeping the expression's structure fixed makes the storage difference visible.</p>
 
   <h3 class="part">A register file</h3>
-  <p>A <b>register file</b> is a small array of registers selected by number, built for speed. The one drawn here has <b>two read ports and one write port</b>, so one instruction can read two operands and write one result in the same cycle. (Real register files vary: wide cores have many more ports.) An instruction like <code>add x28, x5, x6</code> means "read registers 5 and 6, add them, write register 28". Every operand and the destination are named explicitly.</p>
+  <p>A <b>register file</b> is a small array of fast registers selected by number. A <b>port</b> is an independent path for one access. The file drawn here has two read ports to supply two operands at once and one write port to accept one result at a clock edge. In <code>add x28, x5, x6</code>, <code>x5</code> and <code>x6</code> name the <b>source</b> registers (<code>rs1</code> and <code>rs2</code>), while <code>x28</code> names the <b>destination</b> (<code>rd</code>). The numbers 5 and 6 are register numbers, not the values being added: if x5 holds 10 and x6 holds 6, x28 receives 16. Real register files vary in their port counts.</p>
   <figure class="fig"><div class="sc">
     <svg viewBox="0 0 760 250" role="img" aria-label="Register file with two read ports feeding the ALU and one write port for the result">
       <rect x="250" y="20" width="200" height="210" class="te"/><text x="350" y="42" class="mid hd">Register file</text>
@@ -121,7 +121,7 @@
   <p>More registers aren't free. Each one costs storage and wiring, and every instruction needs more bits to name them: 32 registers need 5 bits per register field. The register file's delay also grows with its size and port count. That's why general-purpose register counts stay modest: baseline x86-64 has 16, AArch64 31, and RISC-V 32 (16 in its RV32E variant). (Intel's APX extension raises x86-64's count to 32.) These are <b>architectural</b> register names, the ones instructions can mention; the hardware may hold them in a larger physical register file, which later units explore.</p>
 
   <h3 class="part">Stepping onto a real instruction set: RV32I</h3>
-  <p>From here on we use <b>RISC-V</b>, specifically its 32-bit base integer set, <b>RV32I</b>. It's a real, openly documented ISA, and it's clean enough to learn from. What changes from NIB-8:</p>
+  <p>From here on we use <b>RISC-V</b>, specifically its 32-bit base integer instruction set, <b>RV32I</b>. An <b>instruction set architecture</b> (ISA) is the set of instructions and visible machine rules a program can rely on; Lesson 6 will distinguish that contract from the hardware underneath. RV32I is a real, openly documented ISA with 32-bit integer registers. Here is what changes from NIB-8:</p>
   <div class="tbl"><table>
     <tr><th>Feature</th><th>NIB-8</th><th>RV32I</th></tr>
     <tr><td>Working registers</td><td>1 (ACC)</td><td>32, named <code>x0</code>–<code>x31</code>. <code>x0</code> always reads 0 and ignores writes.</td></tr>
@@ -130,7 +130,7 @@
     <tr><td>Instruction size</td><td class="m">1 byte</td><td class="m">4 bytes (so sequential fall-through advances PC by 4; a taken branch or jump sets another PC)</td></tr>
     <tr><td>Arithmetic operands</td><td>ACC and one memory word</td><td>register operands and, for some instructions (like <code>addi</code>), an immediate constant; no data-memory operands in arithmetic (load/store design)</td></tr>
   </table></div>
-  <p>We'll use just a few instructions:</p>
+  <p>Here <code>rd</code> means destination register, <code>rs1</code> and <code>rs2</code> mean source registers, and <code>imm</code> is an <b>immediate</b> constant encoded in the instruction itself. In a load or store, <code>base</code> names a register whose <i>contents</i> are added to the offset; <code>label</code> names a branch destination chosen by the assembler. We will use just these instructions:</p>
   <div class="tbl"><table>
     <tr><th>Instruction</th><th>Meaning</th></tr>
     <tr><td class="m">add rd, rs1, rs2</td><td>rd ← rs1 + rs2</td></tr>
@@ -143,7 +143,7 @@
   <div class="assume"><b>RV32I rules these examples rely on.</b> Arithmetic works on 32-bit values; <code>add</code>, <code>sub</code> and <code>addi</code> keep the low 32 bits of the result and <b>don't trap</b> on integer overflow. The <code>addi</code> immediate and the load/store offsets are <b>signed 12-bit</b> constants, −2048 to 2047. Offsets count <b>bytes</b>. The examples assume aligned, little-endian word accesses.</div>
 
   <h3 class="part">Four different kinds of number in one instruction</h3>
-  <p>A load instruction mixes several kinds of number, and they must be kept apart. Take <code>lw x6, 4(x10)</code> with x10 = 0x100:</p>
+  <p>A load instruction mixes several kinds of number, and they must be kept apart. Take <code>lw x6, 4(x10)</code> with x10 = 0x100. The offset 4 is a decimal byte count, so adding it to the hexadecimal address 0x100 gives 0x104; the result is an <b>address</b>, not the value to load.</p>
   <figure class="fig"><div class="sc">
     <svg viewBox="0 0 760 256" role="img" aria-label="Anatomy of lw x6, 4(x10): register number, immediate offset, base register contents, effective address, loaded data">
       <g style="font-size:22px" class="bd"><text x="150" y="34" class="mid" style="font-size:22px">lw</text><text x="290" y="34" class="mid tcu" style="font-size:22px">x6,</text><text x="430" y="34" class="mid tpl" style="font-size:22px">4</text><text x="570" y="34" class="mid tte" style="font-size:22px">(x10)</text></g>
@@ -157,7 +157,7 @@
       <path d="M710 220 V238 H290 V150" class="wc dash" marker-end="url(#ahc)"/><text x="300" y="252" class="sm tcu">…and the loaded value 6 goes into x6</text>
     </svg></div>
     <figcaption><b>Five numbers, five roles.</b> 6 is a register number. 4 is an immediate, a constant baked into the instruction. 0x100 is the <i>contents</i> of x10. 0x104 is the <b>effective address</b> computed from them. The loaded word is whatever sits at 0x104, here b = 6. <code>lw</code> never loads the number 4 just because "4" appears in the instruction.</figcaption></figure>
-  <p>Because addresses name bytes, that 32-bit word occupies four addresses. These examples use a <b>little-endian</b> RISC-V memory system: the byte at the lowest address supplies the least significant eight bits. The word 0x12345678 stored at 0x104 makes this visible: byte 0x104 holds 78, 0x105 holds 56, 0x106 holds 34 and 0x107 holds 12. (Instruction fetch in RISC-V is always little-endian; the execution environment may choose big-endian for data memory, though little-endian is by far the most common.)</p>
+  <p>Because addresses name bytes, a 32-bit word occupies four consecutive addresses. These examples use a <b>little-endian</b> RISC-V memory system: the byte at the lowest address supplies the least significant eight bits. For example, storing the word <code>0x12345678</code> at address <code>0x104</code> puts byte <code>0x78</code> at 0x104, <code>0x56</code> at 0x105, <code>0x34</code> at 0x106 and <code>0x12</code> at 0x107. Reading a word from 0x104 assembles those four bytes back into <code>0x12345678</code>. The numeric value is the same; endianness determines its byte order in memory. (RISC-V instruction fetch is little-endian; a system can choose big-endian data memory, although these notes use little-endian data.)</p>
   <figure class="fig narrow"><div class="sc">
     <svg viewBox="0 0 560 130" role="img" aria-label="The word 0x12345678 stored little-endian at addresses 0x104 to 0x107">
       <g id="leBytes"></g>
@@ -191,7 +191,7 @@
     <li>The data accesses dropped from 7 to 4. Why doesn't that mean the register version runs 7/4 = 1.75× faster?
       <details><summary>Show answer</summary><div class="ans"><p>Run time depends on instruction count, cycles per instruction and clock period, not just data accesses. Instruction fetches still happen, the machines have different clocks and widths, and how much each access costs depends on the memory system (caches can make some nearly free). Counting accesses isolates <i>one</i> effect. It isn't a timing model.</p></div></details></li>
     <li>A calculation needs 10 values alive at once but only 4 registers are free. Why does having registers still leave memory traffic?
-      <details><summary>Show answer</summary><div class="ans"><p>The six values that don't fit must be <b>spilled</b>: stored to memory and reloaded when needed. Registers remove traffic only for the values they can actually hold. Reducing how many values are live at once (register pressure) matters as much as the register count.</p></div></details></li>
+      <details><summary>Show answer</summary><div class="ans"><p>If all ten values must be kept for later use, only four can occupy those registers at once. The others need another home, usually memory, and will be loaded when needed; a newly computed value may first have to be <b>spilled</b> there. Reordering the work or recomputing a cheap value can sometimes reduce these accesses. Register count alone does not determine the traffic.</p></div></details></li>
   </ol></div>
   <p class="checkpoint">For any instruction, point at each number and say which it is: a register number, an immediate constant, a byte address, or the contents at that address.</p>
 </section>
