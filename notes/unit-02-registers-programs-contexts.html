@@ -64,7 +64,7 @@
 <header class="hero">
   <div class="kicker">Unit 2 · Lessons 5–7</div>
   <h1>Registers, programs &amp; <em>execution contexts</em></h1>
-  <p class="lede">Unit 1's machine can calculate, but it can keep only one working value in its accumulator. Where does an earlier result go when the next calculation needs that space? We start by giving the machine registers, then use a real instruction set (RISC-V) to explore three layers: the <b>contract</b> a program relies on, the <b>hardware</b> that carries it out, and the <b>conventions</b> that let programs call functions and pause threads.</p>
+  <p class="lede">Unit 1's machine can calculate, but its one accumulator forces a working value out whenever the next calculation needs that space. We start by giving the machine registers, then use a real instruction set (RISC-V) to explore three layers: the <b>contract</b> a program relies on, the <b>hardware</b> that carries it out, and the <b>conventions</b> that let programs call functions and pause threads.</p>
   <dl class="outcome">
     <dt>You'll be able to</dt><dd>Trace where every value lives in a register machine, show that one instruction set can have very different hardware, and explain exactly what must be saved to return from a function or to resume a paused thread.</dd>
     <dt>Carries over</dt><dd>Everything from Unit 1: state, clock edges, fetch–decode–execute, PC, and the idea of a saved context.</dd>
@@ -184,9 +184,9 @@
 
   <h3 class="part">Registers are not variables</h3>
   <p>Source-code variable names do not appear in the ISA. The <b>compiler</b> decides where each value lives. In our calculation, x5 holds <code>a</code>; once <code>a</code> is no longer needed, the same register could hold an unrelated value. A variable might also live in memory, be copied in both places, or disappear if the compiler can compute the answer without storing it.</p>
-  <p>There is still a limit. If the program needs more values <i>alive at the same time</i> than it has available registers, some values must wait elsewhere. Saving a value to memory for later use is called a <b>spill</b>; using it again requires a load. Compilers try to reduce this pressure by reordering work or recomputing a cheap value. The figure shows why a register machine can still create data-memory traffic.</p>
+  <p>There is still a limit. If the program needs more values <i>alive at the same time</i> than it has available registers, they cannot all stay in registers. Saving one to memory for later use is called a <b>spill</b>; using it again requires a load. Compilers try to reduce this pressure by reordering work or recomputing a cheap value. The figure shows why a register machine can still create data-memory traffic.</p>
   <figure class="fig"><div class="sc"><svg id="spillSvg" viewBox="0 0 760 170" role="img" aria-label="Ten live values competing for four registers: six are kept in memory"></svg></div>
-    <figcaption><b>Register pressure.</b> Ten values are needed at once, but only four registers are free, so six have to live in memory. Assuming a fixed computation order, no recomputation and four available registers, that means extra loads, and stores for any value that doesn't already have a valid copy in memory: register pressure <i>can</i> create additional memory traffic. More registers relieve this. So does restructuring code so fewer values are live at the same time. GPUs face the same problem, and it's severe there (a later unit).</figcaption></figure>
+    <figcaption><b>Register pressure.</b> Ten values are needed at once, but only four registers are free. With a fixed computation order and no recomputation, six must reside in memory. Using them later requires loads; saving a newly produced value may first require a store. More registers or fewer simultaneously live values reduce this pressure. GPUs face the same problem in a later unit.</figcaption></figure>
 
   <div class="predict"><div class="ph"><b>Predict</b><span>Use the stepper only to check.</span></div><ol>
     <li>In the RV32I version, what are x5, x28, x29 and M[0x10C] immediately after the instruction at 0x50?
@@ -213,7 +213,7 @@
     <div class="c4"><span class="l">Cost</span>More latches, muxes and control. The per-cycle overhead can erase the gain.</div>
   </div>
 
-  <p>RV32I tells us what an instruction must accomplish. Does it also dictate how long the hardware takes? Compare two cores that obey the same rules but organize the work differently.</p>
+  <p>RV32I tells us what an instruction must accomplish, while leaving room for different hardware designs. Compare two cores that obey the same rules but organize the work differently.</p>
 
   <h3 class="part">What the ISA promises, and what it doesn't</h3>
   <p>The ISA is a contract between a program and a processor. It defines instructions, registers and their effects on visible state: register values, memory, PC and exceptions. For instance, <code>lw x6, 4(x10)</code> must put the word at the computed byte address into x6. A program can rely on that result.</p>
@@ -256,7 +256,7 @@
   </div>
 
   <h3 class="part">Compare elapsed time, not cycle counts</h3>
-  <p>Does the shorter clock pay for the extra cycles? It depends on the instructions we run. The default sequence—<code>lw</code>, <code>add</code>, <code>add</code>, <code>sw</code>, <code>beq</code>—takes five 5 ns cycles in the single-cycle design, or 25 ns. In a hypothetical multicycle design with a 1.0 ns period, it takes 5 + 4 + 4 + 4 + 3 = 20 cycles, or 20 ns. The bars below show both elapsed times.</p>
+  <p>The shorter clock pays for the extra cycles only for some instruction mixes. The default sequence—<code>lw</code>, <code>add</code>, <code>add</code>, <code>sw</code>, <code>beq</code>—takes five 5 ns cycles in the single-cycle design, or 25 ns. In a hypothetical multicycle design with a 1.0 ns period, it takes 5 + 4 + 4 + 4 + 3 = 20 cycles, or 20 ns. The bars below show both elapsed times.</p>
   <p>That 1.0 ns multicycle period assumes a <i>different, faster implementation</i> from the unmodified 1.2 ns-phase circuit above. Change the sequence or the period to see when the advantage disappears. The useful measure is <b>cycle count × clock period</b>, not cycle count alone.</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 8px"><span class="readout">Add:</span><button data-add="lw">+ lw</button><button data-add="add">+ add</button><button data-add="sw">+ sw</button><button data-add="beq">+ beq</button><button id="tcUndo">Undo</button><button id="tcClear">Clear</button>
@@ -265,7 +265,7 @@
     <div class="ctrl"><label class="rl" for="tcS">single-cycle period: <b id="tcSv">5.0</b> ns<input id="tcS" type="range" min="3" max="7" step="0.5" value="5"></label><label class="rl" for="tcM">multicycle period: <b id="tcMv">1.0</b> ns<input id="tcM" type="range" min="0.8" max="1.6" step="0.1" value="1"></label></div>
     <div class="sc" style="padding:8px 0 0"><svg id="tcSvg" viewBox="0 0 760 170" role="img" aria-label="Timelines of the two designs drawn to scale" style="min-width:560px"></svg></div>
     <p class="msg" id="tcMsg"></p>
-  </div><figcaption><b>Synthetic teaching timings</b>, separate from the single-cycle figure: the comparator assumes a design whose phases have been balanced to fit a 1.0 ns period. Both periods include all register and control overhead, assume memory always answers within its phase, and model one instruction at a time. With the defaults, the mixed sequence takes 25 ns single-cycle and 20 ns multicycle. Nudge the multicycle period to 1.3 ns and it loses. More phases are not automatically faster.</figcaption></figure>
+  </div><figcaption><b>Synthetic teaching timings.</b> The 1.0 ns period belongs to a hypothetical balanced multicycle design, not the unmodified 1.2 ns phases above. Both periods include register and control overhead, assume memory answers within its phase, and model one instruction at a time. The default sequence takes 25 ns versus 20 ns; at a 1.3 ns multicycle period it takes 26 ns.</figcaption></figure>
 
   <div class="pitfall">A multicycle core still finishes one instruction before starting the next. It splits <i>one instruction's</i> work across time; <b>pipelining</b> (Unit 3) overlaps <i>different instructions</i>. F, D, E, M and W are a teaching model, not a claim that every real CPU has exactly these five steps.</div>
 
@@ -283,7 +283,7 @@
     <li>A CPU's documentation says it uses F–D–E–M–W internally. Does that prove it's pipelined? What would?
       <details><summary>Show answer</summary><div class="ans"><p>No. A multicycle machine uses those phases one instruction at a time. Pipelining is shown by <b>overlap</b>: a second instruction being fetched while the first is still in a later phase, so instructions complete more often than one per full phase sequence.</p></div></details></li>
   </ol></div>
-  <p class="checkpoint">Describe <code>lw x6, 4(x10)</code> three ways: what it changes in program-visible state, what the multicycle hardware does between F and W, and how long it takes on each design. One question remains: can the core start the next instruction before this load finishes?</p>
+  <p class="checkpoint">Describe <code>lw x6, 4(x10)</code> three ways: what it changes in program-visible state, what the multicycle hardware does between F and W, and how long it takes on each design. Unit 3 starts the next instruction before this load finishes.</p>
 </section>
 
 <!-- =============================== LESSON 7 =============================== -->
@@ -410,7 +410,8 @@
     <div class="ctrl"><button id="t7step" class="pri">Run 1 instruction ▶</button><button id="t7int">Interrupt, same thread resumes</button><button id="t7sw">Timer interrupt → switch threads ⇄</button><button id="t7reset">Reset</button></div>
     <p class="msg" id="t7status"></p>
     <div class="evlog" id="t7log" aria-label="Event history"></div>
-  </div><figcaption><b>Watch x5 and PC.</b> Switch back to A and both values reappear from its saved context, so its next instruction is neither skipped nor repeated. The explorer's single save/restore action stands for several OS steps. In xv6, trap entry saves user registers in a <i>trapframe</i>, while a separate scheduler routine saves the kernel state needed to resume the thread. Floating-point and vector state may need separate handling. Switching processes may change the active address space, but it does not copy that process's memory.</figcaption></figure>
+  </div><figcaption><b>Watch x5 and PC.</b> Switch back to A and both values reappear from its saved context, so its next instruction is neither skipped nor repeated. The explorer's single save/restore action stands for several OS steps. A switch can change the active address space when it changes processes, but it does not copy the process's memory.</figcaption></figure>
+  <p>In xv6, trap entry saves user registers in a <i>trapframe</i>, while a separate scheduler routine saves the kernel state needed to resume the thread. Floating-point and vector state may need separate handling. The exact saved state depends on the OS and on what the thread has used.</p>
 
   <div class="tbl"><table>
     <tr><th>Event</th><th>Why control moves</th><th>Does the running thread change?</th></tr>
