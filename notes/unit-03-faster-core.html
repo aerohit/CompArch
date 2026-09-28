@@ -87,7 +87,7 @@
 <header class="hero">
   <div class="kicker">Unit 3 · Lessons 8–15</div>
   <h1>Make one CPU core <em>faster</em></h1>
-  <p class="lede">The instruction contract stays exactly the same. Everything in this unit is hidden machinery that makes a single core finish the same program sooner: overlapping instructions, keeping data close, guessing ahead, and doing ready work out of order. Every new mechanism must still leave the program seeing the results it was promised.</p>
+  <p class="lede">Suppose the program and its instructions cannot change, but one core must finish it sooner. Where can time be saved? We will overlap instructions, keep data close, guess what to fetch next, and run ready work while other work waits. Each change is hidden inside the core: the program must still receive the results its instructions promise.</p>
   <dl class="outcome">
     <dt>You'll be able to</dt><dd>Trace overlapping instructions through a small core, explain what makes each one wait (a value, a resource, or a decision), and tell apart a result that has been <i>computed</i> from one that may safely become <i>official</i>.</dd>
     <dt>Study plan</dt><dd>Three passes, each its own session: <b>overlap and hazards</b> (8–9), <b>memory and prediction</b> (10–12), then <b>width, scheduling and precise completion</b> (13–15).</dd>
@@ -117,7 +117,7 @@
   </div>
 
   <h3 class="part">Idle hardware</h3>
-  <p>In Unit 2's <b>multicycle</b> machine, only one instruction is active. Its fetch hardware sits idle while the ALU works, and the ALU sits idle while memory is read. The utilization picture below shows how overlapping <i>different</i> instructions can keep those units busy together. It assumes independent instructions that each use all five stages, so we can focus on the scheduling idea first.</p>
+  <p>In Unit 2's <b>multicycle</b> machine, only one instruction is active. While it uses the ALU, the fetch hardware sits idle; while it reads memory, the ALU sits idle. Could the fetch hardware start the <i>next</i> instruction instead? In the picture, follow cycle 2: the first instruction is in decode while the second is already in fetch. By cycle 5, five independent instructions occupy five different stages. We assume each uses all five stages so the scheduling idea is easy to see.</p>
   <figure class="fig"><div class="sc"><svg id="utilSvg" viewBox="0 0 760 230" role="img" aria-label="Unit utilization: multicycle uses one unit per cycle; pipelined keeps all five busy"></svg></div>
     <figcaption><b>Same hardware, very different utilization.</b> Simplified so that every instruction uses all five phases (like a load). Left: one instruction at a time, so each unit is busy one cycle in five. Right: a new instruction enters every cycle, so once the pipe is full every unit is busy every cycle, each on a different instruction.</figcaption></figure>
 
@@ -130,7 +130,7 @@
     <tr><td class="m">M · memory</td><td>Load or store, if needed</td><td>loaded data or the carried result</td></tr>
     <tr><td class="m">W · writeback</td><td>Write the destination register, if any</td><td>—</td></tr>
   </table></div>
-  <p>Between stages sit <b>pipeline registers</b>. At every clock edge, each stage hands its instruction's intermediate values and control bits to the next. The instruction's PC and destination number travel with it so a result cannot accidentally be credited to a neighbor. A <b>valid bit</b> marks whether a slot holds a real instruction or a bubble, an empty slot used when the pipeline must wait. The key mental shift is that <b>there is no single "current instruction" any more</b>: up to five instructions can be in flight, each at a different stage.</p>
+  <p>That overlap needs a way to keep the instructions apart. Between stages sit <b>pipeline registers</b>. At every clock edge, each stage hands its instruction's intermediate values and control bits to the next. The instruction's PC and destination number travel with it so a result cannot accidentally be credited to a neighbor. A <b>valid bit</b> marks whether a slot holds a real instruction or a bubble, an empty slot used when the pipeline must wait. There is no longer one "current instruction": up to five instructions can be in flight, each at a different stage.</p>
   <div class="pitfall">An <code>add</code> still passes through M even though it doesn't touch memory, and a store passes through W without writing a register. A stage is a <i>position in the hardware</i>, not a job every instruction must do.</div>
 
   <h3 class="part">Try it: fill, flow, drain</h3>
@@ -148,7 +148,7 @@
   </div><figcaption><b>Model:</b> each stage's logic takes 1 ns (except E, if you change it), and a pipeline register adds the overhead. Instructions are independent, with no misses, branches or stalls. The timing baseline is a single-cycle unpipelined machine with no <i>interstage</i> registers; its full logic path takes 5 ns (or more) per instruction.</figcaption></figure>
 
   <h3 class="part">Latency, throughput, and the empty ends</h3>
-  <p>Two measures that everyday language blurs:</p>
+  <p>The timing diagram can make the pipeline look five times faster. Faster in which sense? Separate the time for <i>one instruction</i> from the rate at which a stream finishes:</p>
   <ul>
     <li><b>Latency</b>: how long <i>one</i> instruction takes from start to finish. Here that's 5 × 1.1 = 5.5 ns, <i>longer</i> than the single-cycle baseline's 5 ns because of the interstage registers.</li>
     <li><b>Throughput</b>: how much work completes per unit time. Once the pipe is full, one instruction per 1.1 ns.</li>
@@ -156,7 +156,7 @@
   <p>For N independent instructions in an ideal K-stage pipeline, the total is <b>N + K − 1 cycles</b>. The first instruction finishes at the end of cycle K; each of the remaining N − 1 finishes one cycle later, so the last finishes in cycle K + N − 1. For example, four instructions in five stages take 4 + 5 − 1 = <b>8 cycles</b>. This count includes the empty start and the final drain; do not add either again. A short program cannot get close to the ideal K× speedup:</p>
   <figure class="fig"><div class="sc"><svg id="p8curve" viewBox="0 0 760 240" role="img" aria-label="Speedup versus number of instructions approaches an asymptote below the stage count"></svg></div>
     <figcaption><b>Speedup climbs toward a ceiling it never reaches.</b> With 5 stages and 0.1 ns overhead, the ceiling is 5 / 1.1 ≈ 4.55×, not 5×. And the slowest stage sets the clock: stretch E to 2 ns and every stage now gets 2.1 ns, and the ceiling collapses.</figcaption></figure>
-  <div class="insight">In steady state, pipelining raises the <b>machine</b>'s throughput without making any <b>instruction</b> faster. In fact each instruction takes a little longer, and a short fragment can finish later than on the unpipelined machine because of the fill time and register overhead. That's worth remembering whenever someone confuses latency with throughput, which happens again with caches, GPUs and networks.</div>
+  <div class="insight">In steady state, pipelining raises the <b>machine</b>'s throughput without making any <b>instruction</b> faster. Each instruction actually takes a little longer here, and a short fragment can finish later because of fill time and register overhead. The diagrams assumed independent instructions. What happens when the next instruction needs a result that is still travelling through the pipe? That is Lesson 9's first hazard.</div>
 
   <div class="predict"><div class="ph"><b>Predict</b><span>Draw the diagram on paper first.</span></div><ol>
     <li>With 4 independent instructions, which stage holds each instruction in cycle 4? How many have completed?
