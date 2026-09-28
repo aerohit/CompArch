@@ -213,8 +213,11 @@
     <div class="c4"><span class="l">Cost</span>More latches, muxes and control. The per-cycle overhead can erase the gain.</div>
   </div>
 
+  <p>RV32I tells us what an instruction must accomplish. Does it also dictate how long the hardware takes? Compare two cores that obey the same rules but organize the work differently.</p>
+
   <h3 class="part">What the ISA promises, and what it doesn't</h3>
-  <p>An <b>instruction set architecture</b> is a contract between programs and processors. It specifies instructions, registers and the defined effects on visible state: register results, memory effects, changes to PC and exceptions. For example, <code>lw x6, 4(x10)</code> must put the word at the computed byte address into x6, regardless of how the processor fetched it internally. The ISA does not prescribe the circuit layout or the number of cycles. A <b>microarchitecture</b> is one hardware design that honors the contract. Its internal registers, timing and shortcuts may differ, but a program must get the same defined result.</p>
+  <p>The ISA is a contract between a program and a processor. It defines instructions, registers and their effects on visible state: register values, memory, PC and exceptions. For instance, <code>lw x6, 4(x10)</code> must put the word at the computed byte address into x6. A program can rely on that result.</p>
+  <p>The ISA does not say which circuits fetch the word or how many cycles they take. Those are <b>microarchitectural</b> choices. The figure shows three designs that can run the same instructions. Their internal steps and timing differ, while their defined effects on the program's state agree.</p>
   <figure class="fig"><div class="sc">
     <svg viewBox="0 0 760 200" role="img" aria-label="One ISA contract implemented by three different microarchitectures">
       <rect x="200" y="14" width="360" height="56" class="te"/><text x="380" y="38" class="mid hd">RV32I contract</text><text x="380" y="56" class="mid sm">"add x28, x5, x6 sets x28 to x5 + x6, then PC += 4"</text>
@@ -226,13 +229,15 @@
     <figcaption><b>Same contract, different machines.</b> A tiny microcontroller and a high-end core can run the <i>same binary</i> and agree on every visible result, provided both support the ISA extensions, ABI and execution environment the binary needs. They differ in cycles, internal state and cost. Only the visible results at defined points must match; for the simplified machines in this unit, that means after each instruction.</figcaption></figure>
 
   <h3 class="part">Design 1: single-cycle</h3>
-  <p>In a <b>single-cycle</b> design, one instruction completes between two clock edges: fetch, decode, register read, ALU work, optional data-memory access and write-back. The clock period must accommodate the <b>longest</b> path, here a load: 1.0 + 0.8 + 1.2 + 1.2 + 0.8 = <b>5 ns</b>. An add does not need the data-memory stage and finishes its useful work earlier, but its result still waits for the next 5 ns edge. Thus the design completes one instruction every 5 ns, even when most instructions need less work. To fetch a load's instruction and read its data within that same cycle, the example also needs separate instruction and data memory paths (or two memory ports).</p>
+  <p>A <b>single-cycle</b> design finishes one whole instruction between two clock edges. A load must fetch and decode its instruction, read a base register, calculate an address, read data memory and write the result. In the model below, those delays add to 1.0 + 0.8 + 1.2 + 1.2 + 0.8 = <b>5 ns</b>. The clock period must be long enough for that slowest instruction.</p>
+  <p>Now look at the <code>add</code> row. It has no data-memory read, so its useful work finishes earlier; the hatched tail is time spent waiting for the same 5 ns clock edge. Every instruction therefore occupies 5 ns, even when it needs less work. A load also needs to fetch its instruction and read its data in that one cycle, so this design needs separate instruction and data paths, or two memory ports.</p>
   <figure class="fig"><div class="sc"><svg id="scSvg" viewBox="0 0 760 180" role="img" aria-label="Single-cycle design: every instruction takes the load's full delay"></svg></div>
     <figcaption><b>Wasted tails.</b> Hatched regions are time an instruction spends finished but waiting for the clock. A single-cycle design also needs separate instruction and data memories (or two ports), because a load needs both in the same cycle.</figcaption></figure>
 
   <h3 class="part">Design 2: multicycle</h3>
-  <p>Instead, split each instruction into short <b>phases</b>, one per clock cycle, and let an instruction use only the phases it needs. We call them F (fetch), D (decode and read registers), E (ALU work or address calculation), M (data-memory access) and W (write a register). A value produced in one phase must still be available in the next; <b>internal latches</b> hold the instruction, operands, computed address or loaded data between edges. Those latches are implementation details that a program cannot name. With fetch and data access in different cycles, the same memory port can serve both in this teaching design.</p>
-  <p>The clock must now accommodate the <b>slowest phase</b>, including any latch and control overhead. Splitting an instruction into five phases does not make the clock five times faster unless their delays are balanced. If we simply reused the single-cycle figure's parts, E and M would each take 1.2 ns, so the new period would be at least 1.2 ns <i>plus</i> overhead. Shorter instructions can still win by skipping M or W, but every added phase incurs another clock edge.</p>
+  <p>Could we stop making an add wait for a load's full path? A <b>multicycle</b> design splits an instruction into short <b>phases</b>, one per clock cycle, and uses only the phases that instruction needs: F (fetch), D (decode and read registers), E (ALU work or address calculation), M (data-memory access) and W (write a register). In the table below, an add skips M and a store skips W.</p>
+  <p>The result of one phase must survive until the next. <b>Internal latches</b> hold the instruction, operands, address or loaded data at the intervening clock edges. These are hardware details that a program cannot name. Since fetch and data access occur in different cycles, one memory port can serve both in this teaching design.</p>
+  <p>Shorter phases permit a shorter clock, but the period must still fit the <b>slowest phase</b> plus latch and control overhead. Reusing the parts from the single-cycle figure would leave E and M at 1.2 ns each, making the new period at least 1.2 ns <i>plus</i> overhead—not 1.0 ns. Each phase also costs a clock edge. We will compare total time after tracing one load.</p>
   <figure class="fig"><div class="sc">
     <svg viewBox="0 0 760 210" role="img" aria-label="Multicycle phases F, D, E, M, W with internal latches between them">
       <g id="mcPhases"></g>
@@ -246,12 +251,13 @@
     <tr><td class="m">beq</td><td class="m">F D E</td><td>3</td><td>E compares and updates the PC if taken</td></tr>
   </table></div>
   <div class="worked">
-    <p>Watch the latches during <code>lw x6, 4(x10)</code> with x10 = 0x100 and M[0x104] = 6:</p>
-    <p><b>F:</b> IR ← the instruction. <b>D:</b> A ← x10 = 0x100. <b>E:</b> ALUout ← 0x100 + 4 = <b>0x104</b> (an address, not data!). <b>M:</b> MDR ← M[0x104] = <b>6</b>. <b>W:</b> x6 ← 6. Apart from PC += 4 back in F, only W changes visible state: x6 receives its value only there.</p>
+    <p>Trace <code>lw x6, 4(x10)</code> with x10 = 0x100 and M[0x104] = 6. Each named latch holds a different kind of value:</p>
+    <p><b>F:</b> IR receives the instruction. <b>D:</b> A receives x10's value, 0x100. <b>E:</b> ALUout receives 0x100 + 4 = <b>0x104</b>, the address. <b>M:</b> MDR receives M[0x104] = <b>6</b>, the data. <b>W:</b> x6 receives 6. PC advanced by 4 in F; x6 changes only in W. Notice how the address must exist before the memory can supply the data.</p>
   </div>
 
   <h3 class="part">Compare elapsed time, not cycle counts</h3>
-  <p>Which design is faster? Count <b>cycles for the actual instruction mix</b>, then multiply by each design's clock period. The comparator below uses a separate hypothetical multicycle implementation whose phases have been made fast enough for a 1.0 ns period; it is <i>not</i> the unmodified 1.2 ns-phase circuit above. Build a sequence and adjust the periods. The bars are drawn to scale.</p>
+  <p>Does the shorter clock pay for the extra cycles? It depends on the instructions we run. The default sequence—<code>lw</code>, <code>add</code>, <code>add</code>, <code>sw</code>, <code>beq</code>—takes five 5 ns cycles in the single-cycle design, or 25 ns. In a hypothetical multicycle design with a 1.0 ns period, it takes 5 + 4 + 4 + 4 + 3 = 20 cycles, or 20 ns. The bars below show both elapsed times.</p>
+  <p>That 1.0 ns multicycle period assumes a <i>different, faster implementation</i> from the unmodified 1.2 ns-phase circuit above. Change the sequence or the period to see when the advantage disappears. The useful measure is <b>cycle count × clock period</b>, not cycle count alone.</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 8px"><span class="readout">Add:</span><button data-add="lw">+ lw</button><button data-add="add">+ add</button><button data-add="sw">+ sw</button><button data-add="beq">+ beq</button><button id="tcUndo">Undo</button><button id="tcClear">Clear</button>
       <span class="readout" style="margin-left:8px">Presets:</span><button data-pre="mix">mixed</button><button data-pre="loads">5 loads</button><button data-pre="adds">5 adds</button></div>
@@ -261,7 +267,7 @@
     <p class="msg" id="tcMsg"></p>
   </div><figcaption><b>Synthetic teaching timings</b>, separate from the single-cycle figure: the comparator assumes a design whose phases have been balanced to fit a 1.0 ns period. Both periods include all register and control overhead, assume memory always answers within its phase, and model one instruction at a time. With the defaults, the mixed sequence takes 25 ns single-cycle and 20 ns multicycle. Nudge the multicycle period to 1.3 ns and it loses. More phases are not automatically faster.</figcaption></figure>
 
-  <div class="pitfall">Multicycle is <b>not pipelining</b>. Here one instruction still finishes completely before the next begins: we split <i>one instruction's</i> work across time. Pipelining (Unit 3) overlaps <i>different instructions</i>. Also, "F, D, E, M, W" is a teaching decomposition, not a claim that every real CPU has exactly these five steps.</div>
+  <div class="pitfall">A multicycle core still finishes one instruction before starting the next. It splits <i>one instruction's</i> work across time; <b>pipelining</b> (Unit 3) overlaps <i>different instructions</i>. F, D, E, M and W are a teaching model, not a claim that every real CPU has exactly these five steps.</div>
 
   <div class="predict"><div class="ph"><b>Predict</b><span>Calculate first, then use the comparator.</span></div><ol>
     <li>After phase E of <code>lw x6, 4(x10)</code> (x10 = 0x100), does ALUout hold 0x104 or 6? Has x6 changed yet?
@@ -277,7 +283,7 @@
     <li>A CPU's documentation says it uses F–D–E–M–W internally. Does that prove it's pipelined? What would?
       <details><summary>Show answer</summary><div class="ans"><p>No. A multicycle machine uses those phases one instruction at a time. Pipelining is shown by <b>overlap</b>: a second instruction being fetched while the first is still in a later phase, so instructions complete more often than one per full phase sequence.</p></div></details></li>
   </ol></div>
-  <p class="checkpoint">Describe <code>lw x6, 4(x10)</code> in three separate ways: as an <b>architectural state change</b>, as an <b>internal sequence of micro-operations</b>, and as an <b>elapsed-time cost</b> on each design.</p>
+  <p class="checkpoint">Describe <code>lw x6, 4(x10)</code> three ways: what it changes in program-visible state, what the multicycle hardware does between F and W, and how long it takes on each design. One question remains: can the core start the next instruction before this load finishes?</p>
 </section>
 
 <!-- =============================== LESSON 7 =============================== -->
