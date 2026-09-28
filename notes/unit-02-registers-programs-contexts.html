@@ -130,7 +130,7 @@
     <tr><td>Instruction size</td><td class="m">1 byte</td><td class="m">4 bytes (so sequential fall-through advances PC by 4; a taken branch or jump sets another PC)</td></tr>
     <tr><td>Arithmetic operands</td><td>ACC and one memory word</td><td>register operands and, for some instructions (like <code>addi</code>), an immediate constant; no data-memory operands in arithmetic (load/store design)</td></tr>
   </table></div>
-  <p>Here <code>rd</code> means destination register, <code>rs1</code> and <code>rs2</code> mean source registers, and <code>imm</code> is an <b>immediate</b> constant encoded in the instruction itself. In a load or store, <code>base</code> names a register whose <i>contents</i> are added to the offset; <code>label</code> names a branch destination chosen by the assembler. We will use just these instructions:</p>
+  <p>Here <code>rd</code> means destination register, <code>rs1</code> and <code>rs2</code> mean source registers, and <code>imm</code> is an <b>immediate</b> constant encoded in the instruction itself. In a load or store, <code>base</code> names a register whose <i>contents</i> are added to the offset; <code>label</code> marks a destination in the program, and the assembler encodes the displacement to it. We will use just these instructions:</p>
   <div class="tbl"><table>
     <tr><th>Instruction</th><th>Meaning</th></tr>
     <tr><td class="m">add rd, rs1, rs2</td><td>rd ← rs1 + rs2</td></tr>
