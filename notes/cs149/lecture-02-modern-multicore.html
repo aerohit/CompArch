@@ -603,28 +603,29 @@ svg text.sw{fill:#fff!important}
 <section class="lesson" id="gloss" data-toc="Glossary & review" data-n="✓">
   <div class="lesson-h"><div class="kicker">Review</div><h2>Terms to know, and questions to test yourself</h2></div>
   <dl class="glossary">
-    <dt>Instruction stream</dt><dd>The sequence of instructions one thread executes. Each needs its own execution context (registers, PC).</dd>
+    <dt>Instruction stream</dt><dd>The sequence of instructions one thread executes. Its execution context holds that thread's registers and PC.</dd>
     <dt>Superscalar</dt><dd>One core issuing several independent instructions from the <i>same</i> stream per clock, found automatically by hardware.</dd>
-    <dt>Multi-core</dt><dd>Several complete cores on one chip, each running its own instruction stream: thread-level parallelism.</dd>
-    <dt>SIMD</dt><dd>One instruction applied to many data elements across many ALUs, amortizing fetch/decode. <i>Explicit</i> (compiler emits vector instructions) or <i>implicit</i> (hardware groups scalar threads, as on GPUs).</dd>
+    <dt>Multi-core</dt><dd>Several cores on one chip, each able to run an independent instruction stream.</dd>
+    <dt>SIMD</dt><dd>One instruction applied across multiple data lanes. CPU binaries may name vector operations explicitly; GPUs schedule fixed groups of scalar-looking threads together and mask lanes when their paths differ.</dd>
     <dt>Coherent control flow</dt><dd>Many elements following the same instruction sequence, which SIMD needs. Its absence is <i>divergence</i>, handled by masking lanes.</dd>
     <dt>Hardware multithreading</dt><dd>Several execution contexts resident on one core so it can switch threads to hide stalls. <i>Interleaved</i>: one thread per clock. <i>Simultaneous (SMT)</i>: several threads in the same clock.</dd>
-    <dt>Latency vs throughput</dt><dd>Time to finish one task versus tasks finished per unit time. Throughput processors accept higher per-thread latency to gain throughput.</dd>
-    <dt>Stall</dt><dd>A cycle where the core can't issue because the next instruction's inputs aren't ready, usually waiting on memory.</dd>
+    <dt>Latency vs throughput</dt><dd>Time for one task or request versus the number completed per unit time. More resident threads can improve throughput during waits; contention may increase an individual thread's time.</dd>
+    <dt>Stall</dt><dd>A period when dependent work cannot advance because an input has not arrived. Other independent work may still run.</dd>
+    <dt>Bandwidth</dt><dd>The rate at which data can move, measured in bytes per second; distinct from the latency of one request.</dd>
   </dl>
   <div class="predict"><div class="ph"><b>Test yourself</b><span>The questions the lecture poses, plus a few more.</span></div><ol>
     <li>A dual-core chip whose cores are each 25% slower than one fancy core runs the original sin(x) program. Is it faster or slower? What would make it faster?
       <details><summary>Show answer</summary><div class="ans"><p><b>Slower</b> (by 25%). The program is one instruction stream, so it uses one core. Split the array between two threads (or declare the loop independent with a <code>forall</code>-style construct) and the potential becomes 2 × 0.75 = 1.5×.</p></div></details></li>
-    <li>Write the shortest code that makes 8-wide SIMD run at 1/8 of peak.
-      <details><summary>Show answer</summary><div class="ans"><p>One branch where only one lane in eight takes a long path: <code>if (i % 8 == 0) { long computation }</code>. For the whole long computation, 7 of 8 lanes are masked off.</p></div></details></li>
+    <li>Give one branch pattern that uses only 1/8 of an eight-wide SIMD unit's lanes during a long branch body.
+      <details><summary>Show answer</summary><div class="ans"><p>If the grouped lanes hold consecutive indices, <code>if (i % 8 == 0) { long computation }</code> sends only one lane through that body. The other seven lanes are masked for those instructions; this says nothing about the utilization of unrelated code outside the branch.</p></div></details></li>
     <li>Why does coherent control flow matter for SIMD but not for multi-core?
       <details><summary>Show answer</summary><div class="ans"><p>SIMD lanes share one fetch/decode, so they can only execute one instruction at a time. Each core has its own fetch/decode, so different cores can follow completely different paths at full speed.</p></div></details></li>
     <li>Compute the peak rate of a chip with 8 cores, two 16-wide FMA units per core, at 3 GHz (count an FMA as 2 FLOPs).
       <details><summary>Show answer</summary><div class="ans"><p>8 × 2 × 16 × 2 × 3 × 10⁹ = <b>1.536 TFLOP/s</b>.</p></div></details></li>
     <li>Does hardware multithreading make an individual memory access faster?
-      <details><summary>Show answer</summary><div class="ans"><p><b>No.</b> The latency is unchanged. The core just runs other threads' work during it, so the latency stops lowering utilization. Each individual thread actually finishes <i>later</i>.</p></div></details></li>
-    <li>How many independent data elements does a V100 need in flight for maximum latency hiding? Where does the number come from?
-      <details><summary>Show answer</summary><div class="ans"><p>80 SMs × 64 warps × 32 threads = <b>163,840</b>.</p></div></details></li>
+      <details><summary>Show answer</summary><div class="ans"><p><b>No.</b> The memory request's latency is unchanged. Other threads use execution units during that wait. An individual thread may finish later if it must compete with ready threads for the same core, but multithreading does not necessarily delay it.</p></div></details></li>
+    <li>What is the V100's maximum resident-thread capacity in the lecture's model, and why is it not a required thread count for every program?
+      <details><summary>Show answer</summary><div class="ans"><p>80 SMs × up to 64 warps per SM × 32 threads per warp = <b>163,840</b> resident threads at the hardware maximum. Register or shared-memory use may lower residency, and a program with sufficient ready work may use its arithmetic units without reaching the maximum.</p></div></details></li>
   </ol></div>
   <p class="credit">Based on Stanford CS149 (Fall 2023), Lecture 2, "A Modern Multi-Core Processor", by Kayvon Fatahalian and Kunle Olukotun. Explanations, diagrams and interactive models on this page are original study material. Processor figures (Kaby Lake latencies, i7-7700K, V100) are as presented in the lecture and in vendor documentation. For the course's own slides and videos, see the <a href="https://gfxcourses.stanford.edu/cs149/fall23">CS149 course site</a>.</p>
   <div class="nextunit"><a href="index.html"><small>← Back to</small>All CS149 lectures</a><a href="lecture-03-bandwidth-spmd.html"><small>Next lecture</small>Lecture 3 · Latency, bandwidth &amp; SPMD →</a></div>
