@@ -432,32 +432,35 @@ return sum;</pre>
     <dt>Latency</dt><dd>Time for one operation or request to complete.</dd>
     <dt>Throughput</dt><dd>Operations completed per unit time.</dd>
     <dt>Memory bandwidth</dt><dd>The rate at which memory can supply data, in bytes per second.</dd>
-    <dt>Little's law</dt><dd>Items in flight = throughput × latency.</dd>
-    <dt>Bandwidth-bound</dt><dd>Execution limited by the rate memory can supply data, with compute units stalled.</dd>
+    <dt>Little's law</dt><dd>In a steady flow, average items in flight = delivery rate × average latency.</dd>
+    <dt>Arithmetic intensity</dt><dd>Useful arithmetic operations per byte transferred; reuse can raise it.</dd>
+    <dt>Bandwidth-bound</dt><dd>Useful operation rate limited by memory's data-delivery rate rather than arithmetic capacity.</dd>
     <dt>Bottleneck</dt><dd>The stage with the lowest throughput, which sets the throughput of the whole path.</dd>
     <dt>Abstraction vs implementation</dt><dd>What a programming model's operations mean, versus how a particular system carries them out.</dd>
     <dt>SPMD</dt><dd>Single program, multiple data: one function run by many logical instances on different data.</dd>
-    <dt>Gang, program instance</dt><dd>The group of instances an ISPC call spawns; each instance is one logical stream with its own locals.</dd>
+    <dt>Gang, program instance</dt><dd>A gang is the group of logical ISPC instances in one call. Each instance has its own varying values; uniform values are shared.</dd>
     <dt>programCount / programIndex</dt><dd>The gang's size (uniform) and an instance's ID (varying).</dd>
     <dt>uniform / varying</dt><dd>One value shared by the gang / a separate value per instance.</dd>
     <dt>foreach</dt><dd>Declares iterations for the whole gang, leaving the assignment to the implementation.</dd>
-    <dt>Packed load vs gather</dt><dd>A vector load of contiguous addresses vs of arbitrary addresses; gathers cost more.</dd>
+    <dt>Packed load vs gather</dt><dd>A vector load of neighboring addresses versus a vector load from separately chosen addresses. Their costs depend on the hardware and memory pattern.</dd>
     <dt>Cross-instance operation</dt><dd>A standard-library call that combines or moves values between instances: reduce_add, broadcast, rotate, shift.</dd>
-    <dt>ISPC task</dt><dd>ISPC's abstraction for multi-core execution; gangs alone use one core's SIMD.</dd>
+    <dt>ISPC task</dt><dd>One way to submit independent gangs to a runtime that may run them across CPU cores.</dd>
   </dl>
   <div class="predict"><div class="ph"><b>Test yourself</b><span>The lecture's questions, plus a few more.</span></div><ol>
     <li>A car trip takes 30 minutes with one car on the road at a time. Adding three lanes raises throughput from 2 to 8 cars/hour. What happened to latency?
       <details><summary>Show answer</summary><div class="ans"><p>Nothing: still 30 minutes. More lanes add parallelism, which raises throughput without changing any one car's trip.</p></div></details></li>
-    <li>Laundry: wash 45 min, dry 60 min, fold 15 min. Pipelined, what's the throughput, and why isn't it one load every 40 minutes?
-      <details><summary>Show answer</summary><div class="ans"><p><b>1 load per hour.</b> The dryer is the slowest stage, so a load can leave the pipeline only every 60 minutes. The pipeline's throughput is set by its bottleneck, not the average stage.</p></div></details></li>
+    <li>Laundry: wash 45 min, dry 60 min, fold 15 min. Once the pipeline is full, what's its completion rate? If washes start every 45 minutes, what happens to later loads' individual latencies?
+      <details><summary>Show answer</summary><div class="ans"><p><b>One load per hour.</b> The dryer takes 60 minutes and sets the completion rate. New washes begin faster than the dryer can accept them, so later loads queue after washing and take more than two hours from their own start to finish.</p></div></details></li>
+    <li>A memory system delivers eight items per second, and each request takes two seconds. How many requests must be in flight on average?
+      <details><summary>Show answer</summary><div class="ans"><p>Little's law gives <b>8 × 2 = 16</b> requests in flight on average. The memory sketch's eight icons are schematic; eight literal outstanding requests would not sustain this rate at two-second latency.</p></div></details></li>
     <li>Convince yourself: in steady state, with enough loads in flight, why is core utilization independent of memory latency?
-      <details><summary>Show answer</summary><div class="ans"><p>Once enough requests are outstanding, the memory channel is always transferring, so the rate at which data arrives is its bandwidth. Math can proceed only as fast as its operands arrive. Latency just shifts when each item arrives, not how many arrive per second.</p></div></details></li>
-    <li>Why does the blocked sinx version need a gather while the interleaved version uses a packed load?
-      <details><summary>Show answer</summary><div class="ans"><p>At each step the eight instances access x[start + i] with starts that are N/8 apart, so the eight addresses are far apart. In the interleaved version they access x[i + 0 … i + 7], eight contiguous floats that one vector load can fetch.</p></div></details></li>
+      <details><summary>Show answer</summary><div class="ans"><p>Once enough independent requests are outstanding, the channel transfers continuously. Its bandwidth then caps the rate at which operands arrive. Raising latency requires more requests in flight to keep that condition true, but does not lower the already saturated transfer rate.</p></div></details></li>
+    <li>For N = 32 and eight instances, why might the blocked sinx version need a gather or separate loads while the interleaved version can use a packed load?
+      <details><summary>Show answer</summary><div class="ans"><p>At one blocked-loop step, the instances access x[0], x[4], x[8], …, x[28]: addresses four floats apart. At one interleaved step, they access x[0] through x[7], eight neighboring floats that a packed load can fetch.</p></div></details></li>
     <li>Why is shift_negative's output undefined, while absolute_repeat's isn't?
-      <details><summary>Show answer</summary><div class="ans"><p>In shift_negative, two different iterations can write the same element (y[i − 1] is written by iterations i − 1 and i), and <code>foreach</code> promises no order. In absolute_repeat every iteration writes only its own elements, 2i and 2i + 1.</p></div></details></li>
-    <li>With only <code>foreach</code> (no programIndex or programCount), why must everything outside a foreach be uniform?
-      <details><summary>Show answer</summary><div class="ans"><p>Outside a foreach there's no per-instance information at all: no instance ID and no per-iteration variable. Every instance runs identical code on identical inputs, so every value is necessarily the same across the gang.</p></div></details></li>
+      <details><summary>Show answer</summary><div class="ans"><p>Assuming separate valid x and y arrays, <code>shift_negative</code> can have two iterations write one y element with no promised order; it can leave other elements unwritten. In <code>absolute_repeat</code>, iteration i alone writes y[2i] and y[2i + 1].</p></div></details></li>
+    <li>If a language hid <code>programIndex</code> and <code>programCount</code> but kept <code>foreach</code>, could varying values still exist outside the loop?
+      <details><summary>Show answer</summary><div class="ans"><p>Yes. In the sum example, <code>partial</code> is declared before <code>foreach</code>, updated with a different partial sum in each instance, and passed to <code>reduce_add</code> afterward. Hiding instance IDs removes manual index assignment, not all varying state.</p></div></details></li>
   </ol></div>
   <p class="credit">Based on Stanford CS149 (Fall 2023), Lecture 3, "Multi-Core Architecture Part II (latency/bandwidth issues) + Parallel Programming Abstractions", by Kayvon Fatahalian and Kunle Olukotun. The explanations, diagrams and interactive models on this page are original study material. Hardware figures (V100, Xeon E5 v4) and ISPC examples are as presented in the lecture; for ISPC's exact semantics see the <a href="https://ispc.github.io/">ISPC documentation</a>. For the course's own slides and videos, see the <a href="https://gfxcourses.stanford.edu/cs149/fall23">CS149 course site</a>.</p>
   <div class="nextunit"><a href="lecture-02-modern-multicore.html"><small>← Previous lecture</small>Lecture 2 · A modern multi-core processor</a><a href="lecture-07-gpu-cuda.html"><small>Next companion</small>Lecture 7 · GPUs &amp; CUDA →</a></div>
