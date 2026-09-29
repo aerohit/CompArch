@@ -300,7 +300,7 @@ svg text.sw{fill:#fff!important}
 
 <section class="lesson" id="s4" data-toc="Running example: sin(x)" data-n="4" style="margin-top:36px">
   <div class="lesson-h"><div class="kicker">Section 4</div><h2>The running example: sin(x) for a whole array</h2></div>
-  <p>The lecture uses one program throughout. Compute sin(x) for each of N numbers using the <b>Taylor series</b>:</p>
+  <p>For the rest of the lecture, keep one job in mind: given an array of <b>N</b> numbers, approximate <code>sin(x[i])</code> for each element and store it in <code>y[i]</code>. The input angle is in radians. One way to approximate sine is to add a fixed number of terms from its <b>Taylor series</b>:</p>
   <p style="text-align:center;font:600 17px var(--mono)">sin(x) = x − x³/3! + x⁵/5! − x⁷/7! + …</p>
   <div class="asm">
     <div class="r"><span class="a"></span><span class="i">for i = 0 … N−1:</span><span class="c">one iteration per array element</span></div>
@@ -310,28 +310,29 @@ svg text.sw{fill:#fff!important}
     <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;&nbsp;&nbsp;numer ·= x[i]²; denom ·= (2j+2)(2j+3); sign = −sign</span><span class="c">next power, next factorial, flip sign</span></div>
     <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;y[i] = value</span><span class="c">write the result</span></div>
   </div>
+  <p>The code starts <code>value</code> at x, then adds −x³/6, then +x⁵/120, and so on. <code>numer</code>, <code>denom</code>, and <code>sign</code> prepare each next term without recomputing powers and factorials from scratch. A finite term count makes this an approximation; for large inputs, practical sine implementations also reduce the angle's range. Here the term count is fixed so every array element follows the same loop structure.</p>
   <figure class="fig"><div class="sc"><svg id="sinSvg" viewBox="0 0 760 200" role="img" aria-label="Each output y[i] depends only on x[i]; iterations are independent, but each iteration's inner loop is a dependency chain"></svg></div>
-    <figcaption><b>Two facts about this program decide everything.</b> Each <b>outer iteration is independent</b>: y[i] depends only on x[i]. And each iteration runs <b>exactly the same instructions</b>, just on different data. <i>Inside</i> one iteration, the inner loop is a chain where every term needs the previous numer and denom, so a superscalar core finds little ILP there.</figcaption></figure>
-  <p>Compiled for a simple core, the program is one instruction stream that processes one element at a time. A superscalar core would find almost no ILP in the inner loop, so it would mostly run one instruction per clock. Let's see what else we could build.</p>
+    <figcaption><b>Find the independence at the right level.</b> Assume different indices do not overlap in memory. Computing <code>y[0]</code> needs only <code>x[0]</code>, and computing <code>y[1]</code> needs only <code>x[1]</code>; those outer iterations can run together. Within one iteration, the next term uses values left by the previous term, especially the running sum. The numerator, denominator, and sign updates have some independent work, but the loop still contains long dependencies.</figcaption></figure>
+  <p>As written, one instruction stream works through the array in index order. A superscalar core may overlap some instructions within an iteration, but it cannot make the running sum of one element independent of itself. The abundant parallel work is across <i>different elements</i>. We will use that fact three ways.</p>
 </section>
 
 <section class="lesson" id="s5" data-toc="Idea 1: multiple cores" data-n="5">
   <div class="lesson-h"><div class="kicker">Section 5 · Idea #1</div><h2>Use the transistors for more cores</h2></div>
   <div class="card4">
-    <div class="c1"><span class="l">Problem</span>Extra transistors spent on one core (bigger caches, smarter out-of-order logic, better branch prediction) made single streams only slightly faster.</div>
+    <div class="c1"><span class="l">Problem</span>Beyond a point, more control hardware on one core brings diminishing gains when its instruction stream has dependency chains.</div>
     <div class="c2"><span class="l">Idea</span>Build several simpler cores instead, each with its own fetch/decode, ALU and execution context.</div>
     <div class="c3"><span class="l">Program must provide</span><b>Multiple instruction streams</b> (threads), with enough independent work to give every core some.</div>
-    <div class="c4"><span class="l">Cost</span>Each simple core is slower on its own. Unparallelized code gets <i>slower</i>, not faster.</div>
+    <div class="c4"><span class="l">Trade-off</span>In the illustrated design, each simpler core is slower alone. Several cores help only when there are independent streams to run.</div>
   </div>
-  <p>Before about 2005, most of a CPU's transistors went into making a <b>single instruction stream</b> run faster: out-of-order logic, a sophisticated branch predictor, a memory prefetcher, a large data cache. Only a small fraction was the ALU doing the actual arithmetic.</p>
+  <p>One way to use a chip's transistor budget is to make a core more elaborate: add out-of-order control, branch prediction, and caches to accelerate one stream. Another is to build more cores. The diagram makes the trade-off deliberately simple: replace one “fancy” core with two smaller ones.</p>
   <figure class="fig"><div class="sc"><svg id="fancySvg" viewBox="0 0 760 244" role="img" aria-label="One fancy core with large control logic versus two simpler cores"></svg></div>
     <figcaption><b>Trade sophistication for count.</b> Suppose each simpler core runs a single stream 25% slower than the fancy one. Two of them still give a potential 2 × 0.75 = <b>1.5×</b> the throughput, <i>if</i> there are two streams to run.</figcaption></figure>
-  <p>But the sin(x) program as written expresses no parallelism. It compiles to <b>one</b> instruction stream, which runs on <b>one</b> core. On the dual-core chip it now runs 25% <i>slower</i> than on the fancy single core. The hardware can't split a sequential program for you: someone has to state that the iterations are independent.</p>
+  <p>If we leave the sine loop as one sequential stream, it uses one of the two simple cores and, under the diagram's assumptions, runs 25% slower than on the fancy core. We already know that different elements are independent; software must expose or establish that fact so a compiler or runtime can divide them safely. Compilers sometimes prove independence automatically, but an ordinary loop alone is no promise that its iterations can be split.</p>
   <h3>Expressing the parallelism</h3>
   <p><b>Option 1: threads.</b> Create a second software thread and give it half the array. The main thread computes the other half, then waits for the helper to finish ("join"). With a C++ threading library that's a few lines. The programmer decides the split explicitly.</p>
-  <p><b>Option 2: declare independence.</b> The lecture uses an imaginary <code>forall</code> loop, "for all i from 0 to N, in any order", which tells the compiler that iterations don't depend on each other. The compiler or runtime is then free to split them across cores itself. Real equivalents include OpenMP's <code>parallel for</code>, and the data-parallel languages you'll meet later in CS149 (ISPC, CUDA).</p>
+  <p><b>Option 2: declare independence.</b> The lecture's imaginary <code>forall</code> means “run iterations <code>i = 0</code> through <code>N − 1</code> in any order.” A compiler or runtime can divide those iterations among cores. Real tools express related ideas through constructs such as OpenMP's <code>parallel for</code>; later lectures use ISPC and CUDA for other forms of data-parallel work.</p>
   <figure class="fig"><div class="sc"><svg id="coresSvg" viewBox="0 0 760 236" role="img" aria-label="Scaling from 1 to 16 cores; each core runs a different element's instruction stream"></svg></div>
-    <figcaption><b>Sixteen cores, sixteen simultaneous instruction streams,</b> each computing a different element. This is <b>thread-level parallelism</b>. Real examples: a 10-core Intel Core i9 (Comet Lake, 2020); Apple's A15 phone chip with 2 big and 4 small CPU cores; and the NVIDIA chip in the RTX 4090, whose die has 144 GPU "cores", called SMs (128 enabled on that product).</figcaption></figure>
+    <figcaption><b>Different cores, different elements.</b> Sixteen cores can run sixteen instruction streams at once, each working on a different array region. This is <b>thread-level parallelism</b>. Real chips range from multi-core CPUs to GPUs with many streaming multiprocessors (SMs). An SM is not equivalent to a CPU core; the RTX 4090 enables 128 SMs from a 144-SM die. Later sections show why those designs count parallelism differently.</figcaption></figure>
 </section>
 
 <section class="lesson" id="s6" data-toc="Idea 2: SIMD" data-n="6">
