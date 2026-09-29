@@ -268,7 +268,7 @@ parameters    = K · C · R · S (+ K biases)    <span class="u">// weights reus
 
 <section class="lesson" id="s7" data-toc="Blocking matrix multiply" data-n="7">
   <div class="lesson-h"><div class="kicker">Section 7</div><h2>Making GEMM fast: blocking</h2></div>
-  <p>So how does a good GEMM work? Start with the obvious version:</p>
+  <p>Writing a matrix product as a loop is easy; making it reuse data is the hard part. Start with a straightforward loop that computes one element of C at a time:</p>
   <pre class="code"><span class="k">float</span> A[M][K], B[K][N], C[M][N];
 <span class="u">// compute C += A * B</span>
 #pragma omp parallel for
@@ -276,8 +276,8 @@ parameters    = K · C · R · S (+ K biases)    <span class="u">// weights reus
   <span class="k">for</span> (int i=0; i&lt;N; i++)
     <span class="k">for</span> (int k=0; k&lt;K; k++)
       C[j][i] += A[j][k] * B[k][i];</pre>
-  <p>It has plenty of parallelism. Its problem is <b>low arithmetic intensity</b>: it doesn't exploit temporal locality. Every element of A is used N times and every element of B is used M times, but by the time the loop comes back to a value, it's long gone from the cache. For large matrices each multiply-add ends up fetching its operands from memory: 2 FLOPs for every 8 bytes, 0.25 FLOPs per byte.</p>
-  <p>The fix is <b>blocking</b> (tiling): compute a partial result for one block of C while the blocks of A and B it needs stay in cache.</p>
+  <p>Different values of <code>j</code> can be handled in parallel, and the innermost loop forms a dot product. But the loop order gives a large matrix little reliable reuse of B: as <code>k</code> changes, <code>B[k][i]</code> jumps between rows, and another output element may revisit it only much later. A can sometimes remain cached across neighboring outputs, and a compiler can hold <code>C[j][i]</code> in a register. If we pessimistically charge two fresh fp32 operand loads to every multiply-add, that is 2 floating-point operations for 8 bytes, or 0.25 FLOPs per byte. Actual traffic depends on the cache and compiler; the point is that the code does not deliberately organize reuse.</p>
+  <p><b>Blocking</b>, or tiling, makes that reuse deliberate. Instead of finishing one output at a time, multiply a small block of A by a small block of B and accumulate into a small block of C. Choose the blocks so they stay in a fast storage level while many operations use them. This sketch assumes each matrix dimension is a multiple of its block size; production code also handles smaller edge blocks:</p>
   <pre class="code"><span class="k">for</span> (int jblock=0; jblock&lt;M; jblock+=BLOCKSIZE_J)
   <span class="k">for</span> (int iblock=0; iblock&lt;N; iblock+=BLOCKSIZE_I)
     <span class="k">for</span> (int kblock=0; kblock&lt;K; kblock+=BLOCKSIZE_K)
@@ -286,7 +286,7 @@ parameters    = K · C · R · S (+ K biases)    <span class="u">// weights reus
         <span class="k">for</span> (int i=0; i&lt;BLOCKSIZE_I; i++)
           <span class="k">for</span> (int k=0; k&lt;BLOCKSIZE_K; k++)
             C[jblock+j][iblock+i] += A[jblock+j][kblock+k] * B[kblock+k][iblock+i];</pre>
-  <p>With square b × b blocks, each block step loads 2b² values of A and B and does b³ multiply-adds: every value loaded is used b times. So the arithmetic intensity grows in proportion to the block size, roughly <b>b/4 FLOPs per byte</b> in fp32. The block size is limited by how much fits in fast storage.</p>
+  <p>For square <i>b</i> × <i>b</i> blocks, a step reads <i>b²</i> values from A and <i>b²</i> from B, then performs <i>b³</i> multiply-adds. Each loaded input can contribute to <i>b</i> outputs before the block is replaced. Counting two FLOPs per multiply-add and four bytes per fp32 input gives <i>2b³ / (8b²) = b/4</i> FLOPs per byte of A/B traffic. This simple estimate leaves out loading and storing C and the traffic at other memory levels, but shows why larger reusable blocks raise arithmetic intensity.</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 8px"><span class="readout">Arithmetic:</span><div class="seg" role="group" aria-label="Arithmetic"><button data-bm="fp32" aria-pressed="true">fp32 ALUs (15.7 TFLOP/s)</button><button data-bm="tc">fp16 tensor cores (125 TFLOP/s)</button></div></div>
     <div class="cfg">
@@ -296,9 +296,9 @@ parameters    = K · C · R · S (+ K biases)    <span class="u">// weights reus
     <div class="stat" id="bkStat"></div>
     <p class="msg" id="bkMsg"></p>
   </div><figcaption><b>A roofline for blocked GEMM.</b> The machine is V100-like: 900 GB/s of memory bandwidth and either 15.7 TFLOP/s of fp32 or 125 TFLOP/s of fp16 tensor-core math. The model: three b × b blocks (A, B and C) must fit in the fast storage; a large 8192 × 8192 multiply is done block by block. Below the ridge point the multiply is bandwidth-bound; above it, compute-bound. (A teaching model: real kernels block at several levels at once and never get the full storage for one block.)</figcaption></figure>
-  <p>That answers the lecture's self-check, "do you want as big a BLOCKSIZE as possible?" You want blocks <b>big enough to get above the ridge point</b>, and no bigger: the blocks must fit (with room for everything else in the cache), bigger blocks mean fewer independent blocks to spread across cores, and more padding waste at the edges of matrices whose sizes aren't multiples of the block. Notice also that the faster tensor-core arithmetic moves the ridge point right: the faster the math, the more reuse you need.</p>
+  <p>Should <code>BLOCKSIZE</code> simply be as large as possible? The roofline's <b>ridge point</b> is the intensity at which the compute and bandwidth ceilings meet; reaching it is a useful target. Beyond that point, larger blocks do not raise this model's peak throughput. They can also crowd out other data, leave too few blocks to occupy all cores, or waste work at matrix edges. The best size depends on the machine and matrix shape. Notice that faster tensor-core arithmetic moves the ridge point to the right: faster math needs more data reuse to stay busy.</p>
   <h3>Blocking at every level, and vectorizing the block</h3>
-  <p>A real implementation blocks <b>hierarchically</b>: blocks sized for the L2 cache, sub-blocks for L1, and finally tiny blocks held in <b>registers</b>. Each loop level matches one level of the memory hierarchy.</p>
+  <p>A real implementation usually blocks at several levels: larger tiles for cache or GPU shared memory, smaller ones for a nearer cache, and tiny accumulators in <b>registers</b>. Each level tries to use a value several times before fetching it from the next, slower level.</p>
   <p>Inside the innermost block the code must also use SIMD. The lecture shows three ways, and the right one depends on the block's shape:</p>
   <ol>
     <li><b>Vectorize the i loop</b> (across a row of C). Broadcast one element of A to all lanes (<code>splat</code>), multiply by a vector of B's row, accumulate into a vector of C. Good spatial locality in B, but the working set grows by the SIMD width. Needs a wide i dimension.</li>
@@ -310,20 +310,20 @@ parameters    = K · C · R · S (+ K biases)    <span class="u">// weights reus
 
 <section class="lesson" id="s8" data-toc="Implicit GEMM and enough work" data-n="8">
   <div class="lesson-h"><div class="kicker">Section 8</div><h2>Implicit GEMM, and giving the GPU enough work</h2></div>
-  <p>Explicit GEMM pays for its convenience with that R × S blow-up in memory traffic. <b>Implicit GEMM</b> avoids it: the kernel is written as a GEMM over the <i>virtual</i> matrix A, but it computes each element's address in the activation tensor on the fly instead of reading a materialized copy.</p>
+  <p>Explicit GEMM gets a regular matrix operation but first writes the large im2col matrix to memory. <b>Implicit GEMM</b> keeps the matrix as a <i>virtual view</i>: when the GEMM kernel needs an entry of A, it calculates which image, location, and input channel that entry represents. It reads the original activation at that address instead of reading a stored copy of A.</p>
   <ul>
-    <li>A naive implicit GEMM just indexes into the input and weight tensors directly, with no blocking. Correct, but slow.</li>
-    <li>A good one materializes only <b>one sub-block of the convolution matrix at a time, in the GPU's on-chip shared memory</b>, then runs a well-tuned shared-memory GEMM on it. No extra off-chip storage, and no extra DRAM traffic: each input value is read from DRAM once per block and duplicated only inside shared memory.</li>
+    <li>A naive version can calculate the addresses for every individual multiply-add. It avoids the large intermediate but still misses opportunities for reuse.</li>
+    <li>A tiled version forms just the needed sub-block in <b>on-chip shared memory</b>, then uses it for many multiply-adds. The full im2col matrix is never stored off chip. Overlapping tiles may still reread some original activations, so the exact DRAM traffic depends on tiling and cache behavior.</li>
   </ul>
-  <p>This is Lecture 7's convolution example (load the tile plus its border into shared memory once, then compute from it) scaled up. NVIDIA's <b>CUTLASS</b> library provides the building blocks for writing such kernels: fast shared-memory GEMMs, warp-level GEMMs, iterators for loading blocks and indexing tensors, and reductions. It's for layers whose sizes haven't been heavily tuned in NVIDIA's cuDNN library.</p>
+  <p>The idea is close to Lecture 7's shared-memory convolution tile: bring in a small working set, reuse it, then move to the next tile. NVIDIA's <b>CUTLASS</b> provides building blocks for these kernels, including tiled matrix operations and iterators that map matrix coordinates back to convolution tensors. A library can tune the tile size and instruction shape for the particular layer and GPU.</p>
   <h3>A GPU needs a lot of parallel work</h3>
-  <p>Recall the V100: 80 SMs, each running many warps, with tensor cores, a 6 MB L2 and 900 GB/s from 16 GB of HBM. To fill it, a layer needs lots of independent outputs. The lecture compares two convolution problems with 128 filters:</p>
+  <p>Good reuse alone is not enough on a GPU: many blocks must be ready at once to occupy its 80 streaming multiprocessors. The lecture compares two V100 convolution workloads, both with 128 output filters. The number of outputs gives a rough sense of how much independent work the kernel can divide into blocks:</p>
   <div class="tbl"><table>
     <tr><th>Case</th><th class="m">Outputs</th><th class="m">Output data (fp32)</th></tr>
     <tr><td>N = 1 image, P = Q = 64</td><td class="m">64 × 64 × 128 × 1 = 524,288</td><td class="m">2 MB</td></tr>
     <tr><td>N = 32 images, P = Q = 256</td><td class="m">256 × 256 × 128 × 32 = 268 M</td><td class="m">1 GB</td></tr>
   </table></div>
-  <p>Measured throughput tells the story. With small images and one image at a time the V100 reaches only about 20 TFLOPS on these convolutions; with larger images or bigger batches it climbs to around 85, and flattens there. Throughput also climbs with the number of input channels, and 1 × 1 filters stay well below larger filters: less work per output means less reuse. <b>Batching</b> is one of the most effective optimizations for inference throughput, at the price of latency, since you must wait for a batch of requests to arrive.</p>
+  <p>In the lecture's measurements, effective convolution throughput rises from roughly 20 to 85 TFLOP/s as the images or batch grow, then levels off. Those figures describe convolution implementations using the GPU's tensor-core math; 85 TFLOP/s is above the V100's ordinary fp32 ALU peak. More input channels also create more work and potential reuse per output. A 1 × 1 filter has less spatial reuse than a larger filter, so its measured rate may be lower even though it performs fewer total operations. <b>Batching</b> often raises throughput by providing more work and reusing weights across images, but a service may wait longer to gather a batch, increasing request latency.</p>
 </section>
 
 <section class="lesson" id="s9" data-toc="Winograd and FFT" data-n="9">
