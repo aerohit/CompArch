@@ -113,13 +113,13 @@ svg text.sw{fill:#fff!important}
 <header class="hero">
   <div class="kicker">Stanford CS149 · Lecture 2 companion</div>
   <h1>A modern <em>multi-core</em> processor</h1>
-  <p class="lede">Why does a laptop chip have several cores, each with 8-wide vector units and two hardware threads, and why does a GPU take the same ideas to an extreme? This lecture answers with <b>three ideas</b> for executing more work in parallel, and one for coping with slow memory. It looks at them from a <b>software engineer's point of view</b>: what each one demands from your program.</p>
+  <p class="lede">A chip may have several cores, several arithmetic lanes inside each core, and several threads ready to use those lanes. Those numbers describe different ways to keep hardware busy. We will follow one instruction through a small processor, then build up a chip one feature at a time. At each step, the question is what kind of work a program must supply before the extra hardware helps.</p>
   <dl class="outcome">
     <dt>You'll be able to</dt><dd>Explain multi-core, SIMD and hardware multithreading. Say what kind of parallelism each exploits and what the program must provide for each to pay off. Calculate the peak throughput of a real chip, and work out how many threads are needed to hide a given memory latency.</dd>
     <dt>Background</dt><dd>Helpful: Units 1–4 of these notes (especially caches, superscalar execution, SMT and SIMD). This page recaps everything it needs, so it can be read on its own.</dd>
     <dt>Source</dt><dd>Follows the structure and examples of Stanford CS149 <i>Parallel Computing</i>, Fall 2023, Lecture 2, "A Modern Multi-Core Processor" (Kayvon Fatahalian and Kunle Olukotun). The explanations, diagrams and explorers here are original study material, not a copy of the slides.</dd>
   </dl>
-  <div class="insight">The whole lecture fits in one sentence. To run fast on a modern chip, a program must supply <b>enough independent work</b> for every core and execution unit, work that <b>follows the same instruction sequence</b> in groups (so SIMD lanes stay busy), and <b>even more work than that</b> so the chip can switch to something else while waiting on memory.</div>
+  <div class="insight">Keep three questions in view. Can different pieces run on different cores? Can several data values follow the same instruction on one core? When one piece waits for memory, is another ready to run? The lecture answers them with multi-core execution, SIMD, and hardware multithreading.</div>
 </header>
 
 <!-- ================================ PART 0 ================================ -->
@@ -127,26 +127,26 @@ svg text.sw{fill:#fff!important}
 
 <section class="lesson" id="s0" data-toc="The instruction life cycle" data-n="0" style="margin-top:36px">
   <div class="lesson-h"><div class="kicker">Section 0 · Foundations</div><h2>Three boxes, one rhythm: the life of an instruction</h2></div>
-  <p>Every processor in this lecture, from the simplest core to a GPU, is built from three kinds of box. They are drawn the same way in every diagram on this page: <b style="color:#d9763a">orange</b> for fetch/decode, <b style="color:#b8860b">yellow</b> for execution units, <b style="color:#5b6a8e">slate</b> for execution contexts. Before we start duplicating them, it pays to understand exactly what each box does, what it hands to the others, and how the three stay in step while a program runs.</p>
+  <p>Start with <code>ADD r0, r1</code>: read two registers, add their values, and keep the answer in r0. Three kinds of hardware take part. <b style="color:#d9763a">Orange</b> fetch/decode finds and interprets the instruction; the <b style="color:#b8860b">yellow</b> execution unit computes; the <b style="color:#5b6a8e">slate</b> execution context supplies and keeps the thread's registers and next-instruction address. The same colors recur in every diagram.</p>
   <div class="card4">
-    <div class="c1"><span class="l">Fetch / decode</span>Works out <b>which instruction is next</b> and <b>what it means</b>. It reads the PC, fetches the instruction's bits, and turns them into control signals: which operation, which registers, which memory access.</div>
-    <div class="c2"><span class="l">Execution unit (ALU)</span><b>Does the arithmetic.</b> Given an operation and some input values, it produces a result: a sum, a product, a comparison, or the address a load or store will use. It remembers nothing afterwards.</div>
-    <div class="c3"><span class="l">Execution context</span><b>Holds the program's state</b>: the registers and the program counter (PC). It is the only box that remembers anything from one instruction to the next. Swap it and you are running a different program.</div>
-    <div class="c4"><span class="l">The clock</span><b>Keeps them in sync.</b> Between clock edges, signals flow from box to box. On each edge, results are saved into the context and the machine moves on. Nothing becomes permanent except at a clock edge.</div>
+    <div class="c1"><span class="l">Fetch / decode</span>The <b>program counter (PC)</b> names the next instruction. Fetch gets its bits; decode identifies the operation and its inputs and destination.</div>
+    <div class="c2"><span class="l">Execution unit (ALU)</span>The <b>arithmetic and logic unit</b> produces a result from the requested operation and input values. It might add, compare, or calculate a memory address.</div>
+    <div class="c3"><span class="l">Execution context</span><b>Registers and PC</b> retain one thread's current working values and place in the program. Memory holds additional state outside this context.</div>
+    <div class="c4"><span class="l">The clock</span>In our first toy core, the context captures a finished result at a clock edge. Between edges, signals have time to travel through the other boxes.</div>
   </div>
 
   <h3>Who reads and writes what</h3>
-  <p>The cleanest way to see how the boxes cooperate is to follow the information. Each box consumes something produced by another and produces something another consumes. Only two places hold state that outlives an instruction: the execution context and memory.</p>
+  <p>For the add, fetch/decode receives the PC and instruction bits; the execution unit receives the decoded operation and register values; the context receives the result. The table follows those handoffs. In this simplified view, the context and memory retain state between instructions. Real cores also have temporary pipeline storage, which we will introduce after the toy example.</p>
   <div class="tbl"><table>
     <tr><th>Box</th><th>Takes in</th><th>Hands on</th><th>Keeps state between instructions?</th></tr>
-    <tr><td><b>Fetch/decode</b></td><td>The PC (from the context) and the instruction bits (from instruction memory)</td><td>Control signals: the operation, source and destination register names, any constant</td><td>No. It forgets an instruction once it has passed it on.</td></tr>
-    <tr><td><b>Execution unit</b></td><td>The operation (from decode) and operand values (from the context)</td><td>A result value, or a memory address for a load or store</td><td>No. It is a pure function of its inputs.</td></tr>
-    <tr><td><b>Execution context</b></td><td>Results (from the ALU), loaded values (from the data cache) and the next PC</td><td>Register values to the ALU, the PC to fetch</td><td><b>Yes</b>. It <i>is</i> the program's state.</td></tr>
-    <tr><td><b>Data cache / memory</b></td><td>An address, and for a store the value to write</td><td>For a load, the value at that address</td><td><b>Yes</b>. This is memory, shared by everything.</td></tr>
+    <tr><td><b>Fetch/decode</b></td><td>PC and instruction bits</td><td>Operation, input and destination register names, any constant</td><td>No, in this toy model</td></tr>
+    <tr><td><b>Execution unit</b></td><td>Decoded operation and input values</td><td>Result or load/store address</td><td>No, in this toy model</td></tr>
+    <tr><td><b>Execution context</b></td><td>Results, loaded values, next PC</td><td>Register values and PC</td><td><b>Yes</b>: per-thread register and PC state</td></tr>
+    <tr><td><b>Data cache / memory</b></td><td>Address; also a value for a store</td><td>Value for a load</td><td><b>Yes</b>: stored program data</td></tr>
   </table></div>
 
   <h3>Start simple: a machine you can program</h3>
-  <p>Start with the smallest machine that still has all three boxes. <b>TINY-4</b> is a core with four registers, four instructions and no data memory at all. Every instruction is one byte, and every instruction takes exactly one clock. Its four phases map directly onto the three boxes:</p>
+  <p>Now try a processor small enough to trace by hand. <b>TINY-4</b> has four registers, four kinds of instruction, and no data memory. Each instruction occupies one byte. Within one clock, it moves through four conceptual phases:</p>
   <ul>
     <li><b>Fetch</b> (fetch/decode): the PC selects one byte of instruction memory.</li>
     <li><b>Decode</b> (fetch/decode, reading the context): the byte is cut into fields, and the registers it names are read.</li>
@@ -160,7 +160,7 @@ svg text.sw{fill:#fff!important}
     <tr><td class="m">SUB rd, rs</td><td class="m">10 dd ss 00</td><td>rd ← rd − rs</td></tr>
     <tr><td class="m">JNZ rd, addr</td><td class="m">11 dd aaaa</td><td>if rd ≠ 0, jump to addr; otherwise continue with the next instruction</td></tr>
   </table></div>
-  <p>The two leftmost bits are the <b>opcode</b>, the next two name the destination register <b>dd</b>, and the last four are either a source register <b>ss</b> (plus two unused bits), a constant <b>n</b>, or a jump address <b>a</b>. Registers start at 0 and hold 8-bit values (0 to 255) that wrap around: 255 + 1 = 0 and 0 − 1 = 255. There's no HALT instruction: the machine stops when the PC reaches an empty slot in memory. Pick an example, or edit the program below the simulator and load it.</p>
+  <p>The first two bits are the <b>opcode</b>, which selects SET, ADD, SUB, or JNZ. The next two select one of the four registers; the final four encode a small constant, a source register with two unused bits, or a jump address. The registers start at zero and hold 8-bit values from 0 to 255; arithmetic wraps around, so 255 + 1 becomes 0. There is no HALT instruction: the simulator stops at an empty instruction-memory slot. Start with “add two numbers” and follow the PC, instruction bits, register inputs, and result through one clock.</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 8px"><span class="readout">Example:</span><div class="seg" role="group" aria-label="Example program"><button data-tp="add" aria-pressed="true">add two numbers</button><button data-tp="cnt">count down</button><button data-tp="mul">multiply 3 × 4</button><button data-tp="fib">Fibonacci pairs</button></div></div>
     <div class="sc" style="padding:0"><svg id="tSvg" viewBox="0 0 760 370" role="img" aria-label="TINY-4: instruction memory, a core with fetch/decode, decoded fields, ALU and execution context, and a clock panel with the instruction encoding" style="min-width:560px"></svg></div>
@@ -172,7 +172,7 @@ svg text.sw{fill:#fff!important}
         <div class="tref"><b>Syntax</b><br>One instruction per line, for example <code>ADD r0, r1</code>.<br>Registers r0 to r3; constants 0 to 15.<br><code>loop:</code> in front of an instruction makes a label that JNZ can jump to (or give the address as a number).<br><code>;</code> starts a comment.<br>At most 16 instructions.</div></div>
       <div class="ctrl"><button id="tLoad" class="pri">Load into memory</button><span class="readout" id="tErr"></span></div>
     </details>
-  </div><figcaption><b>One byte, one clock.</b> Follow the bits. Fetch brings eight bits into fetch/decode. Decode cuts them into fields, and the matching row of the encoding table lights up. The ALU acts, and only at the clock edge does the execution context change, with the register and the PC updated in the same instant. The orange row is the instruction being processed, and the triangle marks where the PC points. During write back the two separate, because the PC has already moved on. The four phases are drawn as quarters of the clock for clarity. In the hardware, signals simply ripple from fetch through decode to the ALU during the clock period, and nothing is saved until the edge.</figcaption></figure>
+  </div><figcaption><b>Read one instruction from bits to result.</b> The orange row is the instruction being processed; the triangle marks the PC's current position. Fetch brings its eight bits to decode, which separates the fields shown in the table. The ALU computes, then the register result and next PC are captured at the clock edge. The four phases are drawn as quarters of a clock to help you step through them; they are not four full clocks.</figcaption></figure>
   <div class="predict"><div class="ph"><b>Try it</b><span>Use the simulator to check your answers.</span></div><ol>
     <li>In "multiply 3 × 4", how many instructions does the machine execute, and how many clocks does that take?
       <details><summary>Show answer</summary><div class="ans"><p><b>15 of each.</b> Three SETs, then the three-instruction loop runs four times: 3 + 4 × 3 = 15. TINY-4 finishes one instruction per clock, so 15 clocks. The loop's ADD is the only instruction doing the "real" work. The rest is bookkeeping, which is typical of real programs too.</p></div></details></li>
