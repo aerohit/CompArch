@@ -184,40 +184,41 @@ scale(scale_amount, input_stream, output_stream);  // map the kernel over the st
 
 <section class="lesson" id="s3" data-toc="The thread hierarchy" data-n="3" style="margin-top:36px">
   <div class="lesson-h"><div class="kicker">Section 3</div><h2>A hierarchy of concurrent threads</h2></div>
-  <p>Keep four questions in mind through this part. Is CUDA a data-parallel programming model? Is it a shared-address-space model, or message passing? And can you draw analogies to ISPC instances and tasks, or to pthreads?</p>
-  <div class="pitfall"><b>"CUDA thread" doesn't mean what "thread" usually means.</b> A CUDA thread presents a similar <i>abstraction</i> to a pthread: a logical thread of control with its own local variables. Its <i>implementation</i> is completely different, as Part 3 shows. When this page says "thread" in a CUDA context, it means a CUDA thread.</div>
-  <p>A CUDA program launches a <b>grid</b> of <b>thread blocks</b>, each containing many <b>threads</b>. IDs can be up to three-dimensional, which is convenient for problems that are naturally 2D or 3D. The lecture's example adds two 12 × 6 matrices:</p>
+  <p>Adding two matrices is a good first kernel: output C[j][i] needs only A[j][i] and B[j][i], so each output element can have its own worker. CUDA makes those workers explicit. A kernel launch creates a <b>grid</b> of <b>thread blocks</b>, each containing many <b>CUDA threads</b>. A block and a thread can each have one-, two-, or three-dimensional IDs; two dimensions fit the rows and columns here.</p>
+  <div class="pitfall"><b>A CUDA thread is a logical worker, not an operating-system thread.</b> Like a CPU thread, it has its own local values and path through the code. The GPU groups many of these lightweight workers for execution; it does not create a separate OS stack and scheduler entry for each one. Part 3 shows how.</div>
+  <p>The host CPU chooses a 4 × 3 block, so each block covers twelve output cells. For a 12 × 6 matrix, it needs 3 blocks across and 2 down. The arrays below are flattened in row-major order: element (i, j) is at offset <code>j * Nx + i</code>.</p>
   <div class="grid2">
     <pre class="code" style="margin:0">// host code (runs on the CPU)
 const int Nx = 12, Ny = 6;
 dim3 threadsPerBlock(4, 3);
-dim3 numBlocks(Nx/threadsPerBlock.x,
-               Ny/threadsPerBlock.y);
-// launches 72 CUDA threads:
-// 6 thread blocks of 12 threads each
-matrixAdd&lt;&lt;&lt;numBlocks, threadsPerBlock&gt;&gt;&gt;(A, B, C);</pre>
+dim3 numBlocks((Nx + threadsPerBlock.x - 1) / threadsPerBlock.x,
+               (Ny + threadsPerBlock.y - 1) / threadsPerBlock.y);
+// devA, devB, devC are device allocations; launch 6 blocks, 72 threads
+matrixAdd&lt;&lt;&lt;numBlocks, threadsPerBlock&gt;&gt;&gt;(devA, devB, devC, Nx, Ny);</pre>
     <pre class="code" style="margin:0">// device code (runs on the GPU)
-<span class="k">__global__</span> void matrixAdd(float A[Ny][Nx],
-                          float B[Ny][Nx],
-                          float C[Ny][Nx]) {
+<span class="k">__global__</span> void matrixAdd(const float* A, const float* B,
+                          float* C, int Nx, int Ny) {
   int i = <span class="k">blockIdx</span>.x * <span class="k">blockDim</span>.x + <span class="k">threadIdx</span>.x;
   int j = <span class="k">blockIdx</span>.y * <span class="k">blockDim</span>.y + <span class="k">threadIdx</span>.y;
-  C[j][i] = A[j][i] + B[j][i];
+  if (i &lt; Nx &amp;&amp; j &lt; Ny) {
+    int k = j * Nx + i;
+    C[k] = A[k] + B[k];
+  }
 }</pre>
   </div>
-  <p>The launch is a <b>bulk</b> launch of many threads, and the call returns when all of them have terminated. Each thread computes its overall position in the grid from its position in its block (<code>threadIdx</code>) and its block's position in the grid (<code>blockIdx</code>). <code>__global__</code> marks a kernel: device code that the host can launch.</p>
+  <p>For example, thread (1, 2) in block (2, 1) computes i = 2 × 4 + 1 = 9 and j = 1 × 3 + 2 = 5, so it writes C[5][9]. <code>blockIdx</code> names the block, <code>threadIdx</code> names the thread inside it, and <code>blockDim</code> is the block's size. <code>__global__</code> marks code the host can launch on the device. The launch <b>queues</b> GPU work and normally returns to the CPU before the threads finish; the host must wait or use an ordered copy before consuming their results.</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 8px"><span class="readout">Matrix:</span><div class="seg" role="group" aria-label="Matrix size"><button data-mx="12,6" aria-pressed="true">12 × 6 (fits exactly)</button><button data-mx="11,5">11 × 5 (needs a guard)</button></div>
       <span class="readout" style="margin-left:8px">Click any thread.</span></div>
     <div class="sc" style="padding:0"><svg id="mxSvg" viewBox="0 0 760 290" role="img" aria-label="The grid of thread blocks over the matrix, with each thread's cell; the selected thread's IDs are shown" style="min-width:560px"></svg></div>
     <p class="msg" id="mxMsg"></p>
-  </div><figcaption><b>Blocks tile the matrix.</b> Each outlined rectangle is one 4 × 3 thread block; each small cell is one CUDA thread and the matrix element it computes. With an 11 × 5 matrix, the launch rounds up to the same 6 blocks and 72 threads (hatched cells have no element), so the kernel needs a guard: <code>if (i &lt; Nx &amp;&amp; j &lt; Ny)</code>. The number of CUDA threads is explicit in the program; it isn't determined by the size of a data collection, as a graphics <code>map</code> over pixels was.</figcaption></figure>
-  <p>The separation into host and device code is done <b>statically by the programmer</b>. Functions marked <code>__device__</code> (like a helper <code>doubleValue(x)</code>) run on the GPU and can be called from kernels; ordinary functions run on the CPU.</p>
+  </div><figcaption><b>Blocks tile the matrix.</b> Each outline is one 4 × 3 block; each cell is one thread's potential output. Switching to 11 × 5 still requires ⌈11/4⌉ × ⌈5/3⌉ = 3 × 2 blocks, so 72 threads are launched but only 55 have valid elements. Hatched cells fail the bounds check and do nothing. Choosing launch dimensions explicitly is a CUDA responsibility, unlike the earlier image-size mapping.</figcaption></figure>
+  <p>The programmer also marks where functions can run. <code>__device__</code> marks a GPU helper callable by device code; an ordinary C++ function runs on the host unless annotated for device use. Next we need to put the matrices somewhere the kernel can read them.</p>
 </section>
 
 <section class="lesson" id="s4" data-toc="The memory model" data-n="4">
   <div class="lesson-h"><div class="kicker">Section 4</div><h2>The CUDA memory model</h2></div>
-  <p>The host and the device have <b>distinct address spaces</b>. Host code allocates device memory with <code>cudaMalloc</code> and moves data with <code>cudaMemcpy</code>:</p>
+  <p>In the explicit-memory version used here, host arrays and device arrays are separate allocations. The CPU allocates GPU storage with <code>cudaMalloc</code> and copies input bytes into it with <code>cudaMemcpy</code>. A pointer returned for ordinary device memory is passed to a kernel; the CPU does not dereference it as if it were a host array:</p>
   <pre class="code">float* A = new float[N];              // host memory
 for (int i = 0; i &lt; N; i++) A[i] = (float)i;
 float* deviceA;
@@ -225,9 +226,9 @@ cudaMalloc(&amp;deviceA, sizeof(float) * N);    // device memory
 cudaMemcpy(deviceA, A, sizeof(float) * N, cudaMemcpyHostToDevice);
 // deviceA[i] = ... here would be invalid: deviceA is not a pointer
 // into the host's address space</pre>
-  <p>What does <code>cudaMemcpy</code> remind you of? It's <b>message passing</b>: explicit copies between separate address spaces. Inside the device, a kernel sees three more kinds of address space:</p>
+  <p>For this workflow, <code>cudaMemcpy</code> plays a role similar to sending a message: bytes move explicitly between host and device storage. CUDA also supports managed memory, where the runtime can migrate data rather than requiring these explicit copies. Inside the GPU, it helps to distinguish three scopes of storage:</p>
   <figure class="fig"><div class="sc"><svg id="memSvg" viewBox="0 0 760 270" role="img" aria-label="Host memory and device global memory connected by cudaMemcpy; inside the device, per-block shared memory and per-thread private memory" style="min-width:560px"></svg></div>
-    <figcaption><b>Different address spaces reflect different regions of locality.</b> <b>Per-thread private</b> memory is readable and writable only by its thread. <b>Per-block shared</b> memory is readable and writable by all threads in one block. <b>Device global</b> memory is readable and writable by all threads. This matters for efficiency: if you know which threads access the same variables, you can schedule them together.</figcaption></figure>
+    <figcaption><b>Who can access each value?</b> A thread's private variables belong to that thread; the compiler may keep them in registers or spill them to local memory. Threads in one block can use its on-chip <b>shared memory</b> together. All blocks can address <b>device global memory</b>, with synchronization or atomics needed when they coordinate updates. Grouping threads that reuse data into one block lets them share one staged copy.</figcaption></figure>
 </section>
 
 <section class="lesson" id="s5" data-toc="Example: 1D convolution" data-n="5">
