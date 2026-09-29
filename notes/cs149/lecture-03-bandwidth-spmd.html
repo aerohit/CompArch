@@ -360,7 +360,7 @@ for (<span class="u">uniform</span> int i = 0; i &lt; count; i++) {
 float sum = 0.0f;
 <span class="k">foreach</span> (i = 0 ... N)
   sum += x[i];
-return sum;   // returns uniform float</pre>
+return sum;   // function requires a uniform float</pre>
     <p style="font-size:14.5px"><code>sum</code> is <b>varying</b> by default: every instance keeps a partial sum. That cannot directly satisfy this function's required <i>uniform</i> return type. The varying-to-uniform return is a compile-time error.</p></div>
     <div><pre class="code" style="margin:0">// sum_incorrect_2
 <span class="u">uniform</span> float sum = 0.0f;
@@ -402,28 +402,28 @@ return sum;</pre>
 
 <section class="lesson" id="s11" data-toc="Implementation: SIMD & tasks" data-n="11">
   <div class="lesson-h"><div class="kicker">Section 11</div><h2>How the gang is implemented, and what it doesn't give you</h2></div>
+  <p>We can now connect the logical model to the CPU doing the work. In the eight-instance example, each instance holds one of the eight partial sums, and <code>reduce_add</code> needs to combine them. A SIMD vector can hold those eight values, update them with packed operations, and reduce them at the end. That is a common implementation of one gang, not eight independent CPU threads.</p>
   <figure class="fig"><div class="sc"><svg id="implSvg" viewBox="0 0 760 250" role="img" aria-label="The SPMD abstraction of eight program instances is implemented as the eight lanes of SIMD instructions on one core; multiple cores need ISPC tasks" style="min-width:560px"></svg></div>
-    <figcaption><b>Abstraction on top, implementation below.</b> The programmer thinks of programCount logical instruction streams. The compiler emits one stream of SIMD instructions (AVX2 on x86, NEON on Arm), one lane per instance, and turns divergent control flow into masked lanes, just as you do by hand in the first assignment. All of it runs in <b>one thread on one core</b>.</figcaption></figure>
+    <figcaption><b>Eight logical instances, one CPU vector in this example.</b> On an eight-wide CPU target, the compiler can map an instance to each SIMD lane and use masks when their <code>if</code> branches differ. A single ordinary call runs this gang on one calling thread. A wider gang may require multiple native vectors while remaining one logical gang. Tasks or multiple host callers can put other gangs on other cores.</figcaption></figure>
   <ul>
-    <li><b>SPMD programming model:</b> the programmer "thinks" that calling an ISPC function spawns programCount logical instruction streams, each with a different programIndex. The program is written in terms of that abstraction.</li>
-    <li><b>SIMD implementation:</b> the ISPC compiler emits vector instructions that carry out the gang's logic, handling divergent <code>if</code>s by masking lanes.</li>
-    <li><b>The semantics can be subtle</b>, because <code>uniform</code> values and cross-instance operations let implementation details peek through the abstraction.</li>
+    <li><b>SPMD model:</b> the gang has <code>programCount</code> logical instances with different <code>programIndex</code> values. The language defines their values, masks, and cross-instance operations.</li>
+    <li><b>CPU SIMD implementation:</b> vector instructions perform corresponding work for several instances together. If instances take different branches, the compiler can mask lanes while executing each path.</li>
+    <li><b>Performance consequence:</b> separate logical instances do not automatically mean separate cores. Address patterns and how many lanes remain active determine how effectively one vector unit is used.</li>
   </ul>
-  <p>One consequence surprises people: everything shown so far uses <b>only one core</b>. On the four-core machines used in the course, the gang runs on one of them. To use all cores, ISPC has a second abstraction, the <b>task</b>, which launches work onto multiple threads and therefore multiple cores. (The first assignment explores it.) So the full picture is <b>tasks across cores, gangs across SIMD lanes within each core</b>: the same "multi-core × SIMD" combination as Lecture 2.</p>
+  <p>To use multiple CPU cores, the application needs multiple independent gangs. One route is ISPC's <b>task</b> mechanism: <code>launch</code> makes work available to a task runtime, whose workers may run gangs on several cores. Another is to call the exported ISPC function from several C++ threads. Scheduling depends on the runtime and the available work; a task declaration alone does not guarantee a particular core. The useful mental picture is <b>several gangs across cores, with SIMD work inside each gang</b>—the multicore × SIMD combination from Lecture 2.</p>
 </section>
 
 <section class="lesson" id="s12" data-toc="Levels of abstraction" data-n="12">
   <div class="lesson-h"><div class="kicker">Section 12</div><h2>How high should the abstraction go?</h2></div>
-  <p>ISPC is deliberately a <b>low-level</b> language. By exposing <code>programIndex</code> and <code>programCount</code>, it lets the programmer control exactly which work and which data each instance handles. The price: you can write programs with <b>undefined output</b> (like shift_negative), or programs that are correct <b>only for one particular programCount</b>.</p>
-  <p>What if the language didn't expose instances at all?</p>
+  <p>ISPC exposes instance IDs and gang size so we can choose assignments such as interleaved or blocked. That control made the memory behavior in Section 8 visible, but it also makes off-by-one indexing, assumptions about gang size, and conflicting writes possible. A higher-level model can hide some of those decisions. Consider two steps away from manual instance mapping:</p>
   <ul>
-    <li><b>Only <code>foreach</code>:</b> remove <code>programIndex</code> and <code>programCount</code>. Now there's little reason to think about instances. Everything outside a <code>foreach</code> must be uniform values and uniform logic, because with no instance IDs there is nothing that could make one instance's value differ from another's.</li>
-    <li><b>No indexing at all:</b> invoke a function once per element of a <b>collection</b>, like <code>y = map(doWork, x)</code>. The programmer writes no loops and does no indexing. NumPy and PyTorch programmers work this way: <code>Z = X + Y</code> adds whole arrays, and the library decides how to parallelize.</li>
+    <li><b>Use <code>foreach</code> without manual instance IDs:</b> the programmer specifies the iteration range and leaves mapping to the compiler. Varying values can still exist before and after the loop—the <code>partial</code> variable in Section 10 is one example—but code no longer assigns each index with <code>programIndex</code>.</li>
+    <li><b>Express whole-array operations:</b> in a more restricted style, write <code>y = map(doWork, x)</code> or <code>Z = X + Y</code> and let a library choose loops, vector width, and parallel scheduling. NumPy and PyTorch support this style, alongside explicit indexing and other lower-level features.</li>
   </ul>
-  <p>Each step up hides more of the implementation, which makes it easier to write correct programs and harder to control performance. Later lectures return to these data-parallel models.</p>
+  <p>Hiding a choice can remove one way to make a mistake, such as a hand-written out-of-range index. It can also make a performance choice harder to express. No rung automatically guarantees correct code or fast code: shared-state races and costly data movement remain possible wherever the model permits them. Later lectures revisit these data-parallel styles.</p>
   <figure class="fig"><div class="sc"><svg id="ladderSvg" viewBox="0 0 760 190" role="img" aria-label="Three levels of abstraction: ISPC with programIndex, foreach only, and map over collections" style="min-width:560px"></svg></div>
-    <figcaption><b>A ladder of abstractions.</b> Moving right, the programmer says less about <i>how</i> work is assigned and the system decides more. Control and the risk of undefined behaviour decrease together.</figcaption></figure>
-  <div class="insight">The lecture's summary: <b>programming models provide a way to think about the organization of parallel programs. They provide abstractions that permit multiple valid implementations.</b> Keep asking, for the rest of the course: which parts of what I'm seeing are the abstraction's promises, and which are just how this implementation happens to work?</div>
+    <figcaption><b>Who chooses the work assignment?</b> Moving right, more of that choice belongs to the compiler or library. The diagram suggests fewer opportunities for manual mapping errors; it does not promise that every program at a higher level is race-free or efficient.</figcaption></figure>
+  <div class="insight"><b>A programming model is a set of promises, not a wiring diagram.</b> Before relying on an execution order, a lane mapping, or a memory access pattern, ask whether the model guarantees it. Then inspect the implementation to understand performance. That habit will carry through the rest of the course.</div>
 </section>
 
 <section class="lesson" id="gloss" data-toc="Glossary & review" data-n="✓">
