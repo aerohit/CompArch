@@ -396,17 +396,18 @@ svg text.sw{fill:#fff!important}
     <tr><td><b>Multi-core</b></td><td>Completely different instruction streams on different cores</td><td>Software: threads, or a <code>forall</code>-style construct</td><td>Independent tasks (threads)</td></tr>
   </table></div>
   <figure class="fig"><div class="sc"><svg id="threeSvg" viewBox="0 0 760 250" role="img" aria-label="Three example processors: superscalar single core, dual core, and SIMD quad-core"></svg></div>
-    <figcaption><b>Count the boxes.</b> A superscalar core has two fetch/decode units and two ALUs, but one context. A dual-core chip has two of everything. A SIMD quad-core has four cores, each with one fetch/decode driving eight lanes.</figcaption></figure>
+    <figcaption><b>Count what is shared.</b> In the simplified superscalar drawing, two execution paths use one thread's context. In the dual-core drawing, each core has its own instruction stream. In the SIMD quad-core drawing, each of four streams drives eight data lanes. The three designs ask for different kinds of independence from the same sine array.</figcaption></figure>
+  <p>Peak rates count what the hardware could do if instructions, independent data, and memory supply all line up. They are useful as ceilings; the program's achieved rate can be much lower. The next two calculations use the particular chips and operation assumptions shown in the lecture.</p>
   <h3>Worked example: peak throughput of a real CPU</h3>
   <div class="worked">
-    <p>An <b>Intel Core i7-7700K</b> (Kaby Lake, 2017) has <b>4 cores</b>. Each core has <b>three 8-wide SIMD</b> floating-point units (AVX2), and the chip runs at about <b>4.2 GHz</b>:</p>
+    <p>The lecture's <b>Intel Core i7-7700K</b> example has <b>4 cores</b> and uses an idealized rate of <b>three 8-wide vector arithmetic instructions per core per clock</b> at its 4.2 GHz base clock:</p>
     <p style="font-family:var(--mono)">4 cores × 3 units × 8 lanes × 4.2 × 10⁹ clocks/s ≈ <b>400 billion operations per second</b> (≈ 400 GFLOP/s)</p>
-    <p>A single scalar stream on one core, doing one operation per clock, reaches 4.2 GFLOP/s, about <b>1%</b> of that. The other 99% is available only to programs that are both multi-threaded <i>and</i> vectorized.</p>
+    <p>That is about 400 billion single floating-point operations per second <i>in this model</i>, for an instruction mix that can keep the pictured units busy. Three vector operations per clock is not a universal throughput for every instruction: the lecture's core allows fewer vector multiplies than adds, and fused multiply-add (FMA) counts as two floating-point operations. A one-operation-per-clock scalar baseline is 4.2 GFLOP/s in the same simplified comparison, about 1% of 400. Reaching the larger rate also needs threads, vectorized work, enough independent instructions, and data supply.</p>
   </div>
   <div class="worked">
-    <p>An <b>NVIDIA V100</b> GPU (2017) has <b>80 SMs</b> (its "cores"). Each SM has <b>64 FP32 SIMD lanes</b>, and each lane can do a fused multiply-add (2 floating-point operations) per clock at about <b>1.53 GHz</b>:</p>
-    <p style="font-family:var(--mono)">80 × 64 × 2 × 1.53 × 10⁹ ≈ <b>15.7 TFLOP/s</b> at about 250 W</p>
-    <p>That's roughly 40× the CPU. The GPU's cores are simpler, and far more of its chip is ALUs. Section 12 looks inside one SM.</p>
+    <p>The <b>NVIDIA V100 SXM2</b> GPU has <b>80 streaming multiprocessors (SMs)</b>, with 64 FP32 lanes per SM. At about 1.53 GHz, an FMA on each lane contributes two floating-point operations:</p>
+    <p style="font-family:var(--mono)">80 × 64 × 2 × 1.53 × 10⁹ ≈ <b>15.7 TFLOP/s</b> (SXM2, up to about 300 W)</p>
+    <p>This is a different peak-operation mix from the CPU's illustrative vector-arithmetic count, so their ratio does not predict speedup for one program. It does show why GPUs devote much more hardware to parallel arithmetic. Section 12 looks inside an SM and asks what software must provide to use it.</p>
   </div>
 </section>
 
