@@ -175,7 +175,7 @@ svg text.sw{fill:#fff!important}
 <section class="lesson" id="s3" data-toc="Three course themes" data-n="3">
   <div class="lesson-h"><div class="kicker">Section 3</div><h2>The course's three themes</h2></div>
   <div class="card4">
-    <div class="c1"><span class="l">Theme 1 · Parallel thinking</span>Break a job into pieces that can run together, assign those pieces evenly, and arrange the communication and synchronization they need. A program <b>scales</b> when adding workers continues to reduce its running time.</div>
+    <div class="c1"><span class="l">Theme 1 · Parallel thinking</span>Break a job into pieces that can run together, assign those pieces evenly, and arrange communication and <b>synchronization</b>—waiting when one piece needs another's result. A program <b>scales</b> when adding workers continues to reduce its running time.</div>
     <div class="c2"><span class="l">Theme 2 · How the hardware works</span>Understand what processors and memory actually do, so you can predict when a design choice makes work cheaper or more expensive.</div>
     <div class="c3"><span class="l">Theme 3 · Efficiency</span>Compare a program's speedup with the hardware it uses. A 2× speedup on 10 processors has 20% parallel efficiency, even though the program finishes sooner.</div>
     <div class="c4"><span class="l">Why hardware matters</span>The demos made communication cost visible. On a real machine, memory and communication costs likewise determine whether a promising way to split work pays off.</div>
@@ -390,7 +390,7 @@ svg text.sw{fill:#fff!important}
     <li><b>Spatial locality</b> means using nearby addresses. In Example 1, the first access to <code>0x0</code> misses, but <code>0x1</code>, <code>0x2</code>, and <code>0x3</code> hit in the line that miss fetched.</li>
     <li><b>Temporal locality</b> means using an address again soon. Repeated reads of <code>0x2</code> and <code>0x1</code> hit while their line remains cached.</li>
   </ul>
-  <p>A <b>cold miss</b> is the first request for a line after the cache starts empty. A <b>capacity miss</b> occurs when a previously held line was evicted because the cache could not hold all the lines the program kept using. Example 2 crosses four lines in a cache that holds two; on returning to <code>0x0</code>, it misses again. Give the cache four lines and that final access hits.</p>
+  <p>In this model, a <b>cold miss</b> is the first request for a line that has not yet been brought into the cache. A <b>capacity miss</b> occurs when a previously held line was evicted because the cache could not hold all the lines the program kept using. Example 2 crosses four lines in a cache that holds two; on returning to <code>0x0</code>, it misses again. Give the cache four lines and that final access hits.</p>
   <p>Hits shorten the wait we saw in the load timeline; misses still pay to reach a slower level. A program that repeatedly uses a small collection of nearby data often gets many hits. Later lectures will also consider how fast a cache can deliver a <i>stream</i> of data, which is a bandwidth question rather than a single-load latency question.</p>
 </section>
 
@@ -399,7 +399,7 @@ svg text.sw{fill:#fff!important}
   <p>A real processor does not have just one tiny cache. A load first looks near the core in <b>level 1 (L1)</b>. On a miss, the hardware checks a larger <b>L2</b>, then a larger <b>L3</b>, and finally main memory (<b>DRAM</b>) if necessary. The requested line travels back toward the core, where later accesses may hit. Caches hold copies, so the data need not live in only one level. The program still names one address and receives the value prescribed by its memory model.</p>
   <figure class="fig"><div class="sc"><svg id="hierSvg" viewBox="0 0 760 220" role="img" aria-label="Processor, then L1 cache 32 KB 4 cycles, L2 256 KB 12 cycles, L3 20 MB 38 cycles, DRAM 64 GB about 248 cycles" style="min-width:560px"></svg></div>
     <figcaption><b>Each farther level is larger and slower.</b> The lecture's example machine has roughly 32 KB of L1, 256 KB of L2, 20 MB of L3, and 64 GB of DRAM. The shown latencies at 4 GHz—4, 12, 38, and about 248 cycles—are approximate <i>total</i> times to serve a load from each level, not times to add together. A DRAM load is roughly 60 times slower than an L1 hit in this model.</figcaption></figure>
-  <p>The explorer estimates <b>average load latency</b> by counting what fraction of loads finish at each level. Read its sliders in sequence: “found in L1” applies to all loads; “of the rest, found in L2” applies only to L1 misses; and the L3 slider applies only to loads that missed both L1 and L2. For example, if 90% hit L1 and half of the remaining 10% hit L2, then 5% of <i>all</i> loads are served by L2.</p>
+  <p>A program's <b>working set</b> is the data it keeps using over a stretch of execution. A small working set can fit near the core; a large or widely scattered one may send more loads to distant levels. The explorer estimates <b>average load latency</b> by counting what fraction of loads finish at each level. Read its sliders in sequence: “found in L1” applies to all loads; “of the rest, found in L2” applies only to L1 misses; and the L3 slider applies only to loads that missed both L1 and L2. For example, if 90% hit L1 and half of the remaining 10% hit L2, then 5% of <i>all</i> loads are served by L2.</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 8px"><span class="readout">Program:</span><div class="seg" role="group" aria-label="Program presets"><button data-hp="good" aria-pressed="true">small working set</button><button data-hp="mid">medium working set</button><button data-hp="bad">random access, huge data</button></div></div>
     <div class="cfg">
@@ -444,7 +444,7 @@ svg text.sw{fill:#fff!important}
     <dt>Specialization</dt><dd>Hardware designed around a particular workload, such as graphics or neural networks, to improve speed or energy use for that work.</dd>
     <dt>Address space</dt><dd>Memory as an array of bytes, each identified by its address.</dd>
     <dt>Latency</dt><dd>Time for the memory system to deliver requested data.</dd>
-    <dt>Stall</dt><dd>The processor can't run the next instruction because it depends on one that isn't complete, often a load.</dd>
+    <dt>Stall</dt><dd>A delay while a needed instruction cannot advance because an input is not ready, often after a load.</dd>
     <dt>Cache, cache line</dt><dd>On-chip storage holding copies of recently used memory, managed in fixed-size lines.</dd>
     <dt>Spatial / temporal locality</dt><dd>Accessing addresses near recent ones / accessing the same addresses again soon. Both make caches effective.</dd>
     <dt>Cold / capacity miss</dt><dd>A line's first requested access / a later miss after a previously held line was evicted for lack of space.</dd>
