@@ -116,13 +116,13 @@ svg text.sw{fill:#fff!important}
 <header class="hero">
   <div class="kicker">Stanford CS149 · Lecture 10 companion</div>
   <h1>Efficiently evaluating <em>deep neural networks</em></h1>
-  <p class="lede">A trained neural network is just a program: a long chain of layers, most of which are big, regular loops of multiply-adds. This lecture asks how to run that program fast. The answers come from three directions at once: design networks that need less work, schedule the work well on the hardware (blocking, fusion, clever algorithms), and build hardware whose instructions do more useful math per unit of overhead.</p>
+  <p class="lede">A trained neural network takes an input, passes it through a sequence of layers, and produces an output. Many of those layers repeat the same multiply-and-add operation millions of times. That sounds ideal for parallel hardware, yet a fast chip can still spend much of its time moving data instead of calculating. This lecture follows the computation from a single neuron to a whole network and asks, at each step, how to do less work or make better use of the hardware.</p>
   <dl class="outcome">
     <dt>You'll be able to</dt><dd>Explain what a fully connected layer, a convolution layer, ReLU and pooling compute, and count their cost. Explain why depthwise separable convolutions (MobileNet) are cheaper. Map a convolution onto a matrix multiplication, explicitly (im2col) or implicitly, and explain the cost of each. Explain how blocking raises arithmetic intensity. Explain how operator fusion saves memory traffic, including the chunked-softmax trick behind fused attention. Explain why tensor cores and DNN accelerators exist.</dd>
     <dt>Background</dt><dd><a href="lecture-03-bandwidth-spmd.html">Lecture 3</a> (arithmetic intensity, bandwidth-bound execution) and <a href="lecture-07-gpu-cuda.html">Lecture 7</a> (GPUs, CUDA, shared memory). Unit 5 of these notes covers the roofline model, tiling and number formats in more depth.</dd>
     <dt>Source</dt><dd>Follows the structure and examples of Stanford CS149 <i>Parallel Computing</i>, Fall 2023, Lecture 10, "Efficiently Evaluating DNNs" (Kayvon Fatahalian and Kunle Olukotun). Lectures 8–9 aren't covered here yet. The explanations, diagrams and explorers are original study material, not a copy of the slides.</dd>
   </dl>
-  <div class="insight">The recurring question in this lecture: <b>for this operation, what limits the speed — arithmetic or data movement?</b> Convolutions and matrix multiplies do a lot of math per byte, so the job is to <i>keep</i> that intensity when implementing them (blocking, implicit GEMM). Element-wise operations do almost no math per byte, so the job is to stop them from making their own trips to memory (fusion).</div>
+  <div class="insight"><b>Keep one question in mind:</b> is this layer waiting for arithmetic units, or waiting for data? A matrix multiply can reuse each value many times if its implementation keeps that value nearby. An element-wise operation usually uses a value once, so running it as a separate pass may cost more in memory traffic than in arithmetic. The choices later in the lecture follow from that difference.</div>
 </header>
 
 <!-- ================================ PART 1 ================================ -->
@@ -130,38 +130,38 @@ svg text.sw{fill:#fff!important}
 
 <section class="lesson" id="s1" data-toc="The efficiency challenge" data-n="1" style="margin-top:36px">
   <div class="lesson-h"><div class="kicker">Section 1</div><h2>The efficiency challenge</h2></div>
-  <p>Deep neural networks (DNNs) come in many <b>topologies</b>: VGG, ResNet, Inception, MobileNet and hundreds of variants, each a different arrangement of layers of different shapes. And they have to run on many kinds of <b>device</b>: server GPUs, phone CPUs, phone neural-engine chips, custom accelerators. The practical problem is the product of the two: for every network and every device, how do you get an implementation that uses the device well?</p>
+  <p>A network's <b>topology</b> is the choice, order, and shape of its layers. VGG, ResNet, Inception, and MobileNet make different choices, so they demand different amounts and kinds of work. The same network may also run on a server GPU, a phone CPU, or a dedicated neural processor. An implementation that is quick on one device may be slow on another. We need to understand both the work the model asks for and the machine that will perform it.</p>
   <p>The lecture groups the answers into three strategies, which structure this page:</p>
   <ol>
-    <li><b>Better algorithms.</b> Design network topologies that reach the same accuracy with much less work (Section 4).</li>
-    <li><b>Better software.</b> Implement each layer efficiently: map it onto well-tuned matrix multiply, block it for the memory hierarchy, fuse operations together (Parts 2 and 3).</li>
-    <li><b>Better hardware, and approximation.</b> Use lower precision, and specialized instructions and chips that make the common operations cheap (Part 4).</li>
+    <li><b>Ask for less work.</b> Choose a network topology that reaches the needed accuracy with fewer operations (Section 4).</li>
+    <li><b>Use data well.</b> Arrange each layer so values are reused near the arithmetic units, and combine neighboring operations so intermediate results need fewer trips to memory (Parts 2 and 3).</li>
+    <li><b>Make each operation cheaper.</b> Use an appropriate numeric precision and hardware that performs many multiply-adds with little instruction overhead (Parts 3 and 4).</li>
   </ol>
-  <p>This lecture is about <b>evaluation</b> (also called <b>inference</b>): running an already-trained network on new input. Training runs the same layers forward, then backward, and has similar computational character.</p>
+  <p>Here <b>evaluation</b>, or <b>inference</b>, means applying a network whose weights have already been learned to a new input. We will follow the forward calculation only. Training also performs this forward pass, then computes gradients and updates the weights; it brings additional work and memory needs.</p>
 </section>
 
 <section class="lesson" id="s2" data-toc="Neurons and fully connected layers" data-n="2">
   <div class="lesson-h"><div class="kicker">Section 2</div><h2>Neurons, layers and matrix-vector products</h2></div>
-  <p>A DNN is a big expression: a graph of simple operations. The lecture's warm-up example is a tiny one, <code>max(max(0, a·b + c·d) + e·f + g·h, i·j)</code>. Every node is a multiply, an add, or a max. Real networks are the same kind of thing, only with millions of nodes arranged regularly.</p>
-  <p>The basic unit is a <b>neuron</b>. It takes inputs <i>x<sub>i</sub></i>, computes a weighted sum plus a bias, and applies a simple nonlinear function <i>f</i>:</p>
+  <p>Start with the lecture's small expression, <code>max(max(0, a·b + c·d) + e·f + g·h, i·j)</code>. To evaluate it, multiply pairs of numbers, add some results, and take two maxima. A neural network is a much larger graph of operations of the same general kind. The graph matters because it tells us which results can be computed independently and which must wait for earlier results.</p>
+  <p>One familiar building block is a <b>neuron</b>. It multiplies each input <i>x<sub>i</sub></i> by a weight <i>w<sub>i</sub></i>, adds the products and a bias <i>b</i>, then applies a function <i>f</i>:</p>
   <pre class="code">out = f( Σ<sub>i</sub> x<sub>i</sub>·w<sub>i</sub> + b )        <span class="u">// f is often ReLU: f(v) = max(0, v)</span></pre>
-  <p>The weights <i>w</i> and bias <i>b</i> are the <b>parameters</b> learned in training; for evaluation they're constants. Older networks used a sigmoid for <i>f</i>; modern ones mostly use <b>ReLU</b> (rectified linear unit), which just zeroes negative values.</p>
-  <p>A <b>fully connected layer</b> is a column of neurons that each see every input. Put each neuron's weights in one row of a matrix and the whole layer is one matrix-vector product:</p>
+  <p>The weights and bias are the <b>parameters</b> found during training; they stay fixed during this evaluation. The function <i>f</i> makes the layer nonlinear, allowing a stack of layers to represent more than one large weighted sum. A common choice is <b>ReLU</b> (rectified linear unit): negative inputs become zero, and positive inputs pass through.</p>
+  <p>A <b>fully connected layer</b> has several neurons, each reading every input value. Put one neuron's weights in each row of a matrix. Multiplying that matrix by the input vector computes all the weighted sums at once; then add the biases and apply <i>f</i> to each result:</p>
   <figure class="fig"><div class="sc"><svg id="fcSvg" viewBox="0 0 760 200" role="img" aria-label="Three inputs, each connected to all four neurons of a fully connected layer, and the equivalent formula: f of a 4 by 3 weight matrix times the input vector plus a bias vector" style="min-width:560px"></svg></div>
-    <figcaption><b>A fully connected layer is a matrix-vector product.</b> 3 inputs and 4 neurons give a 4 × 3 weight matrix: 12 multiply-adds and 12 parameters. Evaluate a whole batch of inputs at once and the matrix-vector product becomes a <b>matrix-matrix</b> product, which is where the arithmetic intensity comes from.</figcaption></figure>
-  <p>The number of weights in a fully connected layer is (inputs × outputs). Connect every pixel of a 224 × 224 × 3 image to even 1,000 neurons and that's 150 million weights for one layer. That's why image networks use a different kind of layer.</p>
+    <figcaption><b>Four neurons, three inputs each.</b> The weight matrix has 4 × 3 = 12 entries, plus one bias per neuron. Computing one input uses 12 weight-input products. If several input vectors are evaluated together, put them in columns: the layer becomes a <b>matrix-matrix product</b>, with opportunities to reuse each weight across the batch.</figcaption></figure>
+  <p>The number of weights is inputs × outputs. A 224 × 224 RGB image contains 150,528 input values; connecting all of them to just 1,000 neurons would require 150,528,000 weights, before biases. Storing and using that many weights in an early image layer is costly. The next layer type keeps the useful local structure of an image without connecting every pixel to every output.</p>
 </section>
 
 <section class="lesson" id="s3" data-toc="Convolution" data-n="3">
   <div class="lesson-h"><div class="kicker">Section 3</div><h2>Convolution: local connections with shared weights</h2></div>
-  <p>Two observations about images shrink the layer dramatically:</p>
+  <p>The first layer need not look at the whole image to recognize a small feature. Two choices make it much cheaper:</p>
   <ul>
-    <li><b>Locality.</b> A useful feature at a pixel (an edge, a corner) depends on the pixels near it. So each output only needs to connect to a small window of the input, say 3 × 3. That's a <b>locally connected</b> layer.</li>
-    <li><b>Translation invariance.</b> An edge looks the same wherever it is. So every output location can use the <i>same</i> weights. That's a <b>convolution</b>: a locally connected layer with shared weights. The weights are called the <b>filter</b> (or kernel).</li>
+    <li><b>Local connections.</b> An edge or corner can be detected from nearby pixels. Each output can therefore read a small input window, such as 3 × 3, instead of the entire image.</li>
+    <li><b>Shared weights.</b> The same kind of edge might occur anywhere. Reuse one set of weights at every location. Moving the input feature then moves its response in the output; this is <b>translation equivariance</b>. The shared weights are a <b>filter</b>, or kernel, and applying it across the image is called a convolution layer.</li>
   </ul>
-  <p>Here is the lecture's 3 × 3 convolution of a single-channel image, written as plain C. With every weight 1/9, it's a box blur:</p>
+  <p>Here is the lecture's 3 × 3 example on a single-channel image. The input array includes a one-pixel border whose values have been chosen beforehand, so every 3 × 3 window is in bounds. At each output position, the code multiplies nine pixels by the same nine weights and adds the products. With every weight equal to 1/9, the result is an average, or box blur:</p>
   <pre class="code"><span class="k">int</span> WIDTH = 1024, HEIGHT = 1024;
-<span class="k">float</span> input[(WIDTH+2) * (HEIGHT+2)];   <span class="u">// 1-pixel border so the window never runs off</span>
+<span class="k">float</span> input[(WIDTH+2) * (HEIGHT+2)];   <span class="u">// initialized image plus a 1-pixel border</span>
 <span class="k">float</span> output[WIDTH * HEIGHT];
 <span class="k">float</span> weights[] = {1/9., 1/9., 1/9.,
                    1/9., 1/9., 1/9.,
@@ -175,7 +175,7 @@ svg text.sw{fill:#fff!important}
         tmp += input[(j+jj)*(WIDTH+2) + (i+ii)] * weights[jj*3 + ii];
     output[j*WIDTH + i] = tmp;
   }</pre>
-  <p>Different weights detect different things. The classic <b>Sobel</b> filters respond to horizontal or vertical changes in brightness, that is, to edges. Try them:</p>
+  <p>The filter changes the question asked of each window. <b>Sobel</b> filters, for example, respond to changes in brightness across a horizontal or vertical direction. They highlight edges instead of blurring them. Try the choices below. In machine-learning libraries, this sliding dot product is usually called “convolution” even though the filter is not reversed as it would be in the mathematical definition.</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 8px"><span class="readout">Filter:</span><div class="seg" role="group" aria-label="Filter"><button data-cf="blur" aria-pressed="true">blur (all 1/9)</button><button data-cf="sx">Sobel x (vertical edges)</button><button data-cf="sy">Sobel y (horizontal edges)</button><button data-cf="sharp">sharpen</button></div>
       <div class="seg" role="group" aria-label="Apply ReLU"><button data-cr="0" aria-pressed="true">no ReLU</button><button data-cr="1">then ReLU</button></div></div>
@@ -183,18 +183,19 @@ svg text.sw{fill:#fff!important}
     <p class="msg" id="cvMsg"></p>
   </div><figcaption><b>Click any output pixel.</b> Its value is the sum of the nine input pixels under the window, each multiplied by the filter weight in the same position. Teal is positive, orange is negative. The input is a bright square on a dark background; blur softens its edges, the Sobel filters light up its left/right or top/bottom edges with opposite signs, and ReLU keeps only the positive responses.</figcaption></figure>
   <h3>Convolution layers in a real network</h3>
-  <p>Real inputs have several <b>channels</b> (3 for RGB; later layers have 64, 128, 512…). A filter spans all input channels, so a 3 × 3 filter on 64 channels is a 3 × 3 × 64 block of weights, and it produces one output channel. A layer applies <i>K</i> such filters, producing <i>K</i> output channels. The first layer of the 2012 AlexNet network, for example, applies 96 filters of size 11 × 11 × 3 to the image.</p>
-  <p>A layer's output is typically followed by ReLU and then <b>pooling</b>, which shrinks each channel, for example by taking the max of every 2 × 2 region (W × H becomes W/2 × H/2):</p>
+  <p>An RGB input has three <b>channels</b>; deeper layers may have dozens or hundreds. To produce one output channel, one filter looks across <i>all</i> input channels: on a 64-channel input, a 3 × 3 filter has 3 × 3 × 64 weights. Apply <i>K</i> different filters and the output has <i>K</i> channels. AlexNet's first layer, for example, uses 96 filters of size 11 × 11 × 3.</p>
+  <p>One familiar network pattern applies <b>ReLU</b> after convolution, then <b>pooling</b>. A 2 × 2 max pool keeps the largest value in each nonoverlapping 2 × 2 region of a channel. With stride 2 and even dimensions, it halves the width and height. The diagram assumes the convolution uses padding that preserves the spatial dimensions; other padding and stride choices give different sizes.</p>
   <figure class="fig"><div class="sc"><svg id="pipeSvg" viewBox="0 0 760 170" role="img" aria-label="Pipeline: input W by H by C, convolution with K filters to W by H by K, ReLU to W by H by K, 2 by 2 max pool to W/2 by H/2 by K" style="min-width:560px"></svg></div>
-    <figcaption><b>The basic building block: conv → ReLU → pool.</b> Networks stack dozens of these. Pooling halves the width and height, so later layers work on smaller images with more channels. All the tensors in between are called <b>activations</b>.</figcaption></figure>
-  <p>The costs follow directly from the loops. For an output of <i>H</i> × <i>W</i> pixels with <i>K</i> channels, from <i>C</i> input channels with <i>R</i> × <i>S</i> filters:</p>
+    <figcaption><b>One possible block: conv → ReLU → pool.</b> Under the diagram's same-size convolution and 2 × 2, stride-2 pool, W × H × K becomes (W/2) × (H/2) × K. The arrays between layers are <b>activations</b>. Many networks use other sequences or omit pooling.</figcaption></figure>
+  <p>We can now count the convolution's work. Let its output have <i>H</i> × <i>W</i> positions and <i>K</i> channels; let the input have <i>C</i> channels and each filter have <i>R</i> × <i>S</i> spatial weights. Each output value sums <i>C·R·S</i> products:</p>
   <pre class="code">multiply-adds = H · W · K · C · R · S         <span class="u">// every output pixel, every filter, every weight</span>
-parameters    = K · C · R · S (+ K biases)    <span class="u">// independent of the image size</span></pre>
+parameters    = K · C · R · S (+ K biases)    <span class="u">// weights reused at every position</span></pre>
+  <p>The output dimensions already reflect the chosen stride and padding. Notice the difference between the two counts: a larger image increases the number of multiply-adds, but it does not create more filter weights. That repeated use of the same weights is a source of reuse for a fast implementation.</p>
 </section>
 
 <section class="lesson" id="s4" data-toc="Cheaper topologies" data-n="4">
   <div class="lesson-h"><div class="kicker">Section 4</div><h2>Approach 1: design topologies that need less work</h2></div>
-  <p>The first way to make evaluation fast is to change the network. Between 2014 and 2017 researchers found topologies that reach similar ImageNet accuracy with far less computation. The lecture's comparison (MADDs are multiply-adds per image):</p>
+  <p>The first optimization happens before implementation: choose a network that asks for less work. The lecture compares several ImageNet classifiers from 2014–2017. <b>Top-1 accuracy</b> is the fraction of images for which the model's highest-scoring label is correct; <b>MADDs</b> counts multiply-adds for one image. These published figures are useful for scale, though evaluation details differ among models:</p>
   <div class="tbl"><table>
     <tr><th>Network</th><th class="m">Year</th><th class="m">Top-1 accuracy</th><th class="m">Parameters</th><th class="m">MADDs per image</th></tr>
     <tr><td>VGG-16</td><td class="m">2014</td><td class="m">71.5%</td><td class="m">138 M</td><td class="m">15 B</td></tr>
@@ -203,9 +204,9 @@ parameters    = K · C · R · S (+ K biases)    <span class="u">// independent 
     <tr class="hl"><td>MobileNet-224</td><td class="m">2017</td><td class="m">70.5%</td><td class="m">4.2 M</td><td class="m">0.6 B</td></tr>
   </table></div>
   <p class="xs" style="font-size:13px;color:var(--mute)">* 10-crop result; ResNet's single-crop results are similar to the other networks'.</p>
-  <p>That's about a <b>25× reduction in cost at similar accuracy</b> (15 B / 0.6 B) in three years. For comparison, hardware roughly doubled in performance over the same period. ResNet's contribution was <b>residual</b> (skip) connections, which made deep networks trainable; its 34-layer version needs 3.6 billion FLOPs where VGG-19 needs 19.6 billion.</p>
+  <p>VGG-16 and MobileNet-224 land in roughly the same accuracy range in this table, while their listed multiply-add counts differ by about 25×: 15 B / 0.6 B. That is a change in the <i>work requested</i>, before any faster chip or kernel is considered. The accuracy figures are not a controlled head-to-head comparison; for example, the ResNet-18 entry uses ten crops per image. ResNet's <b>residual connections</b> provide a route around layers during training, making very deep models easier to optimize. They are one example of how network structure changes both accuracy and computational cost.</p>
   <h3>MobileNet's trick: depthwise separable convolution</h3>
-  <p>A standard 3 × 3 convolution with <i>C</i> input and <i>K</i> output channels mixes space and channels in one step: every one of the <i>K</i> filters looks at a 3 × 3 × <i>C</i> window. MobileNet factors that into two cheaper steps:</p>
+  <p>MobileNet's key change is easier to see with the count from Section 3. At every output position, a standard <i>R</i> × <i>S</i> convolution uses <i>R·S·C·K</i> multiply-adds: each of <i>K</i> filters spans all <i>C</i> input channels. <b>Depthwise separable convolution</b> breaks the spatial and channel work into two stages:</p>
   <ol>
     <li><b>Depthwise:</b> <i>C</i> separate 3 × 3 × 1 filters, one per input channel. Spatial filtering, no channel mixing.</li>
     <li><b>Pointwise:</b> <i>K</i> filters of size 1 × 1 × <i>C</i>. Channel mixing, no spatial extent.</li>
@@ -221,8 +222,8 @@ parameters    = K · C · R · S (+ K biases)    <span class="u">// independent 
     <div class="sc" style="padding:10px 0 0"><svg id="lcSvg" viewBox="0 0 760 150" role="img" aria-label="Bars comparing multiply-adds for a standard convolution and a depthwise separable one, split into depthwise and pointwise parts" style="min-width:560px"></svg></div>
     <div class="stat" id="lcStat"></div>
   </div><figcaption><b>The pointwise part dominates.</b> The depthwise separable cost divided by the standard cost is exactly 1/<i>K</i> + 1/(<i>R</i>·<i>S</i>). With 3 × 3 filters and hundreds of channels that's about 1/9: 8–9 times less work. And the remaining work is almost all in the 1 × 1 convolutions.</figcaption></figure>
-  <p>MobileNet's paper reports that <b>about 95% of its multiply-adds are in 1 × 1 convolutions</b> (which also hold 75% of its parameters; most of the rest are in the final fully connected layer). That matters for the next part: a 1 × 1 convolution <i>is</i> a matrix multiply with no rearrangement, and matrix multiply is the most optimized routine in numerical computing.</p>
-  <div class="pitfall">Fewer FLOPs isn't automatically less time. Depthwise convolutions do very little arithmetic per byte they read (each weight is used for one channel only), so on a GPU they tend to be bandwidth-bound. Count bytes as well as FLOPs.</div>
+  <p>Per output position, the two stages cost <i>R·S·C + C·K</i> multiply-adds. Divide by the standard cost <i>R·S·C·K</i> and you get the ratio in the caption: <i>1/K + 1/(R·S)</i>. For a 3 × 3 filter and a large <i>K</i>, the cost approaches one ninth of the original. MobileNet's paper reports that about 95% of its multiply-adds are in the remaining 1 × 1 convolutions. A 1 × 1 convolution can be viewed as a matrix multiplication over pixels and channels, so the next part can use decades of work on fast matrix multiplication.</p>
+  <div class="pitfall"><b>Operation count is not running time.</b> A depthwise stage does little arithmetic per byte it reads, and some of its inputs may need to be fetched repeatedly. A GPU can therefore become limited by memory bandwidth or kernel overhead even after the multiply-add count falls. Count bytes and launches as well as arithmetic.</div>
 </section>
 
 <!-- ================================ PART 2 ================================ -->
