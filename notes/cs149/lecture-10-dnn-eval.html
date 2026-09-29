@@ -116,13 +116,13 @@ svg text.sw{fill:#fff!important}
 <header class="hero">
   <div class="kicker">Stanford CS149 · Lecture 10 companion</div>
   <h1>Efficiently evaluating <em>deep neural networks</em></h1>
-  <p class="lede">A trained neural network is just a program: a long chain of layers, most of which are big, regular loops of multiply-adds. This lecture asks how to run that program fast. The answers come from three directions at once: design networks that need less work, schedule the work well on the hardware (blocking, fusion, clever algorithms), and build hardware whose instructions do more useful math per unit of overhead.</p>
+  <p class="lede">A trained neural network takes an input, passes it through a sequence of layers, and produces an output. Many of those layers repeat the same multiply-and-add operation millions of times. That sounds ideal for parallel hardware, yet a fast chip can still spend much of its time moving data instead of calculating. This lecture follows the computation from a single neuron to a whole network and asks, at each step, how to do less work or make better use of the hardware.</p>
   <dl class="outcome">
     <dt>You'll be able to</dt><dd>Explain what a fully connected layer, a convolution layer, ReLU and pooling compute, and count their cost. Explain why depthwise separable convolutions (MobileNet) are cheaper. Map a convolution onto a matrix multiplication, explicitly (im2col) or implicitly, and explain the cost of each. Explain how blocking raises arithmetic intensity. Explain how operator fusion saves memory traffic, including the chunked-softmax trick behind fused attention. Explain why tensor cores and DNN accelerators exist.</dd>
     <dt>Background</dt><dd><a href="lecture-03-bandwidth-spmd.html">Lecture 3</a> (arithmetic intensity, bandwidth-bound execution) and <a href="lecture-07-gpu-cuda.html">Lecture 7</a> (GPUs, CUDA, shared memory). Unit 5 of these notes covers the roofline model, tiling and number formats in more depth.</dd>
     <dt>Source</dt><dd>Follows the structure and examples of Stanford CS149 <i>Parallel Computing</i>, Fall 2023, Lecture 10, "Efficiently Evaluating DNNs" (Kayvon Fatahalian and Kunle Olukotun). Lectures 8–9 aren't covered here yet. The explanations, diagrams and explorers are original study material, not a copy of the slides.</dd>
   </dl>
-  <div class="insight">The recurring question in this lecture: <b>for this operation, what limits the speed — arithmetic or data movement?</b> Convolutions and matrix multiplies do a lot of math per byte, so the job is to <i>keep</i> that intensity when implementing them (blocking, implicit GEMM). Element-wise operations do almost no math per byte, so the job is to stop them from making their own trips to memory (fusion).</div>
+  <div class="insight"><b>Keep one question in mind:</b> is this layer waiting for arithmetic units, or waiting for data? A matrix multiply can reuse each value many times if its implementation keeps that value nearby. An element-wise operation usually uses a value once, so running it as a separate pass may cost more in memory traffic than in arithmetic. The choices later in the lecture follow from that difference.</div>
 </header>
 
 <!-- ================================ PART 1 ================================ -->
@@ -130,38 +130,38 @@ svg text.sw{fill:#fff!important}
 
 <section class="lesson" id="s1" data-toc="The efficiency challenge" data-n="1" style="margin-top:36px">
   <div class="lesson-h"><div class="kicker">Section 1</div><h2>The efficiency challenge</h2></div>
-  <p>Deep neural networks (DNNs) come in many <b>topologies</b>: VGG, ResNet, Inception, MobileNet and hundreds of variants, each a different arrangement of layers of different shapes. And they have to run on many kinds of <b>device</b>: server GPUs, phone CPUs, phone neural-engine chips, custom accelerators. The practical problem is the product of the two: for every network and every device, how do you get an implementation that uses the device well?</p>
+  <p>A network's <b>topology</b> is the choice, order, and shape of its layers. VGG, ResNet, Inception, and MobileNet make different choices, so they demand different amounts and kinds of work. The same network may also run on a server GPU, a phone CPU, or a dedicated neural processor. An implementation that is quick on one device may be slow on another. We need to understand both the work the model asks for and the machine that will perform it.</p>
   <p>The lecture groups the answers into three strategies, which structure this page:</p>
   <ol>
-    <li><b>Better algorithms.</b> Design network topologies that reach the same accuracy with much less work (Section 4).</li>
-    <li><b>Better software.</b> Implement each layer efficiently: map it onto well-tuned matrix multiply, block it for the memory hierarchy, fuse operations together (Parts 2 and 3).</li>
-    <li><b>Better hardware, and approximation.</b> Use lower precision, and specialized instructions and chips that make the common operations cheap (Part 4).</li>
+    <li><b>Ask for less work.</b> Choose a network topology that reaches the needed accuracy with fewer operations (Section 4).</li>
+    <li><b>Use data well.</b> Arrange each layer so values are reused near the arithmetic units, and combine neighboring operations so intermediate results need fewer trips to memory (Parts 2 and 3).</li>
+    <li><b>Make each operation cheaper.</b> Use an appropriate numeric precision and hardware that performs many multiply-adds with little instruction overhead (Parts 3 and 4).</li>
   </ol>
-  <p>This lecture is about <b>evaluation</b> (also called <b>inference</b>): running an already-trained network on new input. Training runs the same layers forward, then backward, and has similar computational character.</p>
+  <p>Here <b>evaluation</b>, or <b>inference</b>, means applying a network whose weights have already been learned to a new input. We will follow the forward calculation only. Training also performs this forward pass, then computes gradients and updates the weights; it brings additional work and memory needs.</p>
 </section>
 
 <section class="lesson" id="s2" data-toc="Neurons and fully connected layers" data-n="2">
   <div class="lesson-h"><div class="kicker">Section 2</div><h2>Neurons, layers and matrix-vector products</h2></div>
-  <p>A DNN is a big expression: a graph of simple operations. The lecture's warm-up example is a tiny one, <code>max(max(0, a·b + c·d) + e·f + g·h, i·j)</code>. Every node is a multiply, an add, or a max. Real networks are the same kind of thing, only with millions of nodes arranged regularly.</p>
-  <p>The basic unit is a <b>neuron</b>. It takes inputs <i>x<sub>i</sub></i>, computes a weighted sum plus a bias, and applies a simple nonlinear function <i>f</i>:</p>
+  <p>Start with the lecture's small expression, <code>max(max(0, a·b + c·d) + e·f + g·h, i·j)</code>. To evaluate it, multiply pairs of numbers, add some results, and take two maxima. A neural network is a much larger graph of operations of the same general kind. The graph matters because it tells us which results can be computed independently and which must wait for earlier results.</p>
+  <p>One familiar building block is a <b>neuron</b>. It multiplies each input <i>x<sub>i</sub></i> by a weight <i>w<sub>i</sub></i>, adds the products and a bias <i>b</i>, then applies a function <i>f</i>:</p>
   <pre class="code">out = f( Σ<sub>i</sub> x<sub>i</sub>·w<sub>i</sub> + b )        <span class="u">// f is often ReLU: f(v) = max(0, v)</span></pre>
-  <p>The weights <i>w</i> and bias <i>b</i> are the <b>parameters</b> learned in training; for evaluation they're constants. Older networks used a sigmoid for <i>f</i>; modern ones mostly use <b>ReLU</b> (rectified linear unit), which just zeroes negative values.</p>
-  <p>A <b>fully connected layer</b> is a column of neurons that each see every input. Put each neuron's weights in one row of a matrix and the whole layer is one matrix-vector product:</p>
+  <p>The weights and bias are the <b>parameters</b> found during training; they stay fixed during this evaluation. The function <i>f</i> makes the layer nonlinear, allowing a stack of layers to represent more than one large weighted sum. A common choice is <b>ReLU</b> (rectified linear unit): negative inputs become zero, and positive inputs pass through.</p>
+  <p>A <b>fully connected layer</b> has several neurons, each reading every input value. Put one neuron's weights in each row of a matrix. Multiplying that matrix by the input vector computes all the weighted sums at once; then add the biases and apply <i>f</i> to each result:</p>
   <figure class="fig"><div class="sc"><svg id="fcSvg" viewBox="0 0 760 200" role="img" aria-label="Three inputs, each connected to all four neurons of a fully connected layer, and the equivalent formula: f of a 4 by 3 weight matrix times the input vector plus a bias vector" style="min-width:560px"></svg></div>
-    <figcaption><b>A fully connected layer is a matrix-vector product.</b> 3 inputs and 4 neurons give a 4 × 3 weight matrix: 12 multiply-adds and 12 parameters. Evaluate a whole batch of inputs at once and the matrix-vector product becomes a <b>matrix-matrix</b> product, which is where the arithmetic intensity comes from.</figcaption></figure>
-  <p>The number of weights in a fully connected layer is (inputs × outputs). Connect every pixel of a 224 × 224 × 3 image to even 1,000 neurons and that's 150 million weights for one layer. That's why image networks use a different kind of layer.</p>
+    <figcaption><b>Four neurons, three inputs each.</b> The weight matrix has 4 × 3 = 12 entries, plus one bias per neuron. Computing one input uses 12 weight-input products. If several input vectors are evaluated together, put them in columns: the layer becomes a <b>matrix-matrix product</b>, with opportunities to reuse each weight across the batch.</figcaption></figure>
+  <p>The number of weights is inputs × outputs. A 224 × 224 RGB image contains 150,528 input values; connecting all of them to just 1,000 neurons would require 150,528,000 weights, before biases. Storing and using that many weights in an early image layer is costly. The next layer type keeps the useful local structure of an image without connecting every pixel to every output.</p>
 </section>
 
 <section class="lesson" id="s3" data-toc="Convolution" data-n="3">
   <div class="lesson-h"><div class="kicker">Section 3</div><h2>Convolution: local connections with shared weights</h2></div>
-  <p>Two observations about images shrink the layer dramatically:</p>
+  <p>The first layer need not look at the whole image to recognize a small feature. Two choices make it much cheaper:</p>
   <ul>
-    <li><b>Locality.</b> A useful feature at a pixel (an edge, a corner) depends on the pixels near it. So each output only needs to connect to a small window of the input, say 3 × 3. That's a <b>locally connected</b> layer.</li>
-    <li><b>Translation invariance.</b> An edge looks the same wherever it is. So every output location can use the <i>same</i> weights. That's a <b>convolution</b>: a locally connected layer with shared weights. The weights are called the <b>filter</b> (or kernel).</li>
+    <li><b>Local connections.</b> An edge or corner can be detected from nearby pixels. Each output can therefore read a small input window, such as 3 × 3, instead of the entire image.</li>
+    <li><b>Shared weights.</b> The same kind of edge might occur anywhere. Reuse one set of weights at every location. Moving the input feature then moves its response in the output; this is <b>translation equivariance</b>. The shared weights are a <b>filter</b>, or kernel, and applying it across the image is called a convolution layer.</li>
   </ul>
-  <p>Here is the lecture's 3 × 3 convolution of a single-channel image, written as plain C. With every weight 1/9, it's a box blur:</p>
+  <p>Here is the lecture's 3 × 3 example on a single-channel image. The input array includes a one-pixel border whose values have been chosen beforehand, so every 3 × 3 window is in bounds. At each output position, the code multiplies nine pixels by the same nine weights and adds the products. With every weight equal to 1/9, the result is an average, or box blur:</p>
   <pre class="code"><span class="k">int</span> WIDTH = 1024, HEIGHT = 1024;
-<span class="k">float</span> input[(WIDTH+2) * (HEIGHT+2)];   <span class="u">// 1-pixel border so the window never runs off</span>
+<span class="k">float</span> input[(WIDTH+2) * (HEIGHT+2)];   <span class="u">// initialized image plus a 1-pixel border</span>
 <span class="k">float</span> output[WIDTH * HEIGHT];
 <span class="k">float</span> weights[] = {1/9., 1/9., 1/9.,
                    1/9., 1/9., 1/9.,
@@ -175,7 +175,7 @@ svg text.sw{fill:#fff!important}
         tmp += input[(j+jj)*(WIDTH+2) + (i+ii)] * weights[jj*3 + ii];
     output[j*WIDTH + i] = tmp;
   }</pre>
-  <p>Different weights detect different things. The classic <b>Sobel</b> filters respond to horizontal or vertical changes in brightness, that is, to edges. Try them:</p>
+  <p>The filter changes the question asked of each window. <b>Sobel</b> filters, for example, respond to changes in brightness across a horizontal or vertical direction. They highlight edges instead of blurring them. Try the choices below. In machine-learning libraries, this sliding dot product is usually called “convolution” even though the filter is not reversed as it would be in the mathematical definition.</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 8px"><span class="readout">Filter:</span><div class="seg" role="group" aria-label="Filter"><button data-cf="blur" aria-pressed="true">blur (all 1/9)</button><button data-cf="sx">Sobel x (vertical edges)</button><button data-cf="sy">Sobel y (horizontal edges)</button><button data-cf="sharp">sharpen</button></div>
       <div class="seg" role="group" aria-label="Apply ReLU"><button data-cr="0" aria-pressed="true">no ReLU</button><button data-cr="1">then ReLU</button></div></div>
@@ -183,18 +183,19 @@ svg text.sw{fill:#fff!important}
     <p class="msg" id="cvMsg"></p>
   </div><figcaption><b>Click any output pixel.</b> Its value is the sum of the nine input pixels under the window, each multiplied by the filter weight in the same position. Teal is positive, orange is negative. The input is a bright square on a dark background; blur softens its edges, the Sobel filters light up its left/right or top/bottom edges with opposite signs, and ReLU keeps only the positive responses.</figcaption></figure>
   <h3>Convolution layers in a real network</h3>
-  <p>Real inputs have several <b>channels</b> (3 for RGB; later layers have 64, 128, 512…). A filter spans all input channels, so a 3 × 3 filter on 64 channels is a 3 × 3 × 64 block of weights, and it produces one output channel. A layer applies <i>K</i> such filters, producing <i>K</i> output channels. The first layer of the 2012 AlexNet network, for example, applies 96 filters of size 11 × 11 × 3 to the image.</p>
-  <p>A layer's output is typically followed by ReLU and then <b>pooling</b>, which shrinks each channel, for example by taking the max of every 2 × 2 region (W × H becomes W/2 × H/2):</p>
+  <p>An RGB input has three <b>channels</b>; deeper layers may have dozens or hundreds. To produce one output channel, one filter looks across <i>all</i> input channels: on a 64-channel input, a 3 × 3 filter has 3 × 3 × 64 weights. Apply <i>K</i> different filters and the output has <i>K</i> channels. AlexNet's first layer, for example, uses 96 filters of size 11 × 11 × 3.</p>
+  <p>One familiar network pattern applies <b>ReLU</b> after convolution, then <b>pooling</b>. A 2 × 2 max pool keeps the largest value in each nonoverlapping 2 × 2 region of a channel. With stride 2 and even dimensions, it halves the width and height. The diagram assumes the convolution uses padding that preserves the spatial dimensions; other padding and stride choices give different sizes.</p>
   <figure class="fig"><div class="sc"><svg id="pipeSvg" viewBox="0 0 760 170" role="img" aria-label="Pipeline: input W by H by C, convolution with K filters to W by H by K, ReLU to W by H by K, 2 by 2 max pool to W/2 by H/2 by K" style="min-width:560px"></svg></div>
-    <figcaption><b>The basic building block: conv → ReLU → pool.</b> Networks stack dozens of these. Pooling halves the width and height, so later layers work on smaller images with more channels. All the tensors in between are called <b>activations</b>.</figcaption></figure>
-  <p>The costs follow directly from the loops. For an output of <i>H</i> × <i>W</i> pixels with <i>K</i> channels, from <i>C</i> input channels with <i>R</i> × <i>S</i> filters:</p>
+    <figcaption><b>One possible block: conv → ReLU → pool.</b> Under the diagram's same-size convolution and 2 × 2, stride-2 pool, W × H × K becomes (W/2) × (H/2) × K. The arrays between layers are <b>activations</b>. Many networks use other sequences or omit pooling.</figcaption></figure>
+  <p>We can now count the convolution's work. Let its output have <i>H</i> × <i>W</i> positions and <i>K</i> channels; let the input have <i>C</i> channels and each filter have <i>R</i> × <i>S</i> spatial weights. Each output value sums <i>C·R·S</i> products:</p>
   <pre class="code">multiply-adds = H · W · K · C · R · S         <span class="u">// every output pixel, every filter, every weight</span>
-parameters    = K · C · R · S (+ K biases)    <span class="u">// independent of the image size</span></pre>
+parameters    = K · C · R · S (+ K biases)    <span class="u">// weights reused at every position</span></pre>
+  <p>The output dimensions already reflect the chosen stride and padding. Notice the difference between the two counts: a larger image increases the number of multiply-adds, but it does not create more filter weights. That repeated use of the same weights is a source of reuse for a fast implementation.</p>
 </section>
 
 <section class="lesson" id="s4" data-toc="Cheaper topologies" data-n="4">
   <div class="lesson-h"><div class="kicker">Section 4</div><h2>Approach 1: design topologies that need less work</h2></div>
-  <p>The first way to make evaluation fast is to change the network. Between 2014 and 2017 researchers found topologies that reach similar ImageNet accuracy with far less computation. The lecture's comparison (MADDs are multiply-adds per image):</p>
+  <p>The first optimization happens before implementation: choose a network that asks for less work. The lecture compares several ImageNet classifiers from 2014–2017. <b>Top-1 accuracy</b> is the fraction of images for which the model's highest-scoring label is correct; <b>MADDs</b> counts multiply-adds for one image. These published figures are useful for scale, though evaluation details differ among models:</p>
   <div class="tbl"><table>
     <tr><th>Network</th><th class="m">Year</th><th class="m">Top-1 accuracy</th><th class="m">Parameters</th><th class="m">MADDs per image</th></tr>
     <tr><td>VGG-16</td><td class="m">2014</td><td class="m">71.5%</td><td class="m">138 M</td><td class="m">15 B</td></tr>
@@ -203,9 +204,9 @@ parameters    = K · C · R · S (+ K biases)    <span class="u">// independent 
     <tr class="hl"><td>MobileNet-224</td><td class="m">2017</td><td class="m">70.5%</td><td class="m">4.2 M</td><td class="m">0.6 B</td></tr>
   </table></div>
   <p class="xs" style="font-size:13px;color:var(--mute)">* 10-crop result; ResNet's single-crop results are similar to the other networks'.</p>
-  <p>That's about a <b>25× reduction in cost at similar accuracy</b> (15 B / 0.6 B) in three years. For comparison, hardware roughly doubled in performance over the same period. ResNet's contribution was <b>residual</b> (skip) connections, which made deep networks trainable; its 34-layer version needs 3.6 billion FLOPs where VGG-19 needs 19.6 billion.</p>
+  <p>VGG-16 and MobileNet-224 land in roughly the same accuracy range in this table, while their listed multiply-add counts differ by about 25×: 15 B / 0.6 B. That is a change in the <i>work requested</i>, before any faster chip or kernel is considered. The accuracy figures are not a controlled head-to-head comparison; for example, the ResNet-18 entry uses ten crops per image. ResNet's <b>residual connections</b> provide a route around layers during training, making very deep models easier to optimize. They are one example of how network structure changes both accuracy and computational cost.</p>
   <h3>MobileNet's trick: depthwise separable convolution</h3>
-  <p>A standard 3 × 3 convolution with <i>C</i> input and <i>K</i> output channels mixes space and channels in one step: every one of the <i>K</i> filters looks at a 3 × 3 × <i>C</i> window. MobileNet factors that into two cheaper steps:</p>
+  <p>MobileNet's key change is easier to see with the count from Section 3. At every output position, a standard <i>R</i> × <i>S</i> convolution uses <i>R·S·C·K</i> multiply-adds: each of <i>K</i> filters spans all <i>C</i> input channels. <b>Depthwise separable convolution</b> breaks the spatial and channel work into two stages:</p>
   <ol>
     <li><b>Depthwise:</b> <i>C</i> separate 3 × 3 × 1 filters, one per input channel. Spatial filtering, no channel mixing.</li>
     <li><b>Pointwise:</b> <i>K</i> filters of size 1 × 1 × <i>C</i>. Channel mixing, no spatial extent.</li>
@@ -221,8 +222,8 @@ parameters    = K · C · R · S (+ K biases)    <span class="u">// independent 
     <div class="sc" style="padding:10px 0 0"><svg id="lcSvg" viewBox="0 0 760 150" role="img" aria-label="Bars comparing multiply-adds for a standard convolution and a depthwise separable one, split into depthwise and pointwise parts" style="min-width:560px"></svg></div>
     <div class="stat" id="lcStat"></div>
   </div><figcaption><b>The pointwise part dominates.</b> The depthwise separable cost divided by the standard cost is exactly 1/<i>K</i> + 1/(<i>R</i>·<i>S</i>). With 3 × 3 filters and hundreds of channels that's about 1/9: 8–9 times less work. And the remaining work is almost all in the 1 × 1 convolutions.</figcaption></figure>
-  <p>MobileNet's paper reports that <b>about 95% of its multiply-adds are in 1 × 1 convolutions</b> (which also hold 75% of its parameters; most of the rest are in the final fully connected layer). That matters for the next part: a 1 × 1 convolution <i>is</i> a matrix multiply with no rearrangement, and matrix multiply is the most optimized routine in numerical computing.</p>
-  <div class="pitfall">Fewer FLOPs isn't automatically less time. Depthwise convolutions do very little arithmetic per byte they read (each weight is used for one channel only), so on a GPU they tend to be bandwidth-bound. Count bytes as well as FLOPs.</div>
+  <p>Per output position, the two stages cost <i>R·S·C + C·K</i> multiply-adds. Divide by the standard cost <i>R·S·C·K</i> and you get the ratio in the caption: <i>1/K + 1/(R·S)</i>. For a 3 × 3 filter and a large <i>K</i>, the cost approaches one ninth of the original. MobileNet's paper reports that about 95% of its multiply-adds are in the remaining 1 × 1 convolutions. A 1 × 1 convolution can be viewed as a matrix multiplication over pixels and channels, so the next part can use decades of work on fast matrix multiplication.</p>
+  <div class="pitfall"><b>Operation count is not running time.</b> A depthwise stage does little arithmetic per byte it reads, and some of its inputs may need to be fetched repeatedly. A GPU can therefore become limited by memory bandwidth or kernel overhead even after the multiply-add count falls. Count bytes and launches as well as arithmetic.</div>
 </section>
 
 <!-- ================================ PART 2 ================================ -->
@@ -230,8 +231,8 @@ parameters    = K · C · R · S (+ K biases)    <span class="u">// independent 
 
 <section class="lesson" id="s5" data-toc="The direct loop nest" data-n="5" style="margin-top:36px">
   <div class="lesson-h"><div class="kicker">Section 5</div><h2>The direct implementation: seven nested loops</h2></div>
-  <p>A convolution layer applied to a batch of images, written directly (stride 1, no padding logic shown):</p>
-  <pre class="code"><span class="k">float</span> input[BATCH][IN_H][IN_W][IN_DEPTH];          <span class="u">// input activations</span>
+  <p>Before optimizing convolution, write down the work it must perform. The following direct version processes a <b>batch</b>, meaning several images evaluated together. It uses stride 1 and assumes the input already has a suitable border, so every window stays in bounds and the output has IN_H × IN_W positions:</p>
+  <pre class="code"><span class="k">float</span> input[BATCH][IN_H+FILTER_Y-1][IN_W+FILTER_X-1][IN_DEPTH]; <span class="u">// padded input</span>
 <span class="k">float</span> output[BATCH][IN_H][IN_W][NUM_FILTERS];      <span class="u">// output activations</span>
 <span class="k">float</span> weights[NUM_FILTERS][FILTER_Y][FILTER_X][IN_DEPTH];
 <span class="k">float</span> biases[NUM_FILTERS];
@@ -247,27 +248,27 @@ parameters    = K · C · R · S (+ K biases)    <span class="u">// independent 
               tmp += weights[f][jj][ii][kk] * input[img][j+jj][i+ii][kk];
         output[img][j][i][f] = tmp;
       }</pre>
-  <p>(The slide's version initializes <code>tmp</code> from <code>biases[NUM_FILTERS]</code>, one past the end; it means <code>biases[f]</code>.) There's a lot of <b>reuse</b> in this loop nest: every filter weight is used at every pixel of every image, and every input value is used by every filter and by up to 9 neighboring windows. Reuse is an opportunity: a value loaded into fast storage once can feed many multiply-adds. But the naive loop order doesn't exploit it well, and writing a fast version of seven loops for every layer shape by hand is hard. The standard move is to turn the problem into one that's already been solved.</p>
+  <p>The outer four loops select an image, output row, output column, and filter. The inner three visit all input channels and spatial positions of that filter. For each output, <code>tmp</code> starts at <code>biases[f]</code> and accumulates one product per filter weight. The code describes the answer clearly, but it leaves performance decisions to the compiler and cache. Neighboring output windows overlap, and the next filter reads the same input window again. Keeping those values near the arithmetic units could avoid many slow reloads. How can we arrange this reuse systematically, across many layer shapes?</p>
 </section>
 
 <section class="lesson" id="s6" data-toc="Convolution as matrix multiply (im2col)" data-n="6">
   <div class="lesson-h"><div class="kicker">Section 6</div><h2>Convolution as matrix multiplication ("explicit GEMM")</h2></div>
-  <p><b>GEMM</b> (general matrix-matrix multiply) has had decades of tuning on every platform. To use it, rewrite the convolution: for each output pixel, copy the 3 × 3 window of input it needs into one row of a new matrix. Then every output pixel is a dot product of its row with the filter's 9 weights, and the whole convolution is a matrix-vector product. This rearrangement is called <b>im2col</b> ("image to columns"):</p>
+  <p><b>GEMM</b> stands for general matrix-matrix multiplication. Its fast implementations already know how to reuse data from registers and caches, so we would like to express convolution as a GEMM. Start with one input channel and one 3 × 3 filter. Copy the nine input values needed by each output pixel into one row of a new matrix. The filter's nine weights form a column. Their matrix product gives every output pixel. This rearrangement is called <b>im2col</b> ("image to columns"):</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 8px"><span class="readout">Click an output pixel or a row of the matrix.</span></div>
     <div class="sc" style="padding:0"><svg id="icSvg" viewBox="0 0 760 420" role="img" aria-label="A 4 by 4 input with a zero border, and its 16 by 9 im2col matrix; each row holds one output pixel's 3 by 3 window" style="min-width:560px"></svg></div>
     <p class="msg" id="icMsg"></p>
   </div><figcaption><b>im2col on a 4 × 4 image with zero padding.</b> Each of the 16 output pixels gets a row of 9 values: its window, read left to right, top to bottom; positions outside the image are 0. Every interior input value appears in 9 different rows. Multiply this 16 × 9 matrix by the 9 filter weights and you get all 16 outputs.</figcaption></figure>
-  <p>With more filters, the weight vector becomes a matrix with one column per filter. With more input channels, each row gets 9 values <i>per channel</i>, because a filter sums its response over all channels. The general mapping, using NVIDIA's symbols (batch <i>N</i>, input <i>H</i> × <i>W</i> × <i>C</i>, <i>K</i> filters of <i>R</i> × <i>S</i> × <i>C</i>, output <i>P</i> × <i>Q</i> × <i>K</i>):</p>
+  <p>Now give every output pixel one row, including pixels from other images in the batch. Put each filter in a separate column of the weight matrix. An input with <i>C</i> channels contributes <i>R·S·C</i> values to each row, since a filter spans all channels. Using NVIDIA's symbols, let the batch contain <i>N</i> images, the convolution output have <i>P</i> × <i>Q</i> positions, and there be <i>K</i> filters of size <i>R</i> × <i>S</i> × <i>C</i>:</p>
   <figure class="fig"><div class="sc"><svg id="gmSvg" viewBox="0 0 760 230" role="img" aria-label="Convolution mapped to GEMM: the convolution matrix of size NPQ by RSC times the filter matrix of size RSC by K gives the output matrix of size NPQ by K" style="min-width:560px"></svg></div>
     <figcaption><b>Conv layer → one GEMM.</b> A[NPQ × RSC] holds one row per output pixel of every image; B[RSC × K] holds one column per filter; C = A·B is the output, one row per pixel and one column per output channel.</figcaption></figure>
-  <p>The catch is the size of A. Each input value is copied into about <i>R</i> × <i>S</i> rows, so materializing A <b>increases memory traffic by roughly a factor of R × S</b> (9 for 3 × 3 filters) and needs a lot of extra storage. For the lecture's big example (<i>N</i> = 32, 256 × 256 images, 128 channels, 3 × 3 filters), the activations are 1 GiB in fp32, and the im2col matrix is 9 GiB.</p>
-  <p>A 1 × 1 convolution is the exception: its "window" is a single pixel, so A is just the activation tensor viewed as an (NHW × C) matrix, with no copying. That's why MobileNet's heavy use of 1 × 1 convolutions maps so well onto GEMM.</p>
+  <p>The difficulty is the intermediate matrix A. An interior input value appears in about <i>R·S</i> overlapping windows, so A can be about <i>R·S</i> times as large as the original activations. It must also be written out and read back by GEMM. In the lecture's example, 32 images of 256 × 256 pixels with 128 fp32 channels occupy 1 GiB; their 3 × 3 im2col matrix occupies about 9 GiB. That is a large temporary buffer and extra memory traffic, though the <i>total</i> traffic increase depends on the cache behavior, weights, and output size.</p>
+  <p>A 1 × 1 convolution has no overlapping spatial window to copy. Conceptually, the activation tensor is already an (N·P·Q) × C matrix, and the filters form a C × K matrix. With a compatible memory layout, GEMM can use that view without a separate im2col buffer. This is one reason MobileNet's many 1 × 1 convolutions are attractive to optimized libraries.</p>
 </section>
 
 <section class="lesson" id="s7" data-toc="Blocking matrix multiply" data-n="7">
   <div class="lesson-h"><div class="kicker">Section 7</div><h2>Making GEMM fast: blocking</h2></div>
-  <p>So how does a good GEMM work? Start with the obvious version:</p>
+  <p>Writing a matrix product as a loop is easy; making it reuse data is the hard part. Start with a straightforward loop that computes one element of C at a time:</p>
   <pre class="code"><span class="k">float</span> A[M][K], B[K][N], C[M][N];
 <span class="u">// compute C += A * B</span>
 #pragma omp parallel for
@@ -275,8 +276,8 @@ parameters    = K · C · R · S (+ K biases)    <span class="u">// independent 
   <span class="k">for</span> (int i=0; i&lt;N; i++)
     <span class="k">for</span> (int k=0; k&lt;K; k++)
       C[j][i] += A[j][k] * B[k][i];</pre>
-  <p>It has plenty of parallelism. Its problem is <b>low arithmetic intensity</b>: it doesn't exploit temporal locality. Every element of A is used N times and every element of B is used M times, but by the time the loop comes back to a value, it's long gone from the cache. For large matrices each multiply-add ends up fetching its operands from memory: 2 FLOPs for every 8 bytes, 0.25 FLOPs per byte.</p>
-  <p>The fix is <b>blocking</b> (tiling): compute a partial result for one block of C while the blocks of A and B it needs stay in cache.</p>
+  <p>Different values of <code>j</code> can be handled in parallel, and the innermost loop forms a dot product. But the loop order gives a large matrix little reliable reuse of B: as <code>k</code> changes, <code>B[k][i]</code> jumps between rows, and another output element may revisit it only much later. A can sometimes remain cached across neighboring outputs, and a compiler can hold <code>C[j][i]</code> in a register. If we pessimistically charge two fresh fp32 operand loads to every multiply-add, that is 2 floating-point operations for 8 bytes, or 0.25 FLOPs per byte. Actual traffic depends on the cache and compiler; the point is that the code does not deliberately organize reuse.</p>
+  <p><b>Blocking</b>, or tiling, makes that reuse deliberate. Instead of finishing one output at a time, multiply a small block of A by a small block of B and accumulate into a small block of C. Choose the blocks so they stay in a fast storage level while many operations use them. This sketch assumes each matrix dimension is a multiple of its block size; production code also handles smaller edge blocks:</p>
   <pre class="code"><span class="k">for</span> (int jblock=0; jblock&lt;M; jblock+=BLOCKSIZE_J)
   <span class="k">for</span> (int iblock=0; iblock&lt;N; iblock+=BLOCKSIZE_I)
     <span class="k">for</span> (int kblock=0; kblock&lt;K; kblock+=BLOCKSIZE_K)
@@ -285,7 +286,7 @@ parameters    = K · C · R · S (+ K biases)    <span class="u">// independent 
         <span class="k">for</span> (int i=0; i&lt;BLOCKSIZE_I; i++)
           <span class="k">for</span> (int k=0; k&lt;BLOCKSIZE_K; k++)
             C[jblock+j][iblock+i] += A[jblock+j][kblock+k] * B[kblock+k][iblock+i];</pre>
-  <p>With square b × b blocks, each block step loads 2b² values of A and B and does b³ multiply-adds: every value loaded is used b times. So the arithmetic intensity grows in proportion to the block size, roughly <b>b/4 FLOPs per byte</b> in fp32. The block size is limited by how much fits in fast storage.</p>
+  <p>For square <i>b</i> × <i>b</i> blocks, a step reads <i>b²</i> values from A and <i>b²</i> from B, then performs <i>b³</i> multiply-adds. Each loaded input can contribute to <i>b</i> outputs before the block is replaced. Counting two FLOPs per multiply-add and four bytes per fp32 input gives <i>2b³ / (8b²) = b/4</i> FLOPs per byte of A/B traffic. This simple estimate leaves out loading and storing C and the traffic at other memory levels, but shows why larger reusable blocks raise arithmetic intensity.</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 8px"><span class="readout">Arithmetic:</span><div class="seg" role="group" aria-label="Arithmetic"><button data-bm="fp32" aria-pressed="true">fp32 ALUs (15.7 TFLOP/s)</button><button data-bm="tc">fp16 tensor cores (125 TFLOP/s)</button></div></div>
     <div class="cfg">
@@ -294,10 +295,10 @@ parameters    = K · C · R · S (+ K biases)    <span class="u">// independent 
     <div class="sc" style="padding:10px 0 0"><svg id="bkSvg" viewBox="0 0 760 270" role="img" aria-label="Roofline chart: attainable throughput versus arithmetic intensity, with the blocked matrix multiply's position" style="min-width:560px"></svg></div>
     <div class="stat" id="bkStat"></div>
     <p class="msg" id="bkMsg"></p>
-  </div><figcaption><b>A roofline for blocked GEMM.</b> The machine is V100-like: 900 GB/s of memory bandwidth and either 15.7 TFLOP/s of fp32 or 125 TFLOP/s of fp16 tensor-core math. The model: three b × b blocks (A, B and C) must fit in the fast storage; a large 8192 × 8192 multiply is done block by block. Below the ridge point the multiply is bandwidth-bound; above it, compute-bound. (A teaching model: real kernels block at several levels at once and never get the full storage for one block.)</figcaption></figure>
-  <p>That answers the lecture's self-check, "do you want as big a BLOCKSIZE as possible?" You want blocks <b>big enough to get above the ridge point</b>, and no bigger: the blocks must fit (with room for everything else in the cache), bigger blocks mean fewer independent blocks to spread across cores, and more padding waste at the edges of matrices whose sizes aren't multiples of the block. Notice also that the faster tensor-core arithmetic moves the ridge point right: the faster the math, the more reuse you need.</p>
+  </div><figcaption><b>A roofline for blocked GEMM.</b> The machine is V100-like: 900 GB/s of memory bandwidth and either 15.7 TFLOP/s of fp32 or 125 TFLOP/s of fp16 tensor-core math. The model: three b × b blocks (A, B and C) must fit in the fast storage; a large 8192 × 8192 multiply is done block by block. The explorer counts reads and writes of C as well as the A/B traffic in the b/4 estimate above. Below the ridge point the multiply is bandwidth-bound; above it, compute-bound. (A teaching model: real kernels block at several levels at once and never get the full storage for one block.)</figcaption></figure>
+  <p>Should <code>BLOCKSIZE</code> simply be as large as possible? The roofline's <b>ridge point</b> is the intensity at which the compute and bandwidth ceilings meet; reaching it is a useful target. Beyond that point, larger blocks do not raise this model's peak throughput. They can also crowd out other data, leave too few blocks to occupy all cores, or waste work at matrix edges. The best size depends on the machine and matrix shape. Notice that faster tensor-core arithmetic moves the ridge point to the right: faster math needs more data reuse to stay busy.</p>
   <h3>Blocking at every level, and vectorizing the block</h3>
-  <p>A real implementation blocks <b>hierarchically</b>: blocks sized for the L2 cache, sub-blocks for L1, and finally tiny blocks held in <b>registers</b>. Each loop level matches one level of the memory hierarchy.</p>
+  <p>A real implementation usually blocks at several levels: larger tiles for cache or GPU shared memory, smaller ones for a nearer cache, and tiny accumulators in <b>registers</b>. Each level tries to use a value several times before fetching it from the next, slower level.</p>
   <p>Inside the innermost block the code must also use SIMD. The lecture shows three ways, and the right one depends on the block's shape:</p>
   <ol>
     <li><b>Vectorize the i loop</b> (across a row of C). Broadcast one element of A to all lanes (<code>splat</code>), multiply by a vector of B's row, accumulate into a vector of C. Good spatial locality in B, but the working set grows by the SIMD width. Needs a wide i dimension.</li>
@@ -309,46 +310,46 @@ parameters    = K · C · R · S (+ K biases)    <span class="u">// independent 
 
 <section class="lesson" id="s8" data-toc="Implicit GEMM and enough work" data-n="8">
   <div class="lesson-h"><div class="kicker">Section 8</div><h2>Implicit GEMM, and giving the GPU enough work</h2></div>
-  <p>Explicit GEMM pays for its convenience with that R × S blow-up in memory traffic. <b>Implicit GEMM</b> avoids it: the kernel is written as a GEMM over the <i>virtual</i> matrix A, but it computes each element's address in the activation tensor on the fly instead of reading a materialized copy.</p>
+  <p>Explicit GEMM gets a regular matrix operation but first writes the large im2col matrix to memory. <b>Implicit GEMM</b> keeps the matrix as a <i>virtual view</i>: when the GEMM kernel needs an entry of A, it calculates which image, location, and input channel that entry represents. It reads the original activation at that address instead of reading a stored copy of A.</p>
   <ul>
-    <li>A naive implicit GEMM just indexes into the input and weight tensors directly, with no blocking. Correct, but slow.</li>
-    <li>A good one materializes only <b>one sub-block of the convolution matrix at a time, in the GPU's on-chip shared memory</b>, then runs a well-tuned shared-memory GEMM on it. No extra off-chip storage, and no extra DRAM traffic: each input value is read from DRAM once per block and duplicated only inside shared memory.</li>
+    <li>A naive version can calculate the addresses for every individual multiply-add. It avoids the large intermediate but still misses opportunities for reuse.</li>
+    <li>A tiled version forms just the needed sub-block in <b>on-chip shared memory</b>, then uses it for many multiply-adds. The full im2col matrix is never stored off chip. Overlapping tiles may still reread some original activations, so the exact DRAM traffic depends on tiling and cache behavior.</li>
   </ul>
-  <p>This is Lecture 7's convolution example (load the tile plus its border into shared memory once, then compute from it) scaled up. NVIDIA's <b>CUTLASS</b> library provides the building blocks for writing such kernels: fast shared-memory GEMMs, warp-level GEMMs, iterators for loading blocks and indexing tensors, and reductions. It's for layers whose sizes haven't been heavily tuned in NVIDIA's cuDNN library.</p>
+  <p>The idea is close to Lecture 7's shared-memory convolution tile: bring in a small working set, reuse it, then move to the next tile. NVIDIA's <b>CUTLASS</b> provides building blocks for these kernels, including tiled matrix operations and iterators that map matrix coordinates back to convolution tensors. A library can tune the tile size and instruction shape for the particular layer and GPU.</p>
   <h3>A GPU needs a lot of parallel work</h3>
-  <p>Recall the V100: 80 SMs, each running many warps, with tensor cores, a 6 MB L2 and 900 GB/s from 16 GB of HBM. To fill it, a layer needs lots of independent outputs. The lecture compares two convolution problems with 128 filters:</p>
+  <p>Good reuse alone is not enough on a GPU: many blocks must be ready at once to occupy its 80 streaming multiprocessors. The lecture compares two V100 convolution workloads, both with 128 output filters. The number of outputs gives a rough sense of how much independent work the kernel can divide into blocks:</p>
   <div class="tbl"><table>
     <tr><th>Case</th><th class="m">Outputs</th><th class="m">Output data (fp32)</th></tr>
     <tr><td>N = 1 image, P = Q = 64</td><td class="m">64 × 64 × 128 × 1 = 524,288</td><td class="m">2 MB</td></tr>
     <tr><td>N = 32 images, P = Q = 256</td><td class="m">256 × 256 × 128 × 32 = 268 M</td><td class="m">1 GB</td></tr>
   </table></div>
-  <p>Measured throughput tells the story. With small images and one image at a time the V100 reaches only about 20 TFLOPS on these convolutions; with larger images or bigger batches it climbs to around 85, and flattens there. Throughput also climbs with the number of input channels, and 1 × 1 filters stay well below larger filters: less work per output means less reuse. <b>Batching</b> is one of the most effective optimizations for inference throughput, at the price of latency, since you must wait for a batch of requests to arrive.</p>
+  <p>In the lecture's measurements, effective convolution throughput rises from roughly 20 to 85 TFLOP/s as the images or batch grow, then levels off. Those figures describe convolution implementations using the GPU's tensor-core math; 85 TFLOP/s is above the V100's ordinary fp32 ALU peak. More input channels also create more work and potential reuse per output. A 1 × 1 filter has less spatial reuse than a larger filter, so its measured rate may be lower even though it performs fewer total operations. <b>Batching</b> often raises throughput by providing more work and reusing weights across images, but a service may wait longer to gather a batch, increasing request latency.</p>
 </section>
 
 <section class="lesson" id="s9" data-toc="Winograd and FFT" data-n="9">
   <div class="lesson-h"><div class="kicker">Section 9</div><h2>Algorithmic improvements: FFT and Winograd</h2></div>
-  <p>Blocking changes how data moves; these change <i>how much arithmetic</i> is done.</p>
+  <p>Blocking preserves the same mathematical work while arranging data movement better. A different algorithm can sometimes reach the same convolution result with fewer multiplications. Two examples are useful because their trade-offs differ:</p>
   <ul>
-    <li><b>FFT convolution.</b> Convolution in space is element-wise multiplication in the Fourier domain. The overhead is the FFT of the inputs and the inverse FFT of the outputs (O(N log N) each). The inverse transform is amortized over all input channels, since the channel sum can happen in the Fourier domain. Best for large filters.</li>
-    <li><b>Winograd convolution.</b> A work-efficient way to compute several outputs of a small filter with fewer multiplies, by sharing partial products.</li>
+    <li><b>FFT convolution.</b> Transform the input and filter into the frequency domain, multiply matching frequency values, then transform the result back. The transforms cost roughly O(n log n) for a spatial region of n values, so their setup pays off mainly for sufficiently large filters or regions. Contributions from input channels can be summed before the inverse transform.</li>
+    <li><b>Winograd convolution.</b> Algebraically reorganize a small-filter convolution so a group of neighboring outputs shares intermediate products. It saves multiplications but introduces extra additions and transformations.</li>
   </ul>
-  <p>The lecture's 1D example: two outputs of a 3-tap filter, <i>y</i><sub>0</sub> = <i>x</i><sub>0</sub><i>w</i><sub>0</sub> + <i>x</i><sub>1</sub><i>w</i><sub>1</sub> + <i>x</i><sub>2</sub><i>w</i><sub>2</sub> and <i>y</i><sub>1</sub> = <i>x</i><sub>1</sub><i>w</i><sub>0</sub> + <i>x</i><sub>2</sub><i>w</i><sub>1</sub> + <i>x</i><sub>3</sub><i>w</i><sub>2</sub>. Direct: 6 multiplies and 4 adds. Winograd's F(2, 3) algorithm:</p>
+  <p>Here is the lecture's one-dimensional example. A three-weight filter slides across four input values to produce two outputs: <i>y</i><sub>0</sub> = <i>x</i><sub>0</sub><i>w</i><sub>0</sub> + <i>x</i><sub>1</sub><i>w</i><sub>1</sub> + <i>x</i><sub>2</sub><i>w</i><sub>2</sub>, and <i>y</i><sub>1</sub> = <i>x</i><sub>1</sub><i>w</i><sub>0</sub> + <i>x</i><sub>2</sub><i>w</i><sub>1</sub> + <i>x</i><sub>3</sub><i>w</i><sub>2</sub>. Computing those sums directly takes six multiplications and four additions. Winograd F(2, 3) forms four different products and recombines them:</p>
   <pre class="code">m1 = (x0 − x2) · w0
 m2 = (x1 + x2) · (w0 + w1 + w2)/2      <span class="u">// the filter factors depend only on w:</span>
 m3 = (x2 − x1) · (w0 − w1 + w2)/2      <span class="u">// precompute them once per filter</span>
 m4 = (x1 − x3) · w2
 y0 = m1 + m2 + m3
 y1 = m2 − m3 − m4</pre>
-  <p>4 multiplies and 8 additions (4 to form the <i>m</i>'s, 4 to combine them). Trading multiplies for adds pays off because multiplies are the more expensive operation, and the savings grow in 2D: for a 2 × 2 block of outputs of a 3 × 3 filter, Winograd needs 16 multiplies instead of 36, <b>2.25× fewer</b>.</p>
+  <p>The input transformations and output combinations add work, but the four filter-dependent expressions can be prepared once and reused at many positions. This form uses four runtime products instead of six; the corresponding two-dimensional 2 × 2 output tile uses 16 instead of 36. That is <b>2.25× fewer multiplications</b>, not 2.25× faster execution. Modern hardware may perform a multiply and an add together, so the extra additions, data movement, and rounding behavior all matter when choosing an algorithm.</p>
   <figure class="fig"><div class="widget">
     <div class="cfg" id="wgIn"></div>
     <div class="ctrl" style="margin:10px 0 0"><div class="seg" role="group" aria-label="Which m1"><button data-wm="0" aria-pressed="true">m1 = (x0 − x2)·w0</button><button data-wm="1">m1 = (x0 − x1)·w0, as printed on the slide</button></div></div>
     <div class="stat" id="wgStat"></div>
     <p class="msg" id="wgMsg"></p>
   </div><figcaption><b>Check it with your own numbers.</b> Change any input or weight: Winograd's two outputs always match the direct ones. The slide prints the first product as (x0 − x1)·w0, which is a typo; switch to it and y0 comes out wrong unless x1 happens to equal x2.</figcaption></figure>
-  <div class="pitfall">The additions in the transforms aren't free, and they change rounding. Winograd with larger output blocks saves more multiplies but loses numerical accuracy, especially in low precision. It's a trade-off, not a free lunch.</div>
+  <div class="pitfall"><b>Numerical results can change.</b> Reordering floating-point arithmetic changes where rounding happens. Larger Winograd tiles can reduce multiplication count further but may magnify numerical error, especially at low precision. An implementation has to balance speed, temporary storage, and acceptable accuracy.</div>
   <h3>Libraries pick the algorithm for you</h3>
-  <p>Vendors ship libraries with high-performance implementations of the key DNN layers: NVIDIA's <b>cuDNN</b>, Intel's oneDNN, Apple's and ARM's equivalents. cuDNN offers several algorithms for the same convolution (implicit GEMM, precomputed implicit GEMM, explicit GEMM, direct, FFT, tiled FFT, Winograd), because the fastest one depends on the layer's shape, and it can benchmark them to pick one.</p>
+  <p>This is why a library offers more than one convolution kernel. NVIDIA's <b>cuDNN</b>, Intel's oneDNN, and other vendor libraries provide implementations based on direct loops, GEMM, FFT, or Winograd. The fastest choice depends on dimensions, precision, device, workspace available for temporary data, and accuracy requirements. A library may use heuristics or benchmark candidates for a particular workload. Once a layer is fast, however, the memory traffic <i>between</i> layers becomes the next problem.</p>
 </section>
 
 <!-- ================================ PART 3 ================================ -->
@@ -356,18 +357,19 @@ y1 = m2 − m3 − m4</pre>
 
 <section class="lesson" id="s10" data-toc="Operator fusion" data-n="10" style="margin-top:36px">
   <div class="lesson-h"><div class="kicker">Section 10</div><h2>Memory traffic between operations: fusion</h2></div>
-  <p>Consider a common sequence: <b>convolution</b>, then a per-element <b>scale and bias</b>, then a 2 × 2 <b>max pool</b>. Run as three separate library calls, each operation writes its whole output to memory and the next one reads it back. For the big example, that's a gigabyte written and read between each step.</p>
-  <p>But the scale-and-bias can be applied to each element right after the convolution computes it, and the max-pool output can be computed as soon as each 2 × 2 region of the conv output is done. <b>Fusing</b> the three into one kernel means the only memory traffic is the conv's input and the pool's output:</p>
+  <p>Imagine a convolution followed by <b>scale and bias</b> on each output value, then a 2 × 2 <b>max pool</b>. If each is a separate GPU kernel, convolution writes a full activation tensor to memory, scale-and-bias reads and rewrites it, and pooling reads it again. In the large example below, that tensor is about 1 GiB. The arithmetic in scale-and-bias is tiny compared with these transfers.</p>
+  <p><b>Fusion</b> computes a consumer's result while its producer's values are still nearby. The first step is simple: apply scale and bias before storing each convolution result. The following line illustrates <i>that first step only</i>; it still writes the full-size output:</p>
   <pre class="code">        ...
         output[img][j][i][f] = tmp*scale + bias;   <span class="u">// scale+bias fused: applied before the store</span></pre>
+  <p>To fuse pooling too, the kernel must keep four scaled convolution results from one 2 × 2 region, take their maximum, and store only that pooled value. The full convolution output need not become a separate memory-resident array. Input and output activations still move, and implementations may have other traffic for weights or temporary state, but the large intermediate passes can disappear.</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 8px"><span class="readout">Layer:</span><div class="seg" role="group" aria-label="Layer"><button data-fl="3" aria-pressed="true">3×3 conv</button><button data-fl="1">1×1 conv</button></div>
       <span class="readout">Math:</span><div class="seg" role="group" aria-label="Arithmetic"><button data-fm="fp32" aria-pressed="true">fp32 (15.7 TFLOP/s)</button><button data-fm="tc">tensor cores (125 TFLOP/s)</button></div></div>
     <div class="sc" style="padding:10px 0 0"><svg id="fuSvg" viewBox="0 0 760 250" role="img" aria-label="Timelines for the unfused sequence of three kernels and the fused single kernel, split into compute-bound and memory-bound time" style="min-width:560px"></svg></div>
     <div class="stat" id="fuStat"></div>
     <p class="msg" id="fuMsg"></p>
-  </div><figcaption><b>How much does fusion save?</b> The lecture's big layer: N = 32 images of 256 × 256, 128 input channels, 128 filters, fp32 activations (1 GiB in, 1 GiB out of the conv), on a V100-like GPU with 900 GB/s. Model: each kernel takes max(compute time, memory time); weights are negligible. Orange is time spent limited by arithmetic, teal by memory traffic.</figcaption></figure>
-  <p>The explorer shows why fusion matters more every year. With slow fp32 arithmetic, the 3 × 3 convolution takes so long that the extra element-wise passes add only about 10%. Speed up the math with tensor cores, or use 1 × 1 convolutions with less math per byte, and those "cheap" element-wise kernels become a large share, or most, of the time. The faster the arithmetic, the more the data movement between operations dominates.</p>
+  </div><figcaption><b>How much does fusion save in this model?</b> The large layer has 32 images of 256 × 256, 128 input channels, 128 filters, and fp32 activations (about 1 GiB in and 1 GiB out of the convolution). The V100-like machine has 900 GB/s bandwidth. The tensor-core toggle raises the arithmetic ceiling while retaining fp32 activation traffic, isolating the resulting bottleneck shift. Each separate kernel is estimated by the larger of its arithmetic time and memory time; the model ignores launch costs and treats weight traffic as small. Orange marks an arithmetic limit and teal a memory limit.</figcaption></figure>
+  <p>With ordinary fp32 arithmetic, a 3 × 3 convolution may dominate the sequence, so separate element-wise passes look relatively cheap. Make the convolution faster with tensor cores, or use a 1 × 1 filter that does less arithmetic per output, and those same memory passes take a much larger share of total time. Improving one stage can expose the cost of the next; fusion removes the exposed intermediate transfers.</p>
   <div class="predict"><div class="ph"><b>Exercise</b><span>from the lecture</span></div><ol>
     <li>How would you fuse the 2 × 2 max pool into the conv loop nest?
       <details><summary>Show one answer</summary><div class="ans"><p>Reorder the loops so each iteration produces a 2 × 2 group of output pixels for a filter (step <code>j</code> and <code>i</code> by 2 and compute four <code>tmp</code> values). Take the max of the four (after scale and bias) and store one value into a half-size output array. The full-size conv output is never written to memory. In a blocked GPU kernel, make each tile's width and height even, so every pooling window lies inside one tile.</p></div></details></li>
@@ -376,43 +378,45 @@ y1 = m2 − m3 − m4</pre>
 
 <section class="lesson" id="s11" data-toc="Fused attention" data-n="11">
   <div class="lesson-h"><div class="kicker">Section 11</div><h2>A fusion trick for attention</h2></div>
-  <p>Transformers, the sequence models behind large language models, take a sequence of tokens in and produce a sequence out (for example, predicting the next word). Their core is the <b>attention</b> module. With <i>N</i> tokens, each represented by a <i>d</i>-dimensional vector, the queries Q, keys K and values V are each <i>N</i> × <i>d</i>:</p>
+  <p>Fusion can reach beyond two neighboring layers. In a transformer, <b>attention</b> lets each token in a sequence use information from other tokens. Each token has a <b>query</b> vector, a <b>key</b> vector, and a <b>value</b> vector. For <i>N</i> tokens and vectors of width <i>d</i>, collect them into three <i>N</i> × <i>d</i> matrices Q, K, and V. The simplified calculation for one attention head is:</p>
   <pre class="code">S = Q Kᵀ            <span class="u">// N × N: how much each token attends to each other token</span>
 P = softmax(S)      <span class="u">// softmax along each row of S</span>
 O = P V             <span class="u">// N × d</span></pre>
-  <p>The trouble is S and P: they're <b>N × N</b>. For long sequences (thousands of tokens) the naive implementation needs N² space, and it writes S to memory, reads it back for the softmax, writes P, and reads it back for PV. Two matrix multiplies are fusion candidates, but the softmax in between looks like it's in the way: to normalize a row you need the max and the sum over the <i>entire</i> row.</p>
-  <p>For a row <b>x</b>, the numerically safe softmax is:</p>
+  <p>Each entry of S compares one query with one key. A row of P converts those scores into weights that sum to one, and the corresponding output row is a weighted sum of V. Real attention may scale the scores and mask disallowed positions; we omit both here to focus on data movement. The problem is that S and P each have <b>N × N</b> entries. A conventional sequence of three operations writes S, rereads it for softmax, writes P, then rereads P for the final multiply. It seems difficult to fuse these steps because a softmax weight depends on the maximum and sum of <i>every</i> score in its row.</p>
+  <p>First look at one score row <b>x</b>. Subtract its largest entry before exponentiating; this prevents overflow and does not change the normalized answer:</p>
   <pre class="code">m(x) = max<sub>i</sub> x<sub>i</sub>                   <span class="u">// subtract the max so exp never overflows</span>
-f(x) = [ e^(x<sub>1</sub> − m(x)), …, e^(x<sub>B</sub> − m(x)) ]
+f(x) = [ e^(x<sub>1</sub> − m(x)), …, e^(x<sub>N</sub> − m(x)) ]
 l(x) = Σ<sub>i</sub> f(x)<sub>i</sub>
 softmax(x) = f(x) / l(x)</pre>
-  <p>The key observation: <b>softmax can be computed in chunks</b>. Split x into [x<sup>(1)</sup> x<sup>(2)</sup>]. If you've processed chunk 1 and kept only its m and l, then when chunk 2 arrives:</p>
+  <p>The key observation is that the maximum <i>m</i> and exponential sum <i>l</i> can be <b>updated chunk by chunk</b>. Suppose we have processed chunk 1 and kept its two numbers. Chunk 2 has its own maximum and sum. If the combined maximum changes, the old sum must be expressed relative to the new maximum before we add the new sum:</p>
   <pre class="code">m(x) = max( m(x<sup>(1)</sup>), m(x<sup>(2)</sup>) )
 l(x) = e^(m(x<sup>(1)</sup>) − m(x))·l(x<sup>(1)</sup>) + e^(m(x<sup>(2)</sup>) − m(x))·l(x<sup>(2)</sup>)</pre>
-  <p>The old partial sum is just <b>rescaled</b> by e<sup>(old max − new max)</sup>. Step through it:</p>
+  <p>For example, if the old maximum is 3 and the new one is 5, every old exponential is now measured relative to a value two larger, so its contribution is multiplied by e<sup>−2</sup>. That lets us find the final denominator with only two running numbers. It does <i>not</i> by itself produce every probability: to emit the full softmax row afterward, we would need to retain or recompute the scores. Fused attention avoids producing that row at all. Step through the running maximum and sum:</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 8px"><span class="readout">Chunk size:</span><div class="seg" role="group" aria-label="Chunk size"><button data-sc="2">2</button><button data-sc="4" aria-pressed="true">4</button><button data-sc="8">8 (whole row)</button></div>
       <button id="smStep" class="pri">Next chunk</button><button id="smReset">Reset</button><button id="smRand">New row</button></div>
     <div class="sc" style="padding:0"><svg id="smSvg" viewBox="0 0 760 250" role="img" aria-label="A row of 8 scores processed in chunks; the running max and running sum after each chunk; the final softmax compared with the direct one" style="min-width:560px"></svg></div>
     <p class="msg" id="smMsg"></p>
-  </div><figcaption><b>Online softmax.</b> After each chunk, only two numbers survive: the running max m and the running sum l. When a chunk brings a bigger max, the old sum is multiplied by e<sup>(old m − new m)</sup> before the chunk's own terms are added. After the last chunk, the result equals the direct softmax, but the whole row never had to exist at once.</figcaption></figure>
+  </div><figcaption><b>Online softmax's running state.</b> The running maximum m and exponential sum l are enough to update the normalization as chunks arrive. The explorer retains its eight example scores to display the final probabilities. A production fused-attention kernel instead consumes each chunk's weighted values immediately and keeps a running output accumulator.</figcaption></figure>
   <h3>Fused attention</h3>
-  <p>Now fuse all three steps. Process Q in blocks of rows and K, V in blocks of columns/rows. For each pair of blocks: load Q<sub>i</sub>, Kᵀ<sub>j</sub>, V<sub>j</sub>; compute the block S<sub>ij</sub> = Q<sub>i</sub>Kᵀ<sub>j</sub>; compute its row maxes, exponentials and row sums; multiply P<sub>ij</sub>V<sub>j</sub> and accumulate into the output block O<sub>i</sub>, rescaling what's already there by the same e<sup>(old m − new m)</sup> factors.</p>
+  <p>Now keep a third running quantity: a <b>weighted value sum</b> for each query row. For a score chunk with new combined maximum <i>m</i>, rescale the old weighted sum by e<sup>(old m − m)</sup>, add this chunk's e<sup>(score − m)</sup>·V contributions, and divide the final weighted sum by the final <i>l</i>. This is the same rescaling used for the denominator, applied to vector-valued data.</p>
+  <p>A fused kernel handles a block Q<sub>i</sub> of query rows against successive blocks K<sub>j</sub> and V<sub>j</sub>. It forms a small score block Q<sub>i</sub>Kᵀ<sub>j</sub>, updates the row maxima and sums, and folds that block's weighted V values into the running output. Once every key block has been visited, it writes O<sub>i</sub>. S and P never need to be complete arrays in off-chip memory.</p>
   <figure class="fig"><div class="sc"><svg id="faSvg" viewBox="0 0 760 230" role="img" aria-label="Fused attention: a block of Q rows, a block of K transpose columns, a block of V rows and the output block O, all small enough to stay on chip" style="min-width:560px"></svg></div>
-    <figcaption><b>Only blocks are ever on chip.</b> The N × N matrices S and P are never materialized in memory. Each step reads three blocks (from Q, K and V), does two small matrix multiplies and a few row reductions, and accumulates into an O block that stays resident. High arithmetic intensity, O(N) memory instead of O(N²).</figcaption></figure>
-  <p>The memory saving is large. With N = 4,096 tokens, one attention head's S matrix is 4,096² ≈ 16.8 million values, 64 MiB in fp32, and a model has many heads and a batch of sequences. The price is a little <b>extra computation</b>: the output block must be rescaled each time the running max changes. Trading a few extra FLOPs for much less memory traffic is almost always a good deal on modern hardware. This is the idea behind FlashAttention (Dao et al., 2022).</p>
+    <figcaption><b>Keep small blocks and running state on chip.</b> A block of Q, K, and V feeds two small matrix products and row reductions while the running output stays resident. The large N × N score and probability arrays are never stored. Q, K, V, and O still require storage proportional to N·d, and key/value blocks may be read again for other query blocks.</figcaption></figure>
+  <p>At N = 4,096, just one fp32 score matrix has 4,096² ≈ 16.8 million values, or 64 MiB. Multiple heads and sequences multiply that demand. Fusing attention removes those N² score intermediates from memory, at the cost of extra rescaling work and carefully sized on-chip tiles. For sufficiently long sequences, saving that memory traffic can outweigh the extra arithmetic. This is the central idea of FlashAttention (Dao et al., 2022).</p>
 </section>
 
 <section class="lesson" id="s12" data-toc="Fusion in frameworks; low precision" data-n="12">
   <div class="lesson-h"><div class="kicker">Section 12</div><h2>Fusion in frameworks, and lower precision</h2></div>
-  <p>The old approach to fusion was for library writers to <b>hard-code</b> a few popular fused operations (TensorFlow shipped a fused batch-norm, for example). That can't keep up with the number of possible operation sequences. Modern systems let a <b>compiler generate</b> the fused implementation: cuDNN's "backend" API accepts a graph of operations and produces a single kernel for it, without runtime overhead or passing intermediate results through memory. If you've seen Halide, this is its <code>compute_at</code> scheduling directive: compute a producer's values inside the consumer's loop, just where they're needed. Many research and production compilers (TVM, XLA, Triton-based compilers, and others) try to schedule DNN operations automatically.</p>
+  <p>Writing a custom kernel for every useful combination of layers would be an enormous task. Early libraries therefore provided a few popular fused patterns. More flexible systems take a graph of operations and generate a kernel for a <i>supported</i> fused subgraph. The cuDNN backend API is one route; compilers such as XLA, TVM, and Triton-based systems offer others. They can avoid large intermediate memory transfers, though compiling, launching, and selecting a kernel still have costs, and not every sequence can be fused profitably.</p>
+  <p>Halide's <code>compute_at</code> gives a concrete way to think about a schedule: compute a producer's values inside the consumer's loop, near the point where they are needed, instead of first storing the producer's entire output. The arithmetic meaning stays the same, but the order and location of computation change. That is the common thread between a hand-written fused kernel and a compiler-generated one.</p>
   <h3>Low precision</h3>
-  <p>Another trick is to use <b>fewer bits</b> for weights and activations. 16-bit and 8-bit values are common; research has gone as far as 1-bit (binary) networks. Halving the bits halves the memory traffic and storage, and lets hardware pack more arithmetic units into the same area and energy. Unit 5 of these notes covers the formats (fp16, bf16, int8) and what quantization does to accuracy.</p>
+  <p>Data movement also falls when values use fewer bits. Many implementations use 16-bit floating point or 8-bit integers for some weights and activations; binary networks are a more extreme research direction. If values remain in the narrower format throughout a transfer, halving their width can halve those data bytes and storage. Real savings depend on conversions, packing, metadata, and whether the hardware has fast arithmetic for that format. Lower precision may also change the network's answers, so accuracy must be checked. Unit 5 explains fp16, bf16, int8, and quantization in more detail.</p>
   <h3>Summary of the optimization techniques</h3>
   <div class="tbl"><table>
     <tr><th>Technique</th><th>Examples</th><th>Who does it</th></tr>
     <tr><td><b>Better algorithms</b>: better ML models</td><td>depth, filter width, number of filters per layer, stride; residual connections; depthwise separable convolutions</td><td>Designed manually, and increasingly by automatic search over topologies</td></tr>
-    <tr><td><b>Software optimization</b>: good schedules</td><td>loop blocking/tiling, fusion, implicit GEMM, Winograd</td><td>Typically tuned manually by experts; lots of research on automating it</td></tr>
+    <tr><td><b>Software optimization</b>: good schedules and kernels</td><td>loop blocking/tiling, fusion, implicit GEMM, Winograd</td><td>Library authors and compilers, often with measured tuning</td></tr>
     <tr><td><b>Approximation</b>: compressing models</td><td>lower bit precision; automatic sparsification and pruning (not covered in this lecture)</td><td>Tools plus retraining</td></tr>
   </table></div>
 </section>
@@ -422,31 +426,31 @@ l(x) = e^(m(x<sup>(1)</sup>) − m(x))·l(x<sup>(1)</sup>) + e^(m(x<sup>(2)</sup
 
 <section class="lesson" id="s13" data-toc="Why GPUs, and why not" data-n="13" style="margin-top:36px">
   <div class="lesson-h"><div class="kicker">Section 13</div><h2>Why a GPU is a good platform, and why it isn't the ideal one</h2></div>
-  <p><b>Why a GPU is good for DNNs.</b> The heavy layers behave like dense matrix-matrix multiplication: high arithmetic intensity, massive data parallelism, regular SIMD-friendly control flow. GPUs are flop-rich, have high memory bandwidth for the parts that aren't compute-bound, and come with heavily optimized kernel libraries (cuDNN).</p>
-  <p><b>Why a GPU might be sub-optimal.</b> A GPU is still a general-purpose programmable processor. For every multiply-add, it fetches and decodes an instruction, reads operands from a large register file, and manages warps. For a workload that is almost entirely multiply-adds, that's overhead you'd like to eliminate.</p>
-  <p>The first answer is to make each instruction do <b>more work</b>, amortizing the cost of instruction-stream processing over many operations:</p>
+  <p><b>Why use a GPU?</b> Large convolution and matrix-multiply layers offer many independent outputs, regular control flow, and opportunities to reuse inputs. GPUs supply many arithmetic units, substantial memory bandwidth, and libraries such as cuDNN that know how to schedule these layers.</p>
+  <p><b>Why specialize further?</b> A GPU is programmable across many workloads. Its warp instructions already share control across lanes, but fetching and decoding those instructions, moving operands through registers, and scheduling warps still cost energy. When most useful work is a repeating matrix operation, a specialized unit can amortize that control over a much larger piece of math.</p>
+  <p>Watch the amount of arithmetic represented by one instruction grow:</p>
   <ul>
-    <li>fused multiply-add: <code>a·x + b</code>, 2 operations per instruction;</li>
-    <li>4-component dot product: 8 operations;</li>
-    <li>4 × 4 matrix multiply-accumulate <code>A·B + C</code>: 64 multiply-adds, 128 operations.</li>
+    <li>a scalar fused multiply-add <code>a·x + b</code>: one multiplication and one addition, counted as 2 floating-point operations;</li>
+    <li>a four-component dot product accumulated into a result: four multiplications and four additions, counted as 8 operations;</li>
+    <li>a 4 × 4 matrix multiply-accumulate <code>A·B + C</code>: 64 multiply-adds, counted as 128 operations.</li>
   </ul>
   <figure class="fig"><div class="sc"><svg id="amSvg" viewBox="0 0 760 200" role="img" aria-label="Bar chart: estimated overhead of programmability relative to the arithmetic, 2000% for a half-precision FMA, 500% for a 4-wide dot product, 27% for a 4 by 4 matrix multiply-accumulate" style="min-width:560px"></svg></div>
-    <figcaption><b>Estimated energy overhead of programmability</b> (instruction fetch, decode, control, operand delivery) relative to the useful arithmetic, for half-precision instructions. Estimates by Bill Dally (SysML talk, February 2018), from academic numbers. With a plain FMA, the overhead costs 20 times as much energy as the math. A 4 × 4 matrix instruction makes it a minor cost.</figcaption></figure>
+    <figcaption><b>Estimated control and delivery energy relative to arithmetic energy.</b> These illustrative half-precision estimates, presented by Bill Dally in 2018, assign the overhead of instruction fetch, decode, control, and operand delivery as a percentage of useful arithmetic. An overhead of 2,000% means roughly twenty units of overhead energy for one unit of arithmetic energy in that model. A larger matrix instruction spreads those costs over more work; the percentages are not measurements of every GPU or workload.</figcaption></figure>
 </section>
 
 <section class="lesson" id="s14" data-toc="Tensor cores and accelerators" data-n="14">
   <div class="lesson-h"><div class="kicker">Section 14</div><h2>Tensor cores, and dedicated DNN accelerators</h2></div>
-  <p>NVIDIA's version of the big-instruction idea is the <b>tensor core</b>: a unit that executes a small matrix multiply-accumulate <code>D = A·B + C</code> as one warp instruction, with A and B in fp16 and accumulation in fp32. The A100 (Ampere) numbers from the lecture:</p>
+  <p>NVIDIA's <b>tensor cores</b> apply this idea to small matrix tiles. A warp-level matrix instruction asks them to multiply blocks and accumulate the result, such as <code>D = A·B + C</code>. The A100 example in the lecture uses fp16 inputs with fp32 accumulation for the tensor-core figure. The table compares its theoretical peak rates with ordinary fp32 units:</p>
   <div class="tbl"><table>
     <tr><th>Per SM</th><th class="m">Whole GA100 GPU (108 SMs)</th><th class="m">Peak at 1.41 GHz</th></tr>
     <tr><td>64 fp32 multiply-add ALUs</td><td class="m">6,912 ALUs</td><td class="m">6,912 × 2 × 1.41 G = <b>19.5 TFLOP/s</b></td></tr>
     <tr><td>32 int32 ALUs</td><td class="m">3,456</td><td class="m"></td></tr>
     <tr class="hl"><td>4 tensor cores</td><td class="m">432 tensor cores</td><td class="m"><b>312 TFLOP/s</b> (fp16 in, fp32 accumulate)</td></tr>
   </table></div>
-  <p>Divide it out: 312 T / (432 × 1.41 G) ≈ 512 FLOPs per tensor core per clock, that is <b>256 multiply-adds per clock</b>, the size of one 8 × 4 by 4 × 8 matrix multiply (8 × 8 × 4 = 256). The tensor cores deliver <b>16 times</b> the fp32 ALUs' peak: one instruction starts 256 multiply-adds instead of 32, so far less of the energy goes to instruction processing, and the fp16 operands are half the width. (As Unit 5 stresses, the peak assumes matrix shapes and precisions that fit the unit; real layers get less.)</p>
+  <p>Divide the tensor-core peak by 432 cores and 1.41 billion clocks per second: the idealized count is about 512 FLOPs, or <b>256 multiply-adds per tensor core per clock</b>. That is the arithmetic in an 8 × 4 matrix multiplied by a 4 × 8 matrix and accumulated into an 8 × 8 result. The table's 312 versus 19.5 TFLOP/s ratio is about 16, but it compares <b>mixed-precision tensor math</b> with <b>ordinary fp32 math</b>, not two ways to compute every problem at the same precision. A layer reaches neither peak automatically: its matrix tiles, supported formats, data supply, and numerical tolerance all matter.</p>
   <h3>Going all the way: accelerators</h3>
-  <p>If DNN evaluation is mostly matrix multiply, why keep general-purpose cores at all? A wave of <b>DNN accelerators</b> answers "mostly don't": Google's TPU, Apple's Neural Engine, the NPU in Huawei's Kirin phone chips, Graphcore's IPU, Intel's inference accelerators, Cerebras's wafer-scale engine, SambaNova's Cardinal. They differ widely, but share the lecture's themes: large arrays of low-precision multiply-add units, lots of on-chip storage to keep operands close (reuse!), and control that is coarse-grained rather than one instruction per operation. GPUs, meanwhile, have become accelerators themselves: Ampere-class and later GPUs devote a large share of their math throughput to tensor cores.</p>
-  <div class="insight">The whole lecture in one line: <b>DNN evaluation is fast when every value brought on chip is used many times, and every instruction does a lot of math.</b> Topology design reduces the math; blocking, implicit GEMM and fusion reduce the data movement; tensor cores and accelerators reduce the per-operation overhead.</div>
+  <p>A <b>DNN accelerator</b> pushes specialization further. Examples in the lecture include Google's TPU, Apple's Neural Engine, phone NPUs, Graphcore's IPU, and Cerebras's wafer-scale engine. Their designs differ, but many devote substantial area to matrix arithmetic and on-chip storage, with control designed around larger units of work. The trade-off is less flexibility than a general CPU or GPU. GPUs themselves have also moved in this direction by adding tensor cores.</p>
+  <div class="insight"><b>The lesson to carry forward:</b> first decide how much work the network truly needs. Then keep reused values close to the arithmetic units, avoid storing intermediates that the next operation will consume immediately, and choose instructions and numeric formats suited to the calculation. Each step removes a different limit on speed.</div>
 </section>
 
 <section class="lesson" id="s15" data-toc="Check yourself" data-n="15">
@@ -457,9 +461,9 @@ l(x) = e^(m(x<sup>(1)</sup>) − m(x))·l(x<sup>(1)</sup>) + e^(m(x<sup>(2)</sup
     <li>By what factor does a depthwise separable convolution reduce the work of a 3 × 3 convolution with 256 output channels?
       <details><summary>Show answer</summary><div class="ans"><p>The cost ratio is 1/K + 1/(R·S) = 1/256 + 1/9 ≈ 0.115, so about <b>8.7×</b> less work.</p></div></details></li>
     <li>Why does explicit im2col increase DRAM traffic, and how does implicit GEMM avoid it?
-      <details><summary>Show answer</summary><div class="ans"><p>im2col copies each input value into about R × S rows of the convolution matrix and writes that matrix to memory, then GEMM reads it: roughly R × S times the traffic. Implicit GEMM builds only one sub-block of that matrix at a time, in on-chip shared memory, so the duplication never reaches DRAM.</p></div></details></li>
+      <details><summary>Show answer</summary><div class="ans"><p>Each interior input value appears in about R × S im2col rows, making the temporary matrix much larger than the input; writing and rereading that matrix adds off-chip traffic. Implicit GEMM forms only the sub-block currently needed in on-chip storage, so there is no full im2col buffer. Other tiles may still reread some original input values.</p></div></details></li>
     <li>In the blocked-GEMM model, three b × b fp32 blocks fit in 96 KB. What's the largest b, and the approximate arithmetic intensity?
-      <details><summary>Show answer</summary><div class="ans"><p>3 × b² × 4 bytes ≤ 98,304 gives b² ≤ 8,192, so <b>b = 90</b> (90² = 8,100). Intensity ≈ b/4 ≈ <b>22 FLOPs per byte</b>, just above the V100's fp32 ridge point of about 17.</p></div></details></li>
+      <details><summary>Show answer</summary><div class="ans"><p>3 × b² × 4 bytes ≤ 98,304 gives b² ≤ 8,192, so the largest integer is <b>b = 90</b> (90² = 8,100). Counting only reads of the A and B blocks, intensity is approximately b/4 ≈ <b>22 FLOPs per byte</b>, above this teaching model's fp32 ridge point of about 17. Real kernels need room for more state and have additional traffic.</p></div></details></li>
     <li>Use Winograd F(2, 3) with x = (1, 2, 3, 4) and w = (1, 1, 1). What are m1…m4 and the outputs?
       <details><summary>Show answer</summary><div class="ans"><p>m1 = (1 − 3)·1 = −2; m2 = (2 + 3)·3/2 = 7.5; m3 = (3 − 2)·1/2 = 0.5; m4 = (2 − 4)·1 = −2. y0 = −2 + 7.5 + 0.5 = <b>6</b> = 1 + 2 + 3; y1 = 7.5 − 0.5 + 2 = <b>9</b> = 2 + 3 + 4.</p></div></details></li>
     <li>A row is processed in two chunks. Chunk 1 has m = 3 and l = 2.0. Chunk 2 has m = 5 and l = 1.5. What are the combined m and l?
