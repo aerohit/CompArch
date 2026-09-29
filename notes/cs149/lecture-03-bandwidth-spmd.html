@@ -327,6 +327,7 @@ for (<span class="u">uniform</span> int i = 0; i &lt; count; i++) {
 <section class="lesson" id="s10" data-toc="Semantics traps" data-n="10">
   <div class="lesson-h"><div class="kicker">Section 10</div><h2>Reading ISPC programs carefully: semantics traps</h2></div>
   <h3>Which of these programs is well defined?</h3>
+  <p>Assume x and y are separate arrays with enough space: x has N elements, and y has at least 2N. The two loops below both process every input index, but their writes have different relationships to neighboring iterations.</p>
   <div class="grid2">
     <pre class="code" style="margin:0">// absolute_repeat
 <span class="k">foreach</span> (i = 0 ... N) {
@@ -344,31 +345,31 @@ for (<span class="u">uniform</span> int i = 0; i &lt; count; i++) {
     y[i] = x[i];
 }</pre>
   </div>
-  <p><b>absolute_repeat</b> computes the absolute value of each element of x and writes it twice into y. Each iteration writes only its own two slots, 2i and 2i + 1, so the result is the same in every order: <b>well defined</b>. <b>shift_negative</b> is different. Iteration i may write y[i − 1], which iteration i − 1 also writes. Which write lands last depends on the order the implementation happens to run the iterations in, so <b>the output is undefined</b>.</p>
+  <p><b>absolute_repeat</b> writes the absolute value of x[i] into y[2i] and y[2i + 1]. Those two output slots belong only to iteration i, so the result is the same whatever order the iterations use. In <b>shift_negative</b>, a negative x[i] may make iteration i write y[i − 1], while iteration i − 1 may write that same slot through its <code>else</code> branch. For example, x[0] = 3 and x[1] = −1 make both iterations write y[0]. <code>foreach</code> promises no ordering that decides which write wins; some y slots are not written at all. The program therefore has <b>undefined output</b>.</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 8px"><span class="readout">Program:</span><div class="seg" role="group" aria-label="Program"><button data-sp="abs" aria-pressed="true">absolute_repeat</button><button data-sp="shift">shift_negative</button></div>
       <span class="readout" style="margin-left:8px">Iteration order:</span><div class="seg" role="group" aria-label="Iteration order"><button data-so="fwd" aria-pressed="true">0, 1, 2, …</button><button data-so="rev">…, 2, 1, 0</button><button data-so="gang">shuffled (click again to reshuffle)</button></div></div>
     <div class="sc" style="padding:0"><svg id="spSvg" viewBox="0 0 760 230" role="img" aria-label="Input x, and the output y produced by the chosen iteration order compared with in-order execution" style="min-width:560px"></svg></div>
     <p class="msg" id="spMsg"></p>
-  </div><figcaption><b>Change only the order.</b> x has eight elements; three are negative. The two output rows compare the chosen order with plain in-order execution. For absolute_repeat they always match. For shift_negative, some cells are written by two iterations, and which value survives depends on the order. Highlighted cells differ. Any of these orders is a legal implementation of <code>foreach</code>.</figcaption></figure>
+  </div><figcaption><b>Change only the order.</b> x has eight elements; three are negative. The two output rows compare a selected order with index order. For absolute_repeat they match. For shift_negative, some cells have competing writers, highlighted values can differ, and question marks mark unwritten cells. These orders illustrate why code cannot rely on <code>foreach</code> running iterations in index order; the explorer does not predict ISPC's exact schedule.</figcaption></figure>
 
   <h3>Computing a sum: the uniform/varying distinction</h3>
-  <p>Summing an array exposes the uniform-versus-varying distinction. Two plausible attempts both fail to compile:</p>
+  <p>The next problem needs <i>cooperation</i> rather than merely independent iterations. Suppose an exported function must return one <code>uniform float</code> to C++: the sum of x[0] through x[N − 1]. In that function body, two tempting attempts fail type checking for different reasons:</p>
   <div class="grid2">
     <div><pre class="code" style="margin:0">// sum_incorrect_1
 float sum = 0.0f;
 <span class="k">foreach</span> (i = 0 ... N)
   sum += x[i];
 return sum;   // returns uniform float</pre>
-    <p style="font-size:14.5px"><code>sum</code> is <b>varying</b>: every instance has its own copy. The function must return <i>one</i> uniform float to C++. Which copy? It's a compile-time type error.</p></div>
+    <p style="font-size:14.5px"><code>sum</code> is <b>varying</b> by default: every instance keeps a partial sum. That cannot directly satisfy this function's required <i>uniform</i> return type. The varying-to-uniform return is a compile-time error.</p></div>
     <div><pre class="code" style="margin:0">// sum_incorrect_2
 <span class="u">uniform</span> float sum = 0.0f;
 <span class="k">foreach</span> (i = 0 ... N)
   sum += x[i];
 return sum;</pre>
-    <p style="font-size:14.5px"><code>sum</code> is <b>uniform</b>: one copy for the whole gang. But <code>x[i]</code> differs per instance, so the gang would be trying to add eight different values into one variable in one step. Also a compile-time type error.</p></div>
+    <p style="font-size:14.5px"><code>sum</code> is <b>uniform</b>: one value for the gang. But <code>x[i]</code> is varying, so the update tries to assign different lane results to that one value. ISPC rejects the varying-to-uniform assignment.</p></div>
   </div>
-  <p>The correct version gives each instance a <b>private partial sum</b>, with no communication during the loop, then combines them with a <b>cross-instance</b> operation from ISPC's standard library:</p>
+  <p>Instead, let each instance accumulate its assigned indices in a <b>private partial sum</b>. With N = 32 and an eight-instance gang, each instance adds four values. After the loop, ISPC's <code>reduce_add</code> combines the eight partials into one uniform result:</p>
   <pre class="code">export <span class="u">uniform</span> float sum_array(<span class="u">uniform</span> int N, <span class="u">uniform</span> float* x) {
   float partial = 0.0f;                   // one per instance
   <span class="k">foreach</span> (i = 0 ... N)
@@ -379,11 +380,11 @@ return sum;</pre>
     <div class="sc" style="padding:0"><svg id="suSvg" viewBox="0 0 760 240" role="img" aria-label="Eight lanes each accumulating a partial sum over 32 elements, then reduce_add combining them" style="min-width:560px"></svg></div>
     <div class="ctrl"><button id="suBack">◀ Back</button><button id="suStep" class="pri">Next step ▶</button><button id="suReset">Reset</button><span class="readout" id="suOut"></span></div>
     <p class="msg" id="suMsg"></p>
-  </div><figcaption><b>What the SIMD implementation actually does.</b> The ISPC code behaves like this AVX version: keep an 8-wide vector of partial sums; for each group of eight elements, add a packed vector load into it; finally store the vector and add its eight lanes together. If you can see why that correctly implements the gang abstraction, you have a good command of ISPC.</figcaption></figure>
-  <p><code>reduce_add</code> is one of several <b>cross-instance operations</b>, the parts of ISPC where instances deliberately communicate:</p>
+  </div><figcaption><b>Eight private sums, then one result.</b> A possible AVX implementation keeps eight partial sums in a vector register. Each group of eight inputs can be loaded and added to those lanes together; <code>reduce_add</code> then combines the lanes, possibly entirely in registers. The explorer uses small whole-number inputs, so its total is exact. For general floating-point inputs, this grouping can round differently from a left-to-right scalar sum.</figcaption></figure>
+  <p><code>reduce_add</code> is a <b>cross-instance operation</b>: it combines the values held by active instances. ISPC also provides operations that find an extreme value or move a value between instances:</p>
   <div class="tbl"><table>
     <tr><th>Operation</th><th>What it does</th></tr>
-    <tr><td class="m">uniform int64 reduce_add(int32 x)</td><td>Sum of x over all instances in the gang</td></tr>
+    <tr><td class="m">uniform int32 reduce_add(int32 x)</td><td>Sum of the active instances' int32 values; the float overload returns a uniform float</td></tr>
     <tr><td class="m">uniform int32 reduce_min(int32 a)</td><td>Minimum of a over all instances</td></tr>
     <tr><td class="m">int32 broadcast(int32 value, uniform int index)</td><td>Every instance receives the value held by instance <code>index</code></td></tr>
     <tr><td class="m">int32 rotate(int32 value, uniform int offset)</td><td>Pass values around the gang by <code>offset</code> positions, wrapping at the ends</td></tr>
@@ -391,12 +392,12 @@ return sum;</pre>
   </table></div>
 
   <h3>Try it: a tree reduction across the gang</h3>
-  <p>These operations can express real cooperation. The lecture's example computes the product of eight numbers in lg 8 = <b>3 steps</b> instead of 7: in each step, some instances multiply their value by a partner's value obtained with <code>shift</code>, and the number of useful partial products halves.</p>
+  <p>To see why cross-instance movement helps, multiply eight numbers. A left-to-right chain has seven dependent multiplies. In a tree, four pairs multiply at once, then two pairs of partial products, then one final pair: still seven multiplies in total, but only <b>three dependent rounds</b> (log₂ 8 = 3). Each round obtains a partner's partial product with <code>shift</code>; half as many lanes have useful work in the next round.</p>
   <figure class="fig"><div class="widget">
     <div class="sc" style="padding:0"><svg id="trSvg" viewBox="0 0 760 250" role="img" aria-label="Eight lanes combining values in three steps: pairs, then groups of four, then all eight" style="min-width:560px"></svg></div>
     <div class="ctrl"><button id="trBack">◀ Back</button><button id="trStep" class="pri">Next step ▶</button><button id="trReset">Reset</button><span class="readout" id="trOut"></span></div>
     <p class="msg" id="trMsg"></p>
-  </div><figcaption><b>Three steps, not seven.</b> This explorer uses the convention that the shifted value an instance receives comes from the instance <i>d</i> positions above it (so lane 0 pairs with lane 1, then 2, then 4). ISPC's actual sign convention for the offset argument is defined in its documentation; the direction just determines which lane ends up holding the result. Masked lanes (hatched) compute nothing useful in that step.</figcaption></figure>
+  </div><figcaption><b>Three dependent rounds, seven multiplies overall.</b> Here lane 0 pairs with lane 1, then the partial product in lane 2, then the one in lane 4. The explorer takes a shifted value from <i>d</i> lanes above; an actual <code>shift</code> call must use the offset direction specified by ISPC. Hatched lanes are inactive for that round.</figcaption></figure>
 </section>
 
 <section class="lesson" id="s11" data-toc="Implementation: SIMD & tasks" data-n="11">
