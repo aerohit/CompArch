@@ -190,46 +190,46 @@ svg text.sw{fill:#fff!important}
 
 <section class="lesson" id="s4" data-toc="The free lunch" data-n="4" style="margin-top:36px">
   <div class="lesson-h"><div class="kicker">Section 4</div><h2>Historical context: why avoid parallel processing?</h2></div>
-  <p>From the mid-1980s to the early 2000s, the performance of a single processor running a single thread <b>doubled roughly every 18 months</b>. Over that period, one-thread performance improved by more than a thousandfold.</p>
+  <p>Our summing experiment showed that parallel work takes planning. For a long time, programmers could often avoid that planning. From the mid-1980s to the early 2000s, a program running on one processor typically gained speed as new processors arrived; single-thread performance grew at roughly a doubling every 18 months over that period. The cumulative gain was more than a thousandfold.</p>
   <figure class="fig"><div class="sc"><svg id="lunchSvg" viewBox="0 0 760 260" role="img" aria-label="Relative single-thread CPU performance, log scale, rising about a thousandfold from 1985 to 2003" style="min-width:560px"></svg></div>
     <figcaption><b>A thousandfold in under twenty years.</b> A logarithmic axis turns steady doubling into a straight line: each grid line is 10× the one below. The line is a trend (doubling about every 18 months), not measured data. The lecture's chart plots individual processors (Olukotun and Hammond, ACM Queue 2005), and they follow the same slope.</figcaption></figure>
-  <p>That had a surprising consequence: <b>parallelizing your code was usually not worth the effort</b>. Rewriting a program to use two processors was hard and might give you 1.8×. Doing nothing gave you the same speedup about a year later, when a faster chip arrived. Software got faster for free.</p>
+  <p>That changed the programmer's calculation. Rewriting a program for two processors might take substantial effort and, after communication costs, yield less than 2×. At the historical rate on the chart, a new processor could provide a comparable single-thread gain in about a year without rewriting the program. The benefit came from new hardware, not from free computation; for software authors it felt like a <b>free lunch</b>.</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0"><span class="readout">Wait this many years for a new CPU: <b id="waitV"></b></span><input type="range" id="waitY" min="0" max="10" step="0.5" value="3" aria-label="Years to wait"></div>
     <p class="msg" id="waitMsg"></p>
   </div><figcaption><b>The "free lunch" calculator.</b> At a doubling every 1.5 years, waiting y years gives a speedup of 2<sup>y/1.5</sup>, with no programmer effort. Compare that with the result from the demo explorer above.</figcaption></figure>
-  <p>Where did those gains come from? Until about fifteen years before this lecture, there were <b>two main sources</b> of single-thread speedup:</p>
+  <p>Two important sources of that single-thread gain were:</p>
   <ol>
-    <li><b>Instruction-level parallelism (ILP)</b>: the processor finds instructions in the program that don't depend on each other and runs them at the same time (<i>superscalar</i> execution).</li>
-    <li><b>Higher clock frequency</b>: the processor does its steps more times per second.</li>
+    <li><b>Instruction-level parallelism (ILP)</b>: a processor overlaps independent instructions from one program, even though the program was written as a sequence.</li>
+    <li><b>Higher clock frequency</b>: more clock cycles each second give the processor more opportunities to advance work.</li>
   </ol>
-  <p>To see why both ran out, we first need a precise picture of what a processor does.</p>
+  <p>Neither source could keep delivering the same gains indefinitely. To see the limits, we first need a picture of the instructions a processor receives and the state they change.</p>
 </section>
 
 <section class="lesson" id="s5" data-toc="What is a program?" data-n="5">
   <div class="lesson-h"><div class="kicker">Section 5</div><h2>What is a program, to a processor?</h2></div>
-  <p>Here is a small C program: start with x = 1, and ten times replace x with x + x. It prints 1024. A <b>compiler</b> translates it into the language the processor understands: a list of <b>machine instructions</b>, each a simple operation such as "move this value", "add these two", "compare", "jump".</p>
+  <p>Start with <code>x = 1</code>. Double it ten times and the result is 1024. In C, a short loop expresses that whole job; a <b>compiler</b> turns it into <b>machine instructions</b>. Each asks for a smaller operation, such as copying a value, adding, comparing, or jumping to another instruction. The figure writes those instructions in readable assembly notation; the processor receives their binary encoding.</p>
   <figure class="fig"><div class="sc"><svg id="asmSvg" viewBox="0 0 760 364" role="img" aria-label="The C loop and its compiled x86 instructions, with brackets showing which instructions implement each part of the loop" style="min-width:560px"></svg></div>
     <figcaption><b>A program is just a list of processor instructions.</b> The loop portion of the compiled output, x86-64 as shown in the lecture. Each C statement becomes a few instructions. The loop test <code>i &lt; 10</code> becomes a compare and a conditional jump. <code>x = x + x</code> becomes load, add and store, because this unoptimized build keeps x in memory at <code>-20(%rbp)</code>. The loop ends with an unconditional jump back to the test. The number on the left of each instruction is its address in memory.</figcaption></figure>
-  <p>The lecture's analogy: a program is like a <b>recipe</b>. Each step is simple, the steps are carried out in order, and the result is only correct if they're followed as written. The processor is the cook. Unlike a cook, it follows a billion or so steps per second, without ever understanding what the dish is.</p>
-  <p>Notice how much of the compiled program is bookkeeping: moving values between memory and registers, counting the loop, jumping. The actual work, <code>addl</code>, is one instruction in nine inside the loop. An optimizing compiler would do much better, but the point stands: to a processor, a program is only a sequence of instructions, and speed means getting through that sequence faster.</p>
+  <p>You can read these instructions like a recipe: each line says what to do next, and later steps rely on values produced by earlier ones. The processor must preserve those relationships to get the right answer. As we will see, it can still overlap steps that do <i>not</i> rely on each other.</p>
+  <p>Follow one trip through the unoptimized loop. It tests the counter, loads <code>x</code>, doubles and stores it, increments the counter, and jumps back. The <code>addl</code> that doubles <code>x</code> is only one of nine instructions on that path; the rest make the loop work. An optimizing compiler could reduce this bookkeeping. The example makes clear why speed depends on more than the arithmetic operation alone.</p>
 </section>
 
 <section class="lesson" id="s6" data-toc="What a processor does" data-n="6">
   <div class="lesson-h"><div class="kicker">Section 6</div><h2>What does a processor do? It executes instructions</h2></div>
-  <p>The lecture introduces a <b>very simple processor</b> with three parts. They are drawn the same way in every diagram in these notes:</p>
+  <p>To run the compiled program, a processor repeatedly finds an instruction, gets its input values, performs the operation, and records the result. The lecture's <b>very simple processor</b> groups the relevant hardware into three parts, drawn consistently in the diagrams:</p>
   <ul>
-    <li><b style="color:#d9763a">Fetch/decode</b> determines which instruction runs next and what it asks for.</li>
-    <li>The <b style="color:#b8860b">ALU</b> (the execution unit) performs the operation an instruction describes. That may change values in the processor's registers or in the computer's memory.</li>
-    <li>The <b style="color:#5b6a8e">execution context</b> holds the <b>registers</b>, which maintain the program's state: the values of the variables used as the inputs and outputs of operations.</li>
+    <li><b style="color:#d9763a">Fetch/decode</b> uses the program counter to find the next instruction and determine what it asks for. The <b>program counter</b> is the address of the next instruction.</li>
+    <li>The <b style="color:#b8860b">ALU</b> (arithmetic and logic unit) performs operations such as addition. This model also needs a way to load from and store to memory, which we will meet later.</li>
+    <li>The <b style="color:#5b6a8e">execution context</b> includes <b>registers</b>, small storage locations that hold values the program is using. Together with memory and the program counter, those values form the program's <b>state</b>: the information needed to continue execution.</li>
   </ul>
-  <p>Step through one instruction, <code>add R0 ← R0, R1</code>: "add the contents of register R0 to the contents of register R1, and put the result into R0".</p>
+  <p>Step through <code>add R0 ← R0, R1</code>. It means: read R0 and R1, add their values, then put the answer in R0. The arrow points to the destination; R1 keeps its old value.</p>
   <figure class="fig"><div class="widget">
     <div class="sc" style="padding:0"><svg id="addSvg" viewBox="0 0 760 260" role="img" aria-label="The very simple processor executing add R0 ← R0, R1 in four steps" style="min-width:560px"></svg></div>
     <div class="ctrl"><button id="addBack">◀ Back</button><button id="addNext" class="pri">Next step ▶</button><button id="addReset">Reset</button><span class="readout" id="addOut"></span></div>
-  </div><figcaption><b>Four steps.</b> (1) Get the next instruction from memory. (2) Read its inputs from the registers: 32 and 64. (3) The execution unit adds them: 96. (4) Store the result back into R0. Only the last step changes the program's state. R2 and R3 hold other values that this instruction doesn't touch.</figcaption></figure>
-  <p>A program runs by repeating this over and over, one instruction after another. The lecture's very simple processor <b>executes one instruction per clock</b>. <a href="lecture-02-modern-multicore.html#s0">Lecture 2's Section 0</a> has two simulators that run whole programs on this kind of processor, phase by phase.</p>
-  <div class="checkpoint"><b>Review: what is "state"?</b> A <b>program</b> is a list of instructions. An <b>instruction</b> describes an operation for the processor to perform, and executing it usually <b>modifies the computer's state</b>. The <b>state</b> is the values of the program's data, stored in the processor's registers or in memory.</div>
+  </div><figcaption><b>Four conceptual steps.</b> (1) Fetch the instruction. (2) Read R0 = 32 and R1 = 64. (3) Add to get 96. (4) Write 96 into R0. The diagram shows the data-register change at the last step; it leaves out the program counter, which also advances as instructions run. R1, R2, and R3 keep their values.</figcaption></figure>
+  <p>These are phases of an instruction, not necessarily four separate clock cycles. For the timing examples that follow, the lecture assumes a simplified processor that <b>finishes one instruction per clock</b>. Real processors overlap phases and handle several instructions at once. <a href="lecture-02-modern-multicore.html#s0">Lecture 2's Section 0</a> lets you follow whole programs phase by phase.</p>
+  <div class="checkpoint"><b>Review: what is "state"?</b> Instructions describe operations; state records their effects. After this add, R0 is 96 and R1 is still 64. The program counter identifies the next instruction, and memory holds values beyond the registers. The processor must preserve the intended state changes even if it overlaps instructions.</div>
 </section>
 
 <section class="lesson" id="s7" data-toc="Instruction-level parallelism" data-n="7">
