@@ -119,7 +119,7 @@ svg text.sw{fill:#fff!important}
   <h1>Why <em>parallelism</em>? Why <em>efficiency</em>?</h1>
   <p class="lede">Imagine a program that takes a minute to process a video. For years, you could often make it faster simply by running it on next year's processor. Around 2005, that reliable improvement in single-thread speed slowed sharply. To get the minute down now, you need to know which parts of the work can happen together, how the workers share results, and how quickly they can reach the data. This lecture builds that argument from the ground up.</p>
   <dl class="outcome">
-    <dt>You'll be able to</dt><dd>Define speedup and efficiency, and explain what limits them (communication, load imbalance). Describe what a processor does with a program, what instruction-level parallelism is, and why superscalar execution and clock-frequency scaling ran out. Explain the power wall. Describe memory as an address space, and explain latency, stalls, caches and the cache hierarchy.</dd>
+    <dt>You'll be able to</dt><dd>Calculate speedup and parallel efficiency, and explain how communication and uneven work limit them. Trace an instruction through a simple processor, identify safe instruction overlap, and explain why wider cores and faster clocks faced diminishing returns. Follow a load through memory and the cache hierarchy, from address to latency.</dd>
     <dt>Background</dt><dd>None required. This page builds everything it uses. Units 1–3 of these notes go deeper into the processor, and <a href="lecture-02-modern-multicore.html">Lecture 2</a> continues directly from here.</dd>
     <dt>Source</dt><dd>Follows the structure and examples of Stanford CS149 <i>Parallel Computing</i>, Fall 2023, Lecture 1, "Why Parallelism? Why Efficiency?" (Kayvon Fatahalian and Kunle Olukotun). The course-logistics slides are left out. The explanations, diagrams and explorers here are original study material, not a copy of the slides.</dd>
   </dl>
@@ -421,9 +421,9 @@ svg text.sw{fill:#fff!important}
 <section class="lesson" id="s17" data-toc="Summary" data-n="17">
   <div class="lesson-h"><div class="kicker">Summary</div><h2>What to take away</h2></div>
   <ul>
-    <li><b>Single-thread performance now improves very slowly.</b> To run significantly faster, programs must use multiple processing elements or specialized hardware. That means knowing how to reason about, and write, parallel and efficient code.</li>
-    <li><b>Writing parallel programs is challenging.</b> It needs problem partitioning, communication and synchronization, and knowledge of the machine's characteristics. Above all, you need to understand <b>data movement</b>.</li>
-    <li><b>Modern computers have tremendously more processing power than most programs use.</b> A quad-core laptop CPU can run 30–40× faster than an optimized single-threaded program, if you use it efficiently.</li>
+    <li><b>Single-thread speed no longer rises at its old pace.</b> Instruction dependencies limit wider execution, and power limits faster clocks. Additional cores, vector lanes, and specialized units offer other paths to performance.</li>
+    <li><b>Those paths need suitable work.</b> A parallel program must divide the job, keep workers busy, and coordinate their results. Speedup and parallel efficiency reveal how well that plan scales.</li>
+    <li><b>Data supply can decide the result.</b> The same program-visible address space may be served by a nearby cache or distant DRAM. Locality helps keep loads short; misses can stall dependent instructions. The course's 32–40× assignment result illustrates what one carefully chosen workload can gain by using its machine's parallel resources.</li>
   </ul>
   <figure class="fig"><div class="sc"><svg id="chainSvg" viewBox="0 0 760 170" role="img" aria-label="Chain of reasoning: power wall and ILP wall lead to parallel and specialized hardware, which requires parallel, efficient software, which depends on efficient data movement" style="min-width:560px"></svg></div>
     <figcaption><b>The lecture as a chain of cause and effect.</b> Lecture 2 picks up from the middle box: how a modern multi-core processor is built, and what each of its forms of parallelism demands from a program.</figcaption></figure>
@@ -433,29 +433,29 @@ svg text.sw{fill:#fff!important}
   <div class="lesson-h"><div class="kicker">Review</div><h2>Terms to know, and questions to test yourself</h2></div>
   <dl class="glossary">
     <dt>Speedup</dt><dd>Time on 1 processor ÷ time on P processors. Ideal: P.</dd>
-    <dt>Efficiency</dt><dd>Speedup ÷ P: the fraction of the machine's potential actually used.</dd>
+    <dt>Parallel efficiency</dt><dd>Speedup ÷ P: the observed speedup as a fraction of ideal P-fold scaling.</dd>
     <dt>Load imbalance</dt><dd>Some processors have more work than others; the rest sit idle waiting for them.</dd>
     <dt>Communication</dt><dd>Moving data (such as partial results) between processors. It costs time, and can dominate a parallel computation.</dd>
     <dt>Instruction</dt><dd>One simple operation for the processor to perform. A program is a list of them.</dd>
-    <dt>State</dt><dd>The values of a program's data, held in registers and memory.</dd>
-    <dt>ILP</dt><dd>Instruction-level parallelism: the number of instructions that can run at the same time without changing the program's result.</dd>
+    <dt>State</dt><dd>The information needed to continue a program, including register and memory values and the next instruction's address.</dd>
+    <dt>ILP</dt><dd>Instruction-level parallelism: opportunities to overlap independent instructions from one stream while preserving the intended result.</dd>
     <dt>Superscalar</dt><dd>A processor that finds independent instructions in one stream automatically and executes several per clock.</dd>
-    <dt>Power wall</dt><dd>Dynamic power ∝ C × V² × f, and higher f needs higher V, so faster clocks cost disproportionate power and heat.</dd>
-    <dt>Specialization</dt><dd>Hardware built for one kind of task (graphics, video, neural networks) to do it with much less energy.</dd>
+    <dt>Power wall</dt><dd>The constraint created when raising clock frequency, often with voltage, makes power and heat grow too steeply for continued easy clock-speed gains.</dd>
+    <dt>Specialization</dt><dd>Hardware designed around a particular workload, such as graphics or neural networks, to improve speed or energy use for that work.</dd>
     <dt>Address space</dt><dd>Memory as an array of bytes, each identified by its address.</dd>
     <dt>Latency</dt><dd>Time for the memory system to deliver requested data.</dd>
     <dt>Stall</dt><dd>The processor can't run the next instruction because it depends on one that isn't complete, often a load.</dd>
     <dt>Cache, cache line</dt><dd>On-chip storage holding copies of recently used memory, managed in fixed-size lines.</dd>
     <dt>Spatial / temporal locality</dt><dd>Accessing addresses near recent ones / accessing the same addresses again soon. Both make caches effective.</dd>
-    <dt>Cold / capacity miss</dt><dd>A first access to a line / a line evicted because the cache was too small.</dd>
+    <dt>Cold / capacity miss</dt><dd>A line's first requested access / a later miss after a previously held line was evicted for lack of space.</dd>
   </dl>
   <div class="predict"><div class="ph"><b>Test yourself</b><span>The lecture's questions, plus a few more.</span></div><ol>
     <li>Is a 2× speedup on a computer with 10 processors a good result?
-      <details><summary>Show answer</summary><div class="ans"><p>It's a faster program, but a poor use of the machine: <b>20% efficiency</b>. Whether it's "good" depends on the goal. If the machine was otherwise idle and the answer was urgent, maybe. If you care about cost or energy, 80% of the hardware was wasted. Fast ≠ efficient.</p></div></details></li>
-    <li>The program <code>a = x*x + y*y + z*z</code> has five instructions. Why can't any processor run it in fewer than three clocks?
-      <details><summary>Show answer</summary><div class="ans"><p>The dependency chain. The final add needs the first add's result, which needs a multiply's result: three steps that must happen in sequence, however many execution units there are.</p></div></details></li>
+      <details><summary>Show answer</summary><div class="ans"><p>Its parallel efficiency is <b>2 / 10 = 20%</b>, so it is faster than the one-processor baseline but far below ideal scaling. Whether it is useful depends on the goal and cost. The number alone does not say why the other 80% of ideal speedup was missed: workers might wait, communicate, contend for resources, or do extra work.</p></div></details></li>
+    <li>In the lecture's one-cycle-per-instruction model, why does <code>a = x*x + y*y + z*z</code> need at least three clocks even with many execution units?
+      <details><summary>Show answer</summary><div class="ans"><p>The dependency chain. The final add needs the first add's result, which itself needs a multiply's result. Those three dependent operations must occupy successive clocks in this model, regardless of how many other instructions can run alongside them.</p></div></details></li>
     <li>Why did processor clock frequencies stop increasing around 2005, even though transistors kept getting smaller?
-      <details><summary>Show answer</summary><div class="ans"><p>Power. Dynamic power scales with V² × f, and higher frequencies need higher voltage, so power, and heat, rise steeply with frequency. Chips hit the limit of what could be cooled. Leakage (static power) made it worse.</p></div></details></li>
+      <details><summary>Show answer</summary><div class="ans"><p>Power and cooling became limiting. Dynamic power rises with switching frequency and with the square of supply voltage; pushing a given design to a higher clock often requires more voltage. Leakage adds another cost. More transistors therefore could not keep producing the same easy gains from higher clocks.</p></div></details></li>
     <li>Two loads followed by an add that uses both. The data is in DRAM (~248 cycles). Roughly how long does a processor that waits after every load take, compared with one that waits only when a value is used?
       <details><summary>Show answer</summary><div class="ans"><p>Waiting after every load: 248 + 248 + 1 ≈ <b>497 cycles</b>. Waiting only on use lets the loads overlap: 1 + 248 + 1 ≈ <b>250 cycles</b>. Either way, the processor does 3 instructions' worth of work.</p></div></details></li>
     <li>In the 2-line cache, what sequence of addresses would miss on <i>every</i> access?
