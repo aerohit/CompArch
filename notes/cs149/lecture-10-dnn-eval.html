@@ -328,28 +328,28 @@ parameters    = K · C · R · S (+ K biases)    <span class="u">// weights reus
 
 <section class="lesson" id="s9" data-toc="Winograd and FFT" data-n="9">
   <div class="lesson-h"><div class="kicker">Section 9</div><h2>Algorithmic improvements: FFT and Winograd</h2></div>
-  <p>Blocking changes how data moves; these change <i>how much arithmetic</i> is done.</p>
+  <p>Blocking preserves the same mathematical work while arranging data movement better. A different algorithm can sometimes reach the same convolution result with fewer multiplications. Two examples are useful because their trade-offs differ:</p>
   <ul>
-    <li><b>FFT convolution.</b> Convolution in space is element-wise multiplication in the Fourier domain. The overhead is the FFT of the inputs and the inverse FFT of the outputs (O(N log N) each). The inverse transform is amortized over all input channels, since the channel sum can happen in the Fourier domain. Best for large filters.</li>
-    <li><b>Winograd convolution.</b> A work-efficient way to compute several outputs of a small filter with fewer multiplies, by sharing partial products.</li>
+    <li><b>FFT convolution.</b> Transform the input and filter into the frequency domain, multiply matching frequency values, then transform the result back. The transforms cost roughly O(n log n) for a spatial region of n values, so their setup pays off mainly for sufficiently large filters or regions. Contributions from input channels can be summed before the inverse transform.</li>
+    <li><b>Winograd convolution.</b> Algebraically reorganize a small-filter convolution so a group of neighboring outputs shares intermediate products. It saves multiplications but introduces extra additions and transformations.</li>
   </ul>
-  <p>The lecture's 1D example: two outputs of a 3-tap filter, <i>y</i><sub>0</sub> = <i>x</i><sub>0</sub><i>w</i><sub>0</sub> + <i>x</i><sub>1</sub><i>w</i><sub>1</sub> + <i>x</i><sub>2</sub><i>w</i><sub>2</sub> and <i>y</i><sub>1</sub> = <i>x</i><sub>1</sub><i>w</i><sub>0</sub> + <i>x</i><sub>2</sub><i>w</i><sub>1</sub> + <i>x</i><sub>3</sub><i>w</i><sub>2</sub>. Direct: 6 multiplies and 4 adds. Winograd's F(2, 3) algorithm:</p>
+  <p>Here is the lecture's one-dimensional example. A three-weight filter slides across four input values to produce two outputs: <i>y</i><sub>0</sub> = <i>x</i><sub>0</sub><i>w</i><sub>0</sub> + <i>x</i><sub>1</sub><i>w</i><sub>1</sub> + <i>x</i><sub>2</sub><i>w</i><sub>2</sub>, and <i>y</i><sub>1</sub> = <i>x</i><sub>1</sub><i>w</i><sub>0</sub> + <i>x</i><sub>2</sub><i>w</i><sub>1</sub> + <i>x</i><sub>3</sub><i>w</i><sub>2</sub>. Computing those sums directly takes six multiplications and four additions. Winograd F(2, 3) forms four different products and recombines them:</p>
   <pre class="code">m1 = (x0 − x2) · w0
 m2 = (x1 + x2) · (w0 + w1 + w2)/2      <span class="u">// the filter factors depend only on w:</span>
 m3 = (x2 − x1) · (w0 − w1 + w2)/2      <span class="u">// precompute them once per filter</span>
 m4 = (x1 − x3) · w2
 y0 = m1 + m2 + m3
 y1 = m2 − m3 − m4</pre>
-  <p>4 multiplies and 8 additions (4 to form the <i>m</i>'s, 4 to combine them). Trading multiplies for adds pays off because multiplies are the more expensive operation, and the savings grow in 2D: for a 2 × 2 block of outputs of a 3 × 3 filter, Winograd needs 16 multiplies instead of 36, <b>2.25× fewer</b>.</p>
+  <p>The input transformations and output combinations add work, but the four filter-dependent expressions can be prepared once and reused at many positions. This form uses four runtime products instead of six; the corresponding two-dimensional 2 × 2 output tile uses 16 instead of 36. That is <b>2.25× fewer multiplications</b>, not 2.25× faster execution. Modern hardware may perform a multiply and an add together, so the extra additions, data movement, and rounding behavior all matter when choosing an algorithm.</p>
   <figure class="fig"><div class="widget">
     <div class="cfg" id="wgIn"></div>
     <div class="ctrl" style="margin:10px 0 0"><div class="seg" role="group" aria-label="Which m1"><button data-wm="0" aria-pressed="true">m1 = (x0 − x2)·w0</button><button data-wm="1">m1 = (x0 − x1)·w0, as printed on the slide</button></div></div>
     <div class="stat" id="wgStat"></div>
     <p class="msg" id="wgMsg"></p>
   </div><figcaption><b>Check it with your own numbers.</b> Change any input or weight: Winograd's two outputs always match the direct ones. The slide prints the first product as (x0 − x1)·w0, which is a typo; switch to it and y0 comes out wrong unless x1 happens to equal x2.</figcaption></figure>
-  <div class="pitfall">The additions in the transforms aren't free, and they change rounding. Winograd with larger output blocks saves more multiplies but loses numerical accuracy, especially in low precision. It's a trade-off, not a free lunch.</div>
+  <div class="pitfall"><b>Numerical results can change.</b> Reordering floating-point arithmetic changes where rounding happens. Larger Winograd tiles can reduce multiplication count further but may magnify numerical error, especially at low precision. An implementation has to balance speed, temporary storage, and acceptable accuracy.</div>
   <h3>Libraries pick the algorithm for you</h3>
-  <p>Vendors ship libraries with high-performance implementations of the key DNN layers: NVIDIA's <b>cuDNN</b>, Intel's oneDNN, Apple's and ARM's equivalents. cuDNN offers several algorithms for the same convolution (implicit GEMM, precomputed implicit GEMM, explicit GEMM, direct, FFT, tiled FFT, Winograd), because the fastest one depends on the layer's shape, and it can benchmark them to pick one.</p>
+  <p>This is why a library offers more than one convolution kernel. NVIDIA's <b>cuDNN</b>, Intel's oneDNN, and other vendor libraries provide implementations based on direct loops, GEMM, FFT, or Winograd. The fastest choice depends on dimensions, precision, device, workspace available for temporary data, and accuracy requirements. A library may use heuristics or benchmark candidates for a particular workload. Once a layer is fast, however, the memory traffic <i>between</i> layers becomes the next problem.</p>
 </section>
 
 <!-- ================================ PART 3 ================================ -->
