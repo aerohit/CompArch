@@ -117,7 +117,7 @@ svg text.sw{fill:#fff!important}
   <h1>GPU architecture and <em>CUDA</em> programming</h1>
   <p class="lede">A graphics processor must color a huge number of image locations every frame. That work helped shape hardware with many arithmetic units and many threads waiting for data at once. This lecture follows the path from graphics shaders to CUDA kernels, then looks inside an NVIDIA V100 to connect the code's threads and blocks to the machine that runs them.</p>
   <dl class="outcome">
-    <dt>You'll be able to</dt><dd>Explain why GPUs have many SIMD, multithreaded cores. Write and read CUDA kernels: grids, blocks, threads, <code>blockIdx</code>/<code>threadIdx</code>, the host/device split and the three device memory spaces. Explain why shared memory and <code>__syncthreads</code> make the convolution example faster. Describe a V100 SM, warps and SIMT execution. Trace how a GPU's work scheduler assigns thread blocks to cores under resource limits, and explain why some CUDA programs can deadlock.</dd>
+    <dt>You'll be able to</dt><dd>Explain how graphics work shaped high-throughput GPUs. Read a CUDA kernel and its grid, blocks, thread indices, host launch, and memory choices. Show how shared memory and <code>__syncthreads()</code> reduce repeated source-level loads in the convolution example, while identifying their costs. Describe a V100 SM, warps, and SIMT execution. Trace how resource limits affect block placement and why a cross-block wait can deadlock.</dd>
     <dt>Background</dt><dd><a href="lecture-02-modern-multicore.html">Lecture 2</a> (SIMD, multithreading, the V100 SM) and <a href="lecture-03-bandwidth-spmd.html">Lecture 3</a> (SPMD, ISPC gangs and tasks). Unit 5 of these notes (Understand GPUs) covers occupancy, coalescing and tiling in more depth.</dd>
     <dt>Source</dt><dd>Follows the structure and examples of Stanford CS149 <i>Parallel Computing</i>, Fall 2023, Lecture 7, "GPU Architecture & CUDA Programming" (Kayvon Fatahalian and Kunle Olukotun). Lectures 4–6 aren't covered here yet. The explanations, diagrams and explorers are original study material, not a copy of the slides.</dd>
   </dl>
@@ -180,7 +180,7 @@ scale(scale_amount, input_stream, output_stream);  // map the kernel over the st
 </section>
 
 <!-- ================================ PART 2 ================================ -->
-<div class="partbar" id="p2"><div class="kicker">Part 2 · CUDA abstractions</div><h2>What a CUDA program means</h2><p>Threads, blocks and grids; host and device; three kinds of device memory; and synchronization.</p></div>
+<div class="partbar" id="p2"><div class="kicker">Part 2 · CUDA abstractions</div><h2>What a CUDA program means</h2><p>Threads, blocks and grids; host and device; storage scopes and synchronization.</p></div>
 
 <section class="lesson" id="s3" data-toc="The thread hierarchy" data-n="3" style="margin-top:36px">
   <div class="lesson-h"><div class="kicker">Section 3</div><h2>A hierarchy of concurrent threads</h2></div>
@@ -340,7 +340,7 @@ convolve&lt;&lt;&lt;N/THREADS_PER_BLK, THREADS_PER_BLK&gt;&gt;&gt;(N, devInput, 
   <h3>Why must a whole block be resident at once?</h3>
   <p>Suppose a block has 256 threads but an SM could hold only 128 of them. Running the first half to completion before admitting the second would break a block-wide barrier: the first half could wait at <code>__syncthreads()</code> for threads that have not started. CUDA therefore places a whole block on one SM with resources for all its threads before it runs. The warps then take turns issuing instructions; “resident together” does not mean every thread performs an instruction in the same clock.</p>
   <h3>Blocks: any order, but not necessarily independent</h3>
-  <p>Blocks may run in any order, or at the same time, so one block cannot require another particular block to finish first. That does <i>not</i> forbid every shared update. For example, if a histogram's global counters start at zero and each input is counted once with <code>atomicAdd(&amp;counts[A[i]], 1)</code>, the final integer counts do not depend on block order. A different pattern is dangerous:</p>
+  <p>In an ordinary kernel without an explicit grid-wide synchronization mechanism, blocks may run in any order or at the same time, so one block cannot require another particular block to finish first. That does <i>not</i> forbid every shared update. For example, if a histogram's global counters start at zero and each input is counted once with <code>atomicAdd(&amp;counts[A[i]], 1)</code>, the final integer counts do not depend on block order. A different pattern is dangerous:</p>
   <div class="grid2">
     <pre class="code" style="margin:0">// thread block 0
 // do stuff here
@@ -376,32 +376,36 @@ while (atomicAdd(&amp;myFlag, 0) == 0)
 <section class="lesson" id="gloss" data-toc="Glossary & review" data-n="✓">
   <div class="lesson-h"><div class="kicker">Review</div><h2>Terms to know, and questions to test yourself</h2></div>
   <dl class="glossary">
-    <dt>Shader</dt><dd>A pure function run once per vertex or pixel in the graphics pipeline.</dd>
+    <dt>Shader</dt><dd>A programmable graphics stage. A fragment shader computes candidate results for covered image samples; several fragments may contribute to one pixel.</dd>
     <dt>GPGPU</dt><dd>General-purpose computation on GPUs, originally by disguising it as rendering.</dd>
-    <dt>Compute mode</dt><dd>The non-graphics interface: allocate and copy buffers, then launch N instances of a kernel.</dd>
+    <dt>Compute interface</dt><dd>A way to launch GPU kernels directly on data without posing the work as drawing.</dd>
     <dt>Kernel</dt><dd>A <code>__global__</code> function the host launches over a grid of threads.</dd>
     <dt>Grid, block, thread</dt><dd>The launch's hierarchy: a grid of thread blocks, each containing threads, with 1–3D IDs.</dd>
-    <dt>Host, device</dt><dd>The CPU and its memory; the GPU and its memory, in a separate address space.</dd>
+    <dt>Host, device</dt><dd>The CPU side and GPU side of a CUDA program. Explicit-memory code allocates and copies data between them; managed memory is another option.</dd>
     <dt>Shared memory</dt><dd>Fast on-chip memory shared by the threads of one block.</dd>
     <dt>__syncthreads()</dt><dd>A barrier across all threads of a block.</dd>
-    <dt>SM, sub-core</dt><dd>A V100 core, split into four sub-cores that each issue one warp instruction per clock.</dd>
-    <dt>Warp, SIMT</dt><dd>32 threads the hardware executes together in SIMD fashion when they share an instruction.</dd>
+    <dt>SM, sub-core</dt><dd>A V100 streaming multiprocessor, divided into four processing partitions with separate warp schedulers and execution units.</dd>
+    <dt>Warp, SIMT</dt><dd>A warp groups 32 neighboring CUDA threads; SIMT execution can apply a common instruction to its active threads.</dd>
     <dt>Block scheduler</dt><dd>GPU hardware that assigns thread blocks to SMs as resources allow.</dd>
-    <dt>Persistent threads</dt><dd>Launching just enough blocks to fill the GPU and distributing work in software.</dd>
+    <dt>Persistent kernel</dt><dd>A limited set of long-lived blocks that repeatedly claim new chunks of work after hardware schedules them.</dd>
   </dl>
   <div class="predict"><div class="ph"><b>Test yourself</b><span>The lecture's questions, plus a few more.</span></div><ol>
     <li>matrixAdd launches <code>&lt;&lt;&lt;(3,2), (4,3)&gt;&gt;&gt;</code>. How many threads, and which (i, j) does thread (1, 2) of block (2, 1) compute?
       <details><summary>Show answer</summary><div class="ans"><p>6 blocks × 12 threads = <b>72</b>. i = 2 × 4 + 1 = <b>9</b>, j = 1 × 3 + 2 = <b>5</b>: element C[5][9].</p></div></details></li>
-    <li>In convolution version 2, how many global loads does one block issue, versus version 1?
-      <details><summary>Show answer</summary><div class="ans"><p><b>130</b> (128 + 2 support elements) versus 3 × 128 = <b>384</b>. The other reads hit shared memory.</p></div></details></li>
+    <li>For an 11 × 5 matrix and 4 × 3-thread blocks, how many threads must the host launch, and why does the kernel need a bounds check?
+      <details><summary>Show answer</summary><div class="ans"><p>Ceiling division gives 3 × 2 blocks of 12 threads, or <b>72</b> threads. Only 55 correspond to matrix elements. The other 17 must skip array accesses.</p></div></details></li>
+    <li>Does the CPU wait for <code>matrixAdd&lt;&lt;&lt;...&gt;&gt;&gt;</code> to finish before continuing? How can it safely use the result?
+      <details><summary>Show answer</summary><div class="ans"><p>A kernel launch normally returns before completion. The CPU can wait with <code>cudaDeviceSynchronize()</code> or synchronize the relevant stream, then copy and read the result. An ordered blocking device-to-host copy can also wait for preceding work in its stream.</p></div></details></li>
+    <li>In convolution version 2, how many per-thread global load operations does one block perform, versus version 1? Does that prove a proportional reduction in DRAM traffic?
+      <details><summary>Show answer</summary><div class="ans"><p><b>130</b> (128 + 2 support elements) versus 3 × 128 = <b>384</b>. No: coalescing and caches can combine or serve loads, while shared staging adds its own reads, a barrier, and resource use.</p></div></details></li>
     <li>Why does the v2 kernel fit only two blocks per core on the fictitious GPU, even though the core has contexts for three?
       <details><summary>Show answer</summary><div class="ans"><p>Shared memory: 3 × 520 = 1,560 bytes &gt; 1,536 (1.5 KB). The threads would fit (3 × 128 = 384), but a block can't start without its shared allocation.</p></div></details></li>
-    <li>How long does one warp's fp64 instruction occupy the fp64 units of a V100 sub-core?
-      <details><summary>Show answer</summary><div class="ans"><p>32 threads on 8 fp64 units: <b>4 clocks</b>. (fp32: 32 on 16 units, 2 clocks.)</p></div></details></li>
+    <li>In the lecture's lane-throughput model, how many clocks does a 32-thread warp's FP64 operation occupy an eight-wide FP64 path?
+      <details><summary>Show answer</summary><div class="ans"><p>32 lane operations ÷ 8 units = <b>4 clocks</b>. This is a throughput count for the simplified diagram, not the latency of every FP64 instruction.</p></div></details></li>
     <li>Why can't a GPU run a 256-thread block as two halves, one after the other?
-      <details><summary>Show answer</summary><div class="ans"><p>Threads in a block may synchronize with each other, for example with <code>__syncthreads()</code>. The first half would wait at the barrier for the second half, which could never start: deadlock. So CUDA guarantees all threads of a block are resident together.</p></div></details></li>
+      <details><summary>Show answer</summary><div class="ans"><p>Threads in one block may meet at <code>__syncthreads()</code>. The first half could wait for a second half that cannot start until the first half leaves. CUDA places the whole block on one SM with enough resources for all its threads.</p></div></details></li>
     <li>Is the histogram-with-atomics kernel correct? Is the flag-spinning kernel?
-      <details><summary>Show answer</summary><div class="ans"><p>The histogram is <b>correct</b>: atomics give mutual exclusion and the result doesn't depend on block order. The flag program is <b>incorrect</b>: it works only if block 0 runs before, or at the same time as, block 1, and CUDA allows any order.</p></div></details></li>
+      <details><summary>Show answer</summary><div class="ans"><p>With zeroed counters and one atomic increment per input, the histogram's integer counts are order-independent. The flag program can deadlock if block 1 occupies the only slot before block 0 starts, so it is not correct for every permitted schedule.</p></div></details></li>
   </ol></div>
   <p class="credit">Based on Stanford CS149 (Fall 2023), Lecture 7, "GPU Architecture & CUDA Programming", by Kayvon Fatahalian and Kunle Olukotun. The explanations, diagrams and interactive models on this page are original study material; the V100 figures and CUDA examples are as presented in the lecture. For CUDA's exact semantics see NVIDIA's <a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/">CUDA C++ Programming Guide</a>. For the course's own slides and videos, see the <a href="https://gfxcourses.stanford.edu/cs149/fall23">CS149 course site</a>.</p>
   <div class="nextunit"><a href="lecture-03-bandwidth-spmd.html"><small>← Previous companion</small>Lecture 3 · Latency, bandwidth &amp; SPMD</a><a href="lecture-10-dnn-eval.html"><small>Next companion</small>Lecture 10 · Evaluating DNNs →</a></div>
