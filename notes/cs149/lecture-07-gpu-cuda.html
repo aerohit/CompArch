@@ -115,13 +115,13 @@ svg text.sw{fill:#fff!important}
 <header class="hero">
   <div class="kicker">Stanford CS149 · Lecture 7 companion</div>
   <h1>GPU architecture and <em>CUDA</em> programming</h1>
-  <p class="lede">GPUs were built to draw triangles for video games. Because drawing means running the same small function on millions of pixels, they became enormously parallel, and then programmable enough to run almost anything data-parallel. This lecture traces that history, teaches <b>CUDA</b>, the language NVIDIA introduced in 2007 for programming GPUs directly, and then looks inside an NVIDIA V100 to see how CUDA's abstractions are actually implemented.</p>
+  <p class="lede">A graphics processor must color a huge number of image locations every frame. That work helped shape hardware with many arithmetic units and many threads waiting for data at once. This lecture follows the path from graphics shaders to CUDA kernels, then looks inside an NVIDIA V100 to connect the code's threads and blocks to the machine that runs them.</p>
   <dl class="outcome">
     <dt>You'll be able to</dt><dd>Explain why GPUs have many SIMD, multithreaded cores. Write and read CUDA kernels: grids, blocks, threads, <code>blockIdx</code>/<code>threadIdx</code>, the host/device split and the three device memory spaces. Explain why shared memory and <code>__syncthreads</code> make the convolution example faster. Describe a V100 SM, warps and SIMT execution. Trace how a GPU's work scheduler assigns thread blocks to cores under resource limits, and explain why some CUDA programs can deadlock.</dd>
     <dt>Background</dt><dd><a href="lecture-02-modern-multicore.html">Lecture 2</a> (SIMD, multithreading, the V100 SM) and <a href="lecture-03-bandwidth-spmd.html">Lecture 3</a> (SPMD, ISPC gangs and tasks). Unit 5 of these notes (Understand GPUs) covers occupancy, coalescing and tiling in more depth.</dd>
     <dt>Source</dt><dd>Follows the structure and examples of Stanford CS149 <i>Parallel Computing</i>, Fall 2023, Lecture 7, "GPU Architecture & CUDA Programming" (Kayvon Fatahalian and Kunle Olukotun). Lectures 4–6 aren't covered here yet. The explanations, diagrams and explorers are original study material, not a copy of the slides.</dd>
   </dl>
-  <div class="insight">Keep asking the course's question: <b>what does the abstraction promise, and what does this implementation happen to do?</b> CUDA promises that thread blocks can run in any order, and that threads within a block run concurrently. NVIDIA GPUs implement that with a hardware block scheduler, and with <b>warps</b> of 32 threads executed in SIMD fashion. Warps aren't part of the CUDA programming model, but they decide performance.</div>
+  <div class="insight"><b>Separate the work described by CUDA from the schedule chosen by the GPU.</b> A kernel describes threads grouped into blocks. Threads in one block can cooperate; blocks must be correct even if they run in different orders. On the V100, hardware schedules blocks onto streaming multiprocessors and executes threads in groups called <b>warps</b>. That mapping explains both the speed of well-organized code and the limits on synchronization.</div>
 </header>
 
 <!-- ================================ PART 1 ================================ -->
@@ -129,40 +129,42 @@ svg text.sw{fill:#fff!important}
 
 <section class="lesson" id="s1" data-toc="What GPUs were built for" data-n="1" style="margin-top:36px">
   <div class="lesson-h"><div class="kicker">Section 1</div><h2>What GPUs were originally designed to do: 3D rendering</h2></div>
-  <p>A renderer takes a description of a scene (3D surfaces as triangle meshes, surface materials, lights, a camera) and produces an image. Real-time graphics represents every surface as a mesh of <b>triangles</b>, each defined by three <b>vertices</b> (points in space). The whole workload fits in two sentences:</p>
+  <p>Imagine drawing a textured triangle on screen. The renderer starts with three <b>vertices</b> (points in 3D), a camera, lights, and a texture that supplies surface colors. It performs two broad kinds of work:</p>
   <ul>
-    <li>Given a triangle, determine where it lies on screen, given the position of the virtual camera.</li>
-    <li>For every output pixel the triangle covers, compute the color of the surface at that pixel.</li>
+    <li>Transform the triangle's vertices to determine where its shape lies on the 2D screen.</li>
+    <li>For each covered image sample, calculate a candidate color. A covered sample from one triangle is called a <b>fragment</b>; several triangles may produce fragments for the same pixel.</li>
   </ul>
-  <p>The second step is where the work is. What a surface looks like at a point depends on its material and the lights, and the world is full of different materials. So the color computation is a small program, a <b>shader</b>, written in a shading language such as GLSL:</p>
-  <pre class="code"><span class="u">uniform</span> sampler2D myTexture;   // read-only, same for every pixel
-<span class="u">uniform</span> float3 lightDir;
-varying vec3 norm;              // different at every pixel:
-varying vec2 uv;                // think of these as the function's inputs
+  <p>A <b>fragment shader</b> is a small program that computes one such candidate color. This simplified GLSL example reads a texture at coordinates supplied for the fragment, then darkens the color according to the surface's direction relative to a light:</p>
+  <pre class="code">#version 330 core
+<span class="u">uniform</span> sampler2D myTexture;  // texture available to every invocation
+<span class="u">uniform</span> vec3 lightDir;      // one light direction for this draw
+in vec3 norm;                // interpolated normal for this fragment
+in vec2 uv;                  // interpolated texture coordinates
+out vec4 fragColor;
 
-void myShader() {
-  vec3 kd = texture2D(myTexture, uv);          // look up the surface color
-  kd *= clamp(dot(lightDir, norm), 0.0, 1.0);  // darken by light angle
-  return vec4(kd, 1.0);                        // this pixel's RGBA color
+void main() {
+  vec3 kd = texture(myTexture, uv).rgb;
+  float brightness = max(dot(normalize(lightDir), normalize(norm)), 0.0);
+  fragColor = vec4(kd * brightness, 1.0);  // red, green, blue, alpha
 }</pre>
-  <p>The syntax doesn't matter. What matters is that <b>a shader is a pure function, invoked independently on a stream of inputs</b>: once per pixel covered by a triangle, millions of times per frame, 60 or more frames per second. Pixels covered by several surfaces keep the output of the surface closest to the camera.</p>
+  <p>The <code>uniform</code> inputs have one value for this draw; <code>norm</code> and <code>uv</code> can differ across fragments. The example is map-like: many invocations perform the same instructions on different inputs. A fragment shader is not required to be a pure function, and one pixel can have several candidate fragments. Depth testing and other graphics operations decide which results contribute to the final image. The abundance of similar, independent candidate-color calculations is what made wide parallel hardware useful.</p>
   <figure class="fig"><div class="sc"><svg id="gpuSvg" viewBox="0 0 760 240" role="img" aria-label="A GPU: many SIMD, multithreaded cores connected to high-bandwidth memory" style="min-width:560px"></svg></div>
-    <figcaption><b>Why GPUs have many high-throughput cores.</b> Running the same shader on millions of independent pixels is exactly what Lecture 2's ideas are for: many cores, SIMD execution within each core (one instruction, many pixels), and many hardware threads per core to hide the latency of memory, such as texture lookups. High-end GPUs pair this with memory delivering on the order of 1 TB/s.</figcaption></figure>
+    <figcaption><b>Many similar fragments create throughput demand.</b> A GPU uses many cores, groups work into SIMD-like execution within each core, and keeps many threads available while others wait for data such as texture samples. High-end designs also provide wide memory systems. The drawing is a schematic of this organization, not a count of parts in a particular GPU.</figcaption></figure>
 </section>
 
 <section class="lesson" id="s2" data-toc="GPGPU and compute mode" data-n="2">
   <div class="lesson-h"><div class="kicker">Section 2</div><h2>From a graphics hack to a compute interface</h2></div>
-  <p>Around 2001–2003, people noticed that GPUs were very fast processors for running the <i>same computation</i> in parallel on <i>large collections of data</i>. That's data parallelism, the model of the exotic supercomputers of the 1990s. And every year GPUs got faster, because more transistors meant more parallelism.</p>
+  <p>The shader pattern also describes non-graphics work. If an array has 512 × 512 independent elements, a function could run once for each element just as a fragment shader runs for each image location. Early researchers used this <b>data-parallel</b> match even before GPUs offered a direct compute interface.</p>
   <h3>The hack</h3>
-  <p>But the only way to run code on a GPU was to draw something. So, to run a function on every element of a 512 × 512 array:</p>
+  <p>On the graphics interfaces of that period, launching the computation meant posing it as a drawing problem:</p>
   <ol>
-    <li>Set the output image size to 512 × 512, the array size.</li>
-    <li>Draw two triangles that exactly cover the screen.</li>
-    <li>Write your function as the fragment shader. The GPU runs it once per pixel, so once per array element.</li>
+    <li>Put input values in textures and create a 512 × 512 output image to hold the result.</li>
+    <li>Draw two triangles covering that output image, so the graphics pipeline generates a fragment for every location.</li>
+    <li>Write the array operation as a fragment shader. Its invocation for location (i, j) reads the corresponding inputs and writes the corresponding result.</li>
   </ol>
   <figure class="fig"><div class="sc"><svg id="hackSvg" viewBox="0 0 760 220" role="img" aria-label="Two triangles covering a 512 by 512 screen; the shader runs once per pixel, which is once per array element" style="min-width:560px"></svg></div>
     <figcaption><b>A map over a 512 × 512 collection, disguised as drawing.</b> The fragment shader becomes the function being mapped; the output image becomes the result array. This "GPGPU" (general-purpose computing on GPUs) approach produced early work on fluid simulation, ray tracing and sparse matrix solvers.</figcaption></figure>
-  <p>Stanford's <b>Brook</b> language (2004) hid the hack behind a data-parallel abstraction: you wrote a <code>kernel</code> function over <b>streams</b>, and the Brook compiler translated it into graphics commands (like draw-triangles) and shader programs the GPUs of the day could run.</p>
+  <p>Stanford's <b>Brook</b> language (2004) let programmers write the array view instead. A <b>stream</b> held many values, and a <b>kernel</b> described the operation on one value. In the example below, element k of <code>output_stream</code> becomes <code>scale_amount × input_stream[k]</code>; Brook translated that work into graphics commands and shaders for the available GPUs.</p>
   <pre class="code">kernel void scale(float amount, float a&lt;&gt;, out float b&lt;&gt;) {
   b = amount * a;
 }
@@ -171,10 +173,10 @@ float output_stream&lt;1000&gt;;
 scale(scale_amount, input_stream, output_stream);  // map the kernel over the streams</pre>
 
   <h3>Compute mode</h3>
-  <p>Compare how programs reached the hardware before and after 2007:</p>
+  <p>The detour through triangles was useful, but it forced a numerical program to speak in graphics terms. NVIDIA's Tesla generation introduced a compute interface in 2007: a program could allocate GPU buffers, copy input data, and launch a function directly over a chosen collection of work items.</p>
   <figure class="fig"><div class="sc"><svg id="modeSvg" viewBox="0 0 760 260" role="img" aria-label="Before 2007: the application sends a draw command through the fixed graphics pipeline. With NVIDIA Tesla in 2007: the application allocates GPU buffers, copies data, and launches N instances of a kernel" style="min-width:560px"></svg></div>
-    <figcaption><b>Two interfaces to the same programmable cores.</b> Before 2007 the <b>graphics pipeline</b> was the only interface: supply shaders, pipeline parameters and a vertex buffer, then call <code>drawPrimitives</code>. The NVIDIA Tesla architecture (2007) added a <b>compute mode</b>: allocate buffers in GPU memory, copy data to and from them, and launch a single kernel as "run N instances of this". That's a far simpler operation than drawing.</figcaption></figure>
-  <p>It's the same way code runs on a CPU, where the OS loads a program, prepares an execution context and lets the processor fetch instructions, just with thousands of instances at once. <b>CUDA</b>, introduced with Tesla in 2007, is a C-like language for this compute interface. It's deliberately <b>low-level</b>: its abstractions closely match the capabilities and performance characteristics of GPUs (a small "abstraction distance").</p>
+    <figcaption><b>From “draw an image” to “launch a kernel.”</b> The left shows the old graphics route: shaders and geometry pass through a rendering pipeline. The right shows the Tesla-era compute route: prepare GPU memory and launch a <b>kernel</b>, a function run by many GPU threads. The diagram shows an explicit-copy workflow; CUDA also offers other memory-management options.</figcaption></figure>
+  <p><b>CUDA</b> is NVIDIA's programming platform for this compute route. Its C++ extensions let the host CPU name the kernel, choose how many GPU threads to launch, and decide what data they can access. The programmer no longer needs to draw triangles, but does need to understand how thousands of logical threads are grouped and scheduled. That is the next part of the lecture.</p>
 </section>
 
 <!-- ================================ PART 2 ================================ -->
