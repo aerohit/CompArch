@@ -338,29 +338,29 @@ svg text.sw{fill:#fff!important}
 <section class="lesson" id="s6" data-toc="Idea 2: SIMD" data-n="6">
   <div class="lesson-h"><div class="kicker">Section 6 · Idea #2</div><h2>Share one instruction stream across many ALUs</h2></div>
   <div class="card4">
-    <div class="c1"><span class="l">Problem</span>Every core pays for fetch/decode and control logic, but only has one ALU doing math.</div>
+    <div class="c1"><span class="l">Problem</span>Building a complete new core for each data element repeats instruction-fetch and control hardware even when every element needs the same operations.</div>
     <div class="c2"><span class="l">Idea</span><b>SIMD</b> (single instruction, multiple data): one fetch/decode drives many ALUs, all running the same instruction on different data.</div>
-    <div class="c3"><span class="l">Program must provide</span>Many data elements that need the <b>same instruction sequence</b>: coherent execution.</div>
+    <div class="c3"><span class="l">Program must provide</span>Groups of data elements that can follow the <b>same instruction sequence</b> at the same time.</div>
     <div class="c4"><span class="l">Cost</span>Wide registers and datapaths. When elements need different instructions, lanes sit idle (divergence).</div>
   </div>
-  <p>Notice what sin(x) does. Every iteration runs the <i>same</i> instructions on a <i>different</i> x[i]. So why fetch and decode each instruction eight times for eight elements? Fetch it once, and send it to <b>eight ALUs</b> that each hold a different element. The cost of managing the instruction stream is <b>amortized</b> across all the ALUs.</p>
+  <p>With a fixed number of Taylor terms, eight sine iterations can advance through the same step together: each needs its own <code>x[i]</code> and running sum, but all can multiply their current numerators at once. <b>SIMD</b>—single instruction, multiple data—fetches and decodes one vector instruction and applies it across eight <b>lanes</b>. Each lane handles a different element, so the instruction-control cost is shared.</p>
   <figure class="fig"><div class="sc"><svg id="simdSvg" viewBox="0 0 760 220" role="img" aria-label="One fetch/decode unit broadcasting each instruction to eight ALUs"></svg></div>
-    <figcaption><b>One instruction, eight results.</b> The execution context now holds <b>vector registers</b>: each 256-bit register holds eight 32-bit floats, one per ALU lane. <code>vmulps</code> multiplies all eight pairs at once.</figcaption></figure>
-  <p>To use this from C, the programmer (or compiler) rewrites the loop to step through the array <b>8 elements at a time</b>. Each scalar operation becomes a vector operation, using "intrinsics": C functions that map directly to vector instructions. For Intel's AVX, <code>_mm256_mul_ps(a, b)</code> multiplies two vectors of eight floats. The Taylor series logic is unchanged. Every variable (value, numer, denom) simply becomes a vector of eight, and the loop's i advances by 8.</p>
+    <figcaption><b>One instruction, eight lane results.</b> A 256-bit vector register holds eight 32-bit floating-point values. Each lane multiplies one pair when <code>vmulps</code> runs, producing eight results from one instruction. The lanes share control but keep their data values separate.</figcaption></figure>
+  <p>A C implementation can process eight array elements per loop trip, advancing <code>i</code> by eight. <code>value</code> and <code>numer</code> become vectors because their values differ by lane; the shared term count, denominator, and sign may remain scalar and be used by every lane. Intel AVX <b>intrinsics</b>, C functions that request particular vector instructions, include <code>_mm256_mul_ps(a, b)</code> for eight pairwise float multiplies. If N is not divisible by eight, the remaining elements need a shorter masked vector or a scalar cleanup loop.</p>
   <div class="tbl"><table>
     <tr><th>Instruction set</th><th>Vector width</th><th>32-bit floats per instruction</th></tr>
     <tr><td>Intel/AMD AVX2</td><td class="m">256 bits</td><td>8</td></tr>
     <tr><td>Intel AVX-512</td><td class="m">512 bits</td><td>16</td></tr>
     <tr><td>Arm NEON</td><td class="m">128 bits</td><td>4</td></tr>
   </table></div>
-  <p>Where do the vector instructions come from? Three ways: the programmer writes <b>intrinsics</b>; the language's semantics allow them (like <code>forall</code>, which promises independence); or an <b>auto-vectorizing compiler</b> proves on its own that loop iterations are independent. In all three cases the SIMD instructions are chosen at <b>compile time</b>, and you can see them in the binary. That's called <b>explicit SIMD</b>.</p>
+  <p>Vector instructions can come from hand-written intrinsics, a language construct that expresses independent element work, or an <b>auto-vectorizing compiler</b> that proves a loop safe to group. On a CPU, those choices produce vector instructions in the compiled binary: <b>explicit SIMD</b>. The compiler still has to account for dependencies, alignment, and leftover elements; “same arithmetic” by itself is not enough.</p>
   <figure class="fig"><div class="sc"><svg id="simd16Svg" viewBox="0 0 760 170" role="img" aria-label="16 cores times 8 SIMD lanes equals 128 elements in parallel"></svg></div>
-    <figcaption><b>Multiply the two ideas.</b> 16 cores × 8-wide SIMD = <b>128 ALUs</b> computing 128 elements at once, from just 16 instruction streams.</figcaption></figure>
+    <figcaption><b>Combine independent streams with shared instructions.</b> Sixteen cores can run sixteen streams; if each stream uses all eight lanes, the chip has capacity for <b>128 simultaneous element operations</b>. The sine array provides enough independent elements, provided the lanes receive data and follow the same path.</figcaption></figure>
 </section>
 
 <section class="lesson" id="s7" data-toc="Branches & divergence" data-n="7">
   <div class="lesson-h"><div class="kicker">Section 7</div><h2>Conditional execution: what if lanes disagree?</h2></div>
-  <p>SIMD assumes all lanes run the same instruction. But loop bodies contain <code>if</code> statements, and different elements can take different sides. Say each lane holds one t = x[i]:</p>
+  <p>The fixed-term sine loop gives eight lanes the same path. Other array loops contain a branch, so lane 0 might need one operation while lane 1 needs another. Imagine each lane holds one <code>t = x[i]</code> and runs this condition:</p>
   <div class="asm">
     <div class="r"><span class="a"></span><span class="i">if (t &gt; 0):</span><span class="c">"then" side: 3 instructions</span></div>
     <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;t = t · t; t = t + 1; t = √t</span><span class="c"></span></div>
@@ -368,23 +368,23 @@ svg text.sw{fill:#fff!important}
     <div class="r"><span class="a"></span><span class="i">&nbsp;&nbsp;t = −t; t = t · 2</span><span class="c"></span></div>
     <div class="r"><span class="a"></span><span class="i">y[i] = t</span><span class="c">everyone meets again here</span></div>
   </div>
-  <p>One instruction stream can't go both ways at once. So the hardware runs <b>both sides</b>, one after the other, with a <b>mask</b>. During the "then" side, lanes whose condition is false are switched off: they compute nothing, or their results are discarded. During the "else" side, it's the other way round. After the <code>if</code>, all lanes are active again. Click lanes to flip their condition:</p>
+  <p>One vector instruction cannot perform two different operations in its lanes at the same instant. When both sides are needed, the execution follows them in turn with a <b>mask</b> marking which lanes are active for each side. CPU compilers can emit masked operations or compute and blend results; GPU hardware tracks active lanes within a group of threads. The explorer models the shared cost: click lanes to change their conditions, then watch how many lanes do useful work in each clock.</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 10px"><span class="readout">Presets:</span><button data-dp="all">all positive</button><button data-dp="half">half and half</button><button data-dp="one">one lane positive</button><button data-dp="alt">alternating</button></div>
     <div class="lanes" id="dvLanes"></div>
     <div class="sc" style="padding:10px 0 0"><svg id="dvSvg" viewBox="0 0 760 250" role="img" aria-label="Clock-by-clock lane activity for the if/else" style="min-width:560px"></svg></div>
     <div class="stat" id="dvStat"></div>
   </div><figcaption><b>Masked lanes do no useful work.</b> The copper cells are lanes doing useful work. The hatched cells are lanes switched off while the other side of the branch runs. A side that no lane needs can be skipped entirely ("all positive" costs 3 clocks, not 5).</figcaption></figure>
-  <p>How bad can it get? The worst case has only <b>one</b> of the 8 lanes doing work for most of the time. For example, <code>if (i % 8 == 0) { very long computation }</code> keeps a single lane busy while 7 idle, which is <b>1/8 of peak</b>. It needs only one <code>if</code>.</p>
+  <p>If only one lane takes a long branch, the other seven are idle during that branch. For example, with one lane per consecutive index, <code>if (i % 8 == 0) { long computation }</code> gives just one active lane in an eight-lane group for the long part: <b>1/8 of that vector unit's lane capacity</b> during those instructions. Other parts of the program may still use all lanes.</p>
   <h3>Useful vocabulary</h3>
   <ul>
-    <li><b>Coherent execution</b> (instruction-stream coherence): many data elements need the same instruction sequence. It's <b>necessary</b> for SIMD to be efficient, and <b>not</b> necessary for multi-core, since each core has its own fetch/decode and can follow its own path.</li>
-    <li><b>Divergent execution</b>: the lack of coherence, where lanes need different instructions.</li>
+    <li><b>Coherent execution</b>: the grouped elements follow the same instruction path, so most SIMD lanes can stay active. Different CPU cores have separate instruction streams and need not follow the same path.</li>
+    <li><b>Divergent execution</b>: grouped elements need different paths, leaving some lanes masked while another path runs.</li>
   </ul>
   <h3>Explicit versus implicit SIMD</h3>
-  <p>On CPUs, the compiler emits vector instructions (<b>explicit SIMD</b>). Most GPUs work differently. The compiler emits a <i>scalar</i> program, the hardware always runs many copies of it together, and the <b>hardware</b> puts the copies executing the same instruction onto the SIMD lanes. This is <b>implicit SIMD</b>, also called SIMT (single instruction, multiple threads). GPU SIMD widths are typically 8–32, so badly divergent GPU code can run at 1/32 of peak.</p>
+  <p>CPU vector instructions name a vector operation directly: <b>explicit SIMD</b>. On NVIDIA GPUs, programmers describe many logical <i>scalar threads</i>. Hardware groups neighboring threads into fixed 32-thread <b>warps</b> and schedules the warp's instructions across execution lanes. This is often called <b>SIMT</b> (single instruction, multiple threads) or implicit SIMD. A divergent warp must serve its different paths with only the appropriate lanes active; hardware does not gather arbitrary threads from across the chip just because they reach the same instruction.</p>
   <figure class="fig"><div class="sc"><svg id="simtSvg" viewBox="0 0 760 190" role="img" aria-label="Explicit SIMD: compiler emits vector instructions. Implicit SIMD: many scalar threads grouped by hardware"></svg></div>
-    <figcaption><b>Same ALUs, different contract.</b> With explicit SIMD, you can see the vector instructions in the binary. With implicit SIMD (GPUs), the binary is scalar, and the grouping of threads onto lanes happens in hardware at run time.</figcaption></figure>
+    <figcaption><b>Two ways to express grouped work.</b> A CPU binary contains explicit vector instructions selected by the compiler. A GPU program presents scalar-looking threads; hardware schedules fixed groups of those threads together and masks lanes when their control paths differ. Both approaches depend on enough lanes doing useful work at once.</figcaption></figure>
 </section>
 
 <section class="lesson" id="s8" data-toc="Three forms, real chips" data-n="8">
