@@ -115,13 +115,13 @@ svg text.sw{fill:#fff!important}
 <header class="hero">
   <div class="kicker">Stanford CS149 · Lecture 3 companion</div>
   <h1>Latency, bandwidth, and the <em>SPMD</em> abstraction</h1>
-  <p class="lede">Lecture 2 filled a chip with parallel hardware: many cores, wide SIMD units, many hardware threads. This lecture asks two questions about using it. First, <b>can memory keep all that hardware fed?</b> Often it can't, and that makes <b>bandwidth</b>, not arithmetic, the resource that decides performance. Second, <b>how do we write programs for it?</b> Using ISPC as the example, it separates a programming model's <b>abstraction</b> (what the program means) from its <b>implementation</b> (how the machine actually runs it).</p>
+  <p class="lede">Lecture 2 showed how many cores, SIMD lanes, and hardware threads can work at once. They still need data. This lecture first asks how quickly memory can deliver it: even thousands of arithmetic units may wait on one shared memory system. It then asks how to express work for those units without writing every machine instruction ourselves. ISPC provides a concrete way to separate a program's <b>meaning</b> from the <b>hardware steps</b> that carry it out.</p>
   <dl class="outcome">
-    <dt>You'll be able to</dt><dd>Distinguish latency from throughput with everyday and hardware examples. Explain why a throughput processor can be bandwidth-bound, and calculate how badly. Explain why, once enough requests are in flight, memory latency stops mattering and bandwidth takes over. Describe ISPC's SPMD model: gangs, program instances, <code>programIndex</code>, <code>programCount</code>, <code>uniform</code>, <code>foreach</code>. Trace how interleaved and blocked assignments map to SIMD instructions, and spot ISPC programs whose output is undefined.</dd>
+    <dt>You'll be able to</dt><dd>Distinguish latency from throughput with everyday and hardware examples. Explain when memory bandwidth limits sustained arithmetic throughput, and calculate the limit in a simple model. Explain why enough requests in flight can hide latency without shortening individual requests. Describe ISPC's SPMD model: gangs, program instances, <code>programIndex</code>, <code>programCount</code>, <code>uniform</code>, <code>foreach</code>. Trace how interleaved and blocked assignments affect SIMD memory instructions, and spot ISPC programs whose output is undefined.</dd>
     <dt>Background</dt><dd><a href="lecture-02-modern-multicore.html">Lecture 2</a> (multi-core, SIMD, multithreading) and <a href="lecture-01-why-parallelism.html">Lecture 1</a> (memory, latency, caches). Units 3–5 of these notes go deeper into pipelining, SIMD and GPUs.</dd>
     <dt>Source</dt><dd>Follows the structure and examples of Stanford CS149 <i>Parallel Computing</i>, Fall 2023, Lecture 3, "Multi-Core Architecture Part II + Parallel Programming Abstractions" (Kayvon Fatahalian and Kunle Olukotun). The explanations, diagrams and explorers here are original study material, not a copy of the slides.</dd>
   </dl>
-  <div class="insight">Two lessons. <b>Bandwidth is the critical resource</b>: modern processors can compute far faster than memory can deliver operands, so fast programs are the ones that fetch data rarely. And <b>an abstraction is not its implementation</b>: ISPC lets you think of many independent program instances, but the compiler runs them as the lanes of SIMD instructions on one core. Knowing both lets you predict what the machine will actually do.</div>
+  <div class="insight">Two ideas connect the lecture. For a calculation that uses each value only once, <b>memory bandwidth can set the pace</b> even when arithmetic hardware is mostly idle. To use that hardware well, we also need to understand both the <b>programming abstraction</b>—what the code promises—and the implementation that maps its work onto cores and SIMD lanes.</div>
 </header>
 
 <!-- ================================ PART 1 ================================ -->
@@ -129,52 +129,53 @@ svg text.sw{fill:#fff!important}
 
 <section class="lesson" id="s1" data-toc="A thought experiment" data-n="1" style="margin-top:36px">
   <div class="lesson-h"><div class="kicker">Section 1</div><h2>A thought experiment: multiply two long vectors</h2></div>
-  <p>Take two vectors A and B, each with millions of elements, and compute their element-wise product C = A × B. For each element <i>i</i>: load A[i], load B[i], multiply, store C[i]. There's no dependency between elements at all. It's the most parallel program imaginable. <b>Is it a good fit for a throughput processor like a GPU?</b></p>
+  <p>Suppose A and B are arrays far larger than the machine's last-level cache, and we stream through them once. To produce C, the processor reads A[0] and B[0], multiplies them, and writes C[0]; then it can do the same for index 1, index 2, and so on. Formally, C[i] = A[i] × B[i]. The elements are independent, so a GPU can assign many of them to different arithmetic units at once. But each multiplication needs two values brought in and one result written out. Can memory supply those transfers fast enough?</p>
   <figure class="fig"><div class="sc"><svg id="v100Svg" viewBox="0 0 760 250" role="img" aria-label="NVIDIA V100: 80 SMs with 64 fp32 ALUs each, 5120 ALUs in total, a 6 MB L2 cache, and 16 GB of HBM memory connected at 900 GB/s" style="min-width:560px"></svg></div>
-    <figcaption><b>An enormous number of ALUs behind one memory interface.</b> The NVIDIA V100 has 80 SMs × 64 fp32 ALUs = 5,120 ALUs, sharing a 6 MB L2 cache and 16 GB of high-bandwidth memory (HBM2) connected through a 4,096-bit interface at about 900 GB/s. Think about supplying every one of those ALUs with fresh operands on every clock.</figcaption></figure>
-  <p>Hold that thought. To answer it we need two precise ideas, <b>latency</b> and <b>bandwidth</b>, and a way to see how they interact. We'll come back to the numbers in Section 5.</p>
+    <figcaption><b>Many arithmetic units share one route to memory.</b> The NVIDIA V100 has 80 streaming multiprocessors (SMs), each with 64 units for 32-bit floating-point arithmetic: 5,120 in all. They share a 6 MB L2 cache and 16 GB of high-bandwidth memory (HBM2) with a peak transfer rate of about 900 GB/s through a 4,096-bit interface. Section 5 compares the data those units could consume with what memory can deliver.</figcaption></figure>
+  <p>We need two different measures to make that comparison. One describes how long a particular request waits; the other describes how much data can arrive over time.</p>
 </section>
 
 <section class="lesson" id="s2" data-toc="Latency vs throughput" data-n="2">
   <div class="lesson-h"><div class="kicker">Section 2</div><h2>Latency versus throughput, in everyday terms</h2></div>
-  <p><b>Latency</b> is how long one task takes from start to finish. <b>Throughput</b> is how many tasks finish per unit of time. They're related but independent: you can often raise throughput without touching latency, and that's exactly what parallel hardware does.</p>
+  <p><b>Latency</b> is the time from starting one task to finishing it. <b>Throughput</b> is the number of tasks completed per unit of time. Adding parallel capacity can raise throughput even when an individual task takes just as long.</p>
   <h3>The highway</h3>
-  <p>The lecture's analogy: driving from San Francisco to Stanford, about 50 km. At 100 km/h the trip takes half an hour; that's the <b>latency</b>. Suppose only one car may be on the road at a time, and the next car leaves when the previous one arrives. Then the <b>throughput</b> is 2 cars per hour. How could we move more cars?</p>
+  <p>Imagine a 50 km road from San Francisco to Stanford. At 100 km/h, one trip takes 30 minutes: its latency. If the road admits only one car until that car arrives, two cars can finish per hour. Now compare changing the speed, adding lanes, and allowing cars to follow one another.</p>
   <figure class="fig"><div class="sc"><svg id="hwySvg" viewBox="0 0 760 300" role="img" aria-label="Four highway scenarios: baseline one car at a time, driving faster, more lanes, and spacing cars 1 km apart" style="min-width:560px"></svg></div>
     <figcaption><b>Four ways to move more cars.</b> <b>Drive faster</b> (200 km/h): latency halves to 15 minutes and throughput doubles to 4 cars/hour. <b>Add lanes</b> (four lanes): latency is unchanged, and throughput quadruples to 8 cars/hour. <b>Use the road better</b>: let cars follow each other 1 km apart, and 50 cars are on the road at once. Latency is still 30 minutes, but a car arrives every 36 seconds: 100 cars/hour per lane, 400 cars/hour on four lanes.</figcaption></figure>
-  <p>Only "drive faster" improved latency, and it's the hardest to keep doing (think of clock frequency in Lecture 1). The other two raise throughput by having <b>more work in flight at once</b>: more lanes (parallel hardware), or more cars per lane (pipelining).</p>
+  <p>Driving faster shortens one car's trip. More lanes or closer spacing instead allow <b>more cars in flight at once</b>; each still takes 30 minutes. Processors use the same two forms of overlap: more execution units can handle separate work, and a pipeline can start new work before earlier work finishes.</p>
 
   <h3>Try it: laundry</h3>
-  <p>Doing one load of laundry: wash (45 min), dry (60 min), fold (15 min). The latency of one load is 2 hours. With many loads, three strategies:</p>
+  <p>One load of laundry needs 45 minutes in a washer, 60 in a dryer, and 15 to fold: two hours of work along its path. With several loads, try three schedules below. Watch both the time when all loads finish and the interval between successive completions.</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 8px"><span class="readout">Strategy:</span><div class="seg" role="group" aria-label="Laundry strategy"><button data-ls="seq" aria-pressed="true">one at a time</button><button data-ls="dup">two of everything</button><button data-ls="pipe">pipelined</button></div>
       <span class="readout" style="margin-left:8px">Loads: <b id="lnV"></b></span><input type="range" id="lnN" min="1" max="6" value="4" aria-label="Number of loads"></div>
     <div class="sc" style="padding:0"><svg id="lnSvg" viewBox="0 0 760 220" role="img" aria-label="Gantt chart of washer, dryer and folding for each load" style="min-width:560px"></svg></div>
     <div class="stat" id="lnStat"></div>
     <p class="msg" id="lnMsg"></p>
-  </div><figcaption><b>Latency stays at 2 hours; throughput changes.</b> <b>Two of everything</b> duplicates the resources: 2 loads every 2 hours, 1 load/hour, at twice the equipment. <b>Pipelining</b> keeps one washer, one dryer and one folder, but starts the next wash as soon as the washer is free. In steady state a load finishes every 60 minutes, set by the slowest stage (the dryer): also 1 load/hour, with no extra equipment.</figcaption></figure>
-  <p>The slowest stage sets a pipeline's throughput. The lecture's last analogy makes that explicit: connect a pipe that carries 100 liters/second to one that carries 50 liters/second, and the system carries <b>50 liters/second</b>. The narrowest part of a path is its <b>bottleneck</b>, and making any other part wider changes nothing.</p>
+  </div><figcaption><b>The completion rate changes.</b> Duplicating every resource finishes two loads every two hours. Pipelining uses one washer, one dryer, and one folder; after startup, a load finishes every 60 minutes, limited by the dryer. Each load needs at least two hours for its three stages, but a later load also waits between washing and drying. The widget's “latency of one load” reports stage time rather than that queueing delay. Its timeline keeps the washer busy while loads remain; the status sentence about an idle washer does not describe this schedule.</figcaption></figure>
+  <p>The dryer is the <b>bottleneck</b>: finishing it takes longer than finishing either other stage, so the pipeline cannot produce a load more often than once an hour. Similarly, connecting a pipe that carries 100 liters per second to one that carries 50 gives a path that carries at most 50 liters per second. Widening the already faster part cannot raise the end-to-end rate.</p>
 </section>
 
 <section class="lesson" id="s3" data-toc="Memory latency & bandwidth" data-n="3">
   <div class="lesson-h"><div class="kicker">Section 3</div><h2>The same two ideas for memory</h2></div>
+  <p>For memory, the “task” is a request for data. A request has a waiting time, and the memory system has a delivery rate:</p>
   <ul>
-    <li><b>Memory latency</b> (from Lecture 1): the time for the memory system to deliver one requested item, for example 100 clock cycles or 100 ns.</li>
-    <li><b>Memory bandwidth</b>: the <b>rate</b> at which the memory system can deliver data to a processor, for example 20 GB/s.</li>
+    <li><b>Memory latency</b> is the time from requesting data until it is available. We can express it in nanoseconds or in processor clock cycles, but conversion depends on clock frequency: 100 ns is 400 cycles at 4 GHz.</li>
+    <li><b>Memory bandwidth</b> is the amount of data delivered per second, often measured in GB/s. A system can have high bandwidth even though any one request takes a long time.</li>
   </ul>
   <figure class="fig"><div class="sc"><svg id="bwSvg" viewBox="0 0 760 210" role="img" aria-label="Two memory systems with the same 2-second latency per item; the wider one delivers 8 items per second instead of 4" style="min-width:560px"></svg></div>
-    <figcaption><b>Same latency, twice the bandwidth.</b> In both pictures each item takes about 2 seconds to travel from memory to the processor. The top system has 4 items in flight at once and delivers about 4 items per second. The bottom one is twice as wide, has 8 in flight, and delivers about 8 per second. Bandwidth is about how much is in flight, not how fast any one item travels.</figcaption></figure>
-  <p>The relationship is <b>Little's law</b>, which holds for any steady system: <b>items in flight = throughput × latency</b>. To get 8 items per second through a pipe where each item takes 2 seconds, 16 must be in flight at any moment. Memory systems reach high bandwidth exactly this way: many requests outstanding at once, each still taking the full latency.</p>
-  <div class="pitfall"><b>"One operation per clock" is a throughput statement.</b> Students often ask how a processor can finish a multiply in one clock. It doesn't. In a four-stage instruction pipeline (fetch, decode and register read, execute, write back), each instruction takes 4 cycles, but one <i>finishes</i> every cycle. Real pipelines vary by instruction and can be around 20 stages deep. Unit 3 of these notes builds one.</div>
+    <figcaption><b>A wider path can deliver more without shortening a trip.</b> Both paths illustrate a two-second trip; the second has twice the delivery rate. The pictured packets indicate relative width, but the labels undercount the <i>total</i> packets required in flight: at four items per second, two-second latency requires an average of eight; at eight per second, it requires sixteen.</figcaption></figure>
+  <p>This is <b>Little's law</b> for a steady flow: <b>average items in flight = delivery rate × average latency</b>. At eight items per second and two seconds per item, sixteen items must be somewhere in the system at once. Multiple outstanding memory requests create that overlap. They do not make any individual request travel faster; they help the memory channel stay busy while earlier requests are still pending.</p>
+  <div class="pitfall"><b>“One operation per clock” describes a rate, not necessarily one operation's latency.</b> In a simplified four-stage instruction pipeline—fetch, decode and register read, execute, write back—one instruction can finish each cycle after the pipeline fills, even though each spends four cycles passing through it. Dependencies or stalls can reduce that rate. Unit 3 builds such a pipeline.</div>
 </section>
 
 <section class="lesson" id="s4" data-toc="Bandwidth-bound execution" data-n="4">
   <div class="lesson-h"><div class="kicker">Section 4</div><h2>When memory bandwidth limits the whole processor</h2></div>
-  <p>Now apply the ideas to a real core. Many threads each repeat a sequence of three <b>dependent</b> instructions:</p>
+  <p>Now use a deliberately simple core model to see where the limit moves. Each of many hardware threads requests a 64-byte block, then does two arithmetic steps that depend on the returned data:</p>
   <div class="asm" style="max-width:520px"><div class="r"><span class="a">1</span><span class="i">X = load 64 bytes</span><span class="c"></span></div><div class="r"><span class="a">2</span><span class="i">Y = add X + X</span><span class="c">needs X</span></div><div class="r"><span class="a">3</span><span class="i">Z = add X + Y</span><span class="c">needs Y</span></div></div>
-  <p>The core, as in the lecture: it executes <b>one math operation per clock</b>; it can issue a <b>load in parallel</b> with math; and memory delivers <b>8 bytes per clock</b>, so one 64-byte load takes 8 clocks of transfer. There are plenty of hardware threads to hide latency, and the memory system allows a limited number of <b>outstanding loads</b>.</p>
+  <p>The model can issue <b>one math instruction per clock</b> and issue a load alongside it. Its memory channel transfers <b>8 bytes per clock</b>, so moving one 64-byte block takes eight clocks after a request is ready to transfer. A request also spends some clocks waiting before transfer. Several threads can request different blocks while others wait, up to the selected number of <b>outstanding loads</b> (requests not yet completed). The instructions and block size are schematic; the question is how often data arrives to enable those two math steps.</p>
   <figure class="fig"><div class="sc"><svg id="coreSvg" viewBox="0 0 760 210" role="img" aria-label="A multithreaded core with fetch/decode, instruction selection, a scalar ALU and a load/store unit, many execution contexts, and a data cache" style="min-width:560px"></svg></div>
-    <figcaption><b>The core in the example.</b> Two fetch/decode paths let it issue a math instruction and a load in the same clock. The ALU executes scalar math; the LD/ST unit sends loads to memory. Many hardware threads (execution contexts) supply independent work.</figcaption></figure>
+    <figcaption><b>The modeled core has two kinds of work.</b> One path issues a math instruction to the arithmetic unit (ALU), while another may issue a load to the load/store (LD/ST) unit in the same clock. Each hardware thread keeps its own execution context, so the core can work for another thread while one request waits.</figcaption></figure>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 8px"><span class="readout">Preset:</span><div class="seg" role="group" aria-label="Presets"><button data-bp="lec" aria-pressed="true">the lecture's example</button><button data-bp="fast">4× the bandwidth</button><button data-bp="intense">8 adds per load</button><button data-bp="few">too few loads in flight</button></div></div>
     <div class="cfg">
@@ -186,21 +187,21 @@ svg text.sw{fill:#fff!important}
     <div class="sc" style="padding:10px 0 0"><svg id="bbSvg" viewBox="0 0 760 230" role="img" aria-label="Clock-by-clock timeline: math instructions issued, stall cycles, loads in flight, and the memory channel's transfers" style="min-width:560px"></svg></div>
     <div class="stat" id="bbStat"></div>
     <p class="msg" id="bbMsg"></p>
-  </div><figcaption><b>Red means the core had nothing to compute.</b> Each column is one clock. The top row is the ALU: orange when it issued a math instruction, red when it stalled waiting for data. The middle row counts loads in flight. The bottom row is the memory channel: blue while it transfers a load's 64 bytes (a gap means it was idle). The steady-state utilization is measured over a long run, not just the clocks drawn.</figcaption></figure>
-  <p>With the lecture's numbers, each load brings 64 bytes and feeds 2 math instructions, and memory delivers 64 bytes every 8 clocks. So in steady state the core can do at most <b>2 math instructions per 8 clocks: 25% utilization</b>, however many threads it has. The memory channel, meanwhile, is busy <b>100% of the time</b>. It can't transfer data any faster.</p>
-  <p>That's the lecture's key claim: <b>in steady state, the core's utilization depends only on the rate of instructions and the rate of memory, not on memory latency or the number of outstanding requests</b>, as long as there are enough requests in flight. Try it with the lecture's preset: raise the latency from 4 to 16 clocks and nothing changes. The explorer also shows the fine print. Keep going past 16 clocks and utilization drops, because 3 loads in flight are no longer enough to keep the channel busy (at 40 clocks it's about 12%). The "too few loads in flight" preset shows the extreme: with 1 load outstanding and a long latency, the channel sits idle between requests. Little's law says you can't reach full bandwidth without enough requests in flight: here, loads in flight × 64 bytes must cover (latency + transfer time) × bandwidth.</p>
+  </div><figcaption><b>Watch both the arithmetic unit and the memory channel.</b> Each column is one clock. Orange marks a math instruction; red marks a clock with no ready math in this model. The middle row counts outstanding loads, and blue at the bottom marks clocks when the channel transfers a 64-byte block. The reported steady-state utilization is measured over a longer run than the displayed timeline.</figcaption></figure>
+  <p>Start with the lecture preset. Every completed 64-byte load enables two math instructions. The channel needs eight clocks to deliver that block, so even if it transfers continuously, the core receives enough data for only <b>two useful math clocks out of eight: 25% utilization</b>. The core has spare arithmetic capacity, while the channel is already busy all the time. More threads cannot make that channel transfer faster.</p>
+  <p>Now raise “request latency before transfer” from 4 to 16 clocks. Three outstanding loads are still enough to keep transfers continuous, so the long-run arithmetic rate remains 25%. Beyond that point, three requests no longer cover the delay: gaps appear between transfers and utilization falls. With only one outstanding load, as in the “too few loads in flight” preset, the channel often waits for the next request to become ready. The same latency can therefore be harmless <i>after bandwidth is saturated</i> and costly <i>before</i> it is saturated.</p>
   <div class="tbl"><table>
     <tr><th>Limit</th><th>Formula (per clock)</th><th>What raises it</th></tr>
-    <tr><td>Compute</td><td class="m">1 math instruction</td><td>More ALUs, cores, SIMD lanes</td></tr>
-    <tr><td>Bandwidth</td><td class="m">math per load × bandwidth ÷ bytes per load</td><td>More bandwidth, or more math per byte loaded</td></tr>
-    <tr><td>Latency (Little's law)</td><td class="m">loads in flight × math per load ÷ (latency + transfer time)</td><td>More outstanding requests (more threads, more independent loads)</td></tr>
+    <tr><td>Compute capacity</td><td class="m">1 math instruction</td><td>More ALUs, cores, or SIMD lanes</td></tr>
+    <tr><td>Memory transfer</td><td class="m">math per load × bytes per clock ÷ bytes per load</td><td>More bandwidth, or more useful math per block</td></tr>
+    <tr><td>Requests in flight</td><td class="m">outstanding loads × math per load ÷ (request latency + transfer time)</td><td>More independent outstanding requests</td></tr>
   </table></div>
-  <p>The achieved rate is the smallest of the three. Adding ALUs helps only when compute is the smallest; adding threads only when latency is.</p>
+  <p>These are three ceilings on math instructions per clock in the simplified model. The last is Little's-law reasoning: if K requests may be outstanding and each occupies at least L + D clocks before completion, their completion rate cannot exceed K/(L + D). The smallest ceiling limits the achieved rate in this model. Extra ALUs help when arithmetic capacity is the limit; more independent requests help when too little is in flight; once the channel is full, reducing bytes per useful operation or increasing bandwidth is what matters.</p>
 </section>
 
 <section class="lesson" id="s5" data-toc="Bandwidth is the critical resource" data-n="5">
   <div class="lesson-h"><div class="kicker">Section 5</div><h2>Back to the thought experiment: bandwidth is the critical resource</h2></div>
-  <p>Element-wise multiply performs <b>three memory operations</b> (two 4-byte loads and one 4-byte store: 12 bytes) for every <b>one multiply</b>. That ratio decides everything.</p>
+  <p>Return to C[i] = A[i] × B[i]. For 32-bit floats, the simplest traffic count is two 4-byte reads plus one 4-byte write: <b>at least 12 bytes for one useful multiply</b> if those values must come from and go to main memory. That is only 1/12 of an operation per byte, a measure called <b>arithmetic intensity</b>. Cache reuse, write policies, and extra transfers can change actual traffic. This simple count lets us ask whether the available memory bandwidth could sustain the chip's arithmetic peak.</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 8px"><span class="readout">Processor:</span><div class="seg" role="group" aria-label="Processor"><button data-tx="v100" aria-pressed="true">NVIDIA V100 GPU</button><button data-tx="xeon">8-core Xeon CPU</button></div></div>
     <div class="cfg">
@@ -209,21 +210,22 @@ svg text.sw{fill:#fff!important}
     <div class="sc" style="padding:10px 0 0"><svg id="txSvg" viewBox="0 0 760 200" role="img" aria-label="Bandwidth needed to keep every ALU busy, compared with the bandwidth available" style="min-width:560px"></svg></div>
     <div class="stat" id="txStat"></div>
     <p class="msg" id="txMsg"></p>
-  </div><figcaption><b>Needed versus available bandwidth.</b> Needed = operations per clock × clock rate × bytes per operation. The V100 can start 5,120 fp32 multiplies per clock at 1.6 GHz; with 12 bytes each, that's about <b>98 TB/s</b>, against 900 GB/s available: under <b>1%</b> efficiency. The CPU preset models a 3.2 GHz eight-core Xeon E5 v4 doing one 8-wide AVX multiply per core per clock with a 76 GB/s memory bus: about <b>3%</b>. Raise the operations per element to see how reuse changes the picture.</figcaption></figure>
-  <p>So the GPU runs this program at under 1% of its arithmetic capability, and the CPU at about 3%. Yet the GPU is still much <b>faster</b>, because its memory system delivers about 12 times more bytes per second, and bandwidth is all that matters here. This computation is <b>bandwidth-limited</b>: if processors request data faster than memory can supply it, the memory system can't keep up.</p>
-  <p>Modern GPUs push bandwidth up with <b>high-bandwidth memory</b> (HBM) stacked right next to the processor, such as the V100's 900 GB/s HBM2. But compute has grown even faster. Overcoming bandwidth limits is often <b>the most important challenge</b> in programming throughput-oriented systems. Performant parallel programs therefore:</p>
+  </div><figcaption><b>Compare an ideal arithmetic demand with memory supply.</b> Needed bandwidth = operations per clock × clocks per second × bytes per operation. At the modeled 1.6 GHz, 5,120 V100 FP32 lanes doing one multiply each clock would need about <b>98 TB/s</b> if every multiply caused 12 bytes of main-memory traffic. Its nominal bandwidth is 900 GB/s, so at most about <b>0.9%</b> of that multiply rate is sustainable under these assumptions. The eight-core Xeon preset assumes one eight-wide AVX multiply per core per clock at 3.2 GHz and 76 GB/s of memory bandwidth, giving about <b>3%</b>. The slider asks what changes when the algorithm performs more useful operations on each loaded element before writing it.</figcaption></figure>
+  <p>The chip with more arithmetic units can thus have a <i>smaller fraction</i> of them busy on this streaming calculation. If both machines sustain their stated bandwidths and move the same 12 bytes per element, the V100's roughly twelvefold bandwidth gives it roughly twelvefold potential element throughput; actual program speed also depends on transfers, launch costs, and other work. The calculation is <b>bandwidth-bound</b> when the rate of useful operations is capped by data delivery rather than arithmetic capacity.</p>
+  <p>High-bandwidth memory (HBM) places stacked memory close to the GPU on the package to widen the route for data; the V100's nominal HBM2 rate is 900 GB/s. Even that falls far short of the 98 TB/s demanded by the one-multiply-per-element thought experiment. For an algorithm whose memory traffic is the limit, useful strategies include:</p>
   <ul>
-    <li><b>Fetch data from memory less often.</b> Reuse data the same thread loaded earlier (temporal locality), and share data between threads (cooperation) instead of each loading its own copy.</li>
-    <li><b>Prefer recomputing to storing and reloading.</b> Arithmetic is close to free; memory traffic isn't.</li>
-    <li>Above all, <b>access memory infrequently</b> relative to the computation done.</li>
+    <li><b>Reuse loaded data.</b> If several useful operations need A[i] and B[i], keep them in registers or cache while doing those operations. Sharing a loaded block between threads can also avoid duplicate requests when the programming model and hardware support it.</li>
+    <li><b>Compare recomputation with another memory trip.</b> Recomputing a simple value may be cheaper than storing it to memory and reloading it later; expensive calculations can reverse that tradeoff.</li>
+    <li><b>Increase useful work per transferred byte.</b> For example, four useful operations on each loaded pair before one result is stored would raise the simple model's intensity from 1/12 to 4/12 operations per byte.</li>
   </ul>
+  <p>That last strategy leads into the programming question: when several logical workers process an array, which workers touch neighboring elements, and can they reuse what they fetch? Answering it requires distinguishing the work our code <i>describes</i> from the machine instructions that actually move the data.</p>
   <div class="predict"><div class="ph"><b>Predict</b><span>Answer before opening.</span></div><ol>
     <li>In the explorer's lecture preset, a thread does 2 adds per 64-byte load, and memory delivers 8 bytes per clock. What's the best possible ALU utilization? Does doubling the number of threads change it?
       <details><summary>Show answer</summary><div class="ans"><p>64 bytes take 8 clocks and feed 2 adds: at most 2 useful clocks in 8, <b>25%</b>. More threads don't help: they only add more requests to a memory channel that is already busy 100% of the time.</p></div></details></li>
     <li>How much bandwidth would the V100 need to keep all 5,120 ALUs busy on element-wise multiply?
-      <details><summary>Show answer</summary><div class="ans"><p>5,120 multiplies × 1.6 × 10⁹ clocks/s × 12 bytes ≈ <b>98 TB/s</b>, more than 100 times the 900 GB/s it has. Efficiency is about 0.9%.</p></div></details></li>
+      <details><summary>Show answer</summary><div class="ans"><p>5,120 multiplies/clock × 1.6 × 10⁹ clocks/s × 12 bytes/multiply ≈ <b>98 TB/s</b>, more than 100 times the nominal 900 GB/s available. Under this idealized one-multiply-per-lane and 12-byte traffic model, at most about 0.9% of the arithmetic rate is sustainable.</p></div></details></li>
     <li>Why does raising the latency from 4 to 16 clocks not change the lecture preset's utilization, while the "too few loads in flight" preset is very sensitive to latency?
-      <details><summary>Show answer</summary><div class="ans"><p>With enough loads outstanding, the memory channel is always busy, so only its transfer rate matters. With too few in flight (one load in that preset, or three loads once the latency exceeds 16 clocks), the channel waits out part of the latency between transfers. By Little's law the achieved bandwidth is (loads in flight × 64 bytes) ÷ (latency + transfer time), which falls as latency rises.</p></div></details></li>
+      <details><summary>Show answer</summary><div class="ans"><p>With enough loads outstanding, the memory channel is always busy, so only its transfer rate matters. With too few in flight (one load in that preset, or three loads once the latency exceeds 16 clocks), the channel waits out part of the latency between transfers. Little's law gives an upper bound of (loads in flight × 64 bytes) ÷ (latency + transfer time); this bound falls as latency rises.</p></div></details></li>
   </ol></div>
 </section>
 
@@ -232,19 +234,19 @@ svg text.sw{fill:#fff!important}
 
 <section class="lesson" id="s6" data-toc="Abstraction vs implementation" data-n="6" style="margin-top:36px">
   <div class="lesson-h"><div class="kicker">Section 6</div><h2>The theme: abstraction versus implementation</h2></div>
-  <p>The second half of the lecture has one theme, and the course returns to it constantly. <b>Confusing the semantics of an abstraction with the details of its implementation is the most common source of confusion in parallel programming.</b> SPMD is one programming model among many, and SIMD one hardware organization among many; the <a href="../parallel-landscape.html">map of parallel machines and programs</a> lays them all out side by side.</p>
+  <p>The vector multiplication in Part 1 has a simple mathematical result, yet performance depends on details such as which nearby values the hardware fetches together. Parallel programming has this recurring split: the <b>abstraction</b> specifies what work means and what behavior is allowed; an <b>implementation</b> decides how to schedule that work on real hardware. The distinction matters for correctness as well as speed. Here the programming model is <b>SPMD</b> (single program, multiple data), and the common CPU implementation uses <b>SIMD</b> vector instructions. The <a href="../parallel-landscape.html">map of parallel machines and programs</a> places them alongside other models.</p>
   <div class="card4">
-    <div class="c2"><span class="l">Abstraction (semantics)</span>What do the operations of a programming model <i>mean</i>? Given a program and those meanings, what answer will it compute?</div>
-    <div class="c3"><span class="l">Implementation (scheduling)</span>How will that answer actually be computed on a parallel machine? In what order do operations run? Which thread, execution unit or vector lane does each one?</div>
-    <div class="c4"><span class="l">Your goal</span>Given a program and knowledge of how its programming model is implemented, <b>trace in your head</b> what each part of the parallel computer is doing at each step.</div>
-    <div class="c1"><span class="l">The trap</span>Assuming a guarantee the abstraction never made, because the implementation you happen to know gives it. Programs built on that assumption break on the next implementation.</div>
+    <div class="c2"><span class="l">Abstraction (semantics)</span>Which results and ordering does the programming model guarantee? Which choices does it leave open?</div>
+    <div class="c3"><span class="l">Implementation (scheduling)</span>How does a compiler or runtime assign that work to threads, execution units, or vector lanes?</div>
+    <div class="c4"><span class="l">Your goal</span>First check that the program is correct under the model's guarantees. Then trace how a likely implementation uses the machine's resources.</div>
+    <div class="c1"><span class="l">The trap</span>A program can appear correct under one execution order while relying on an order the model never promised.</div>
   </div>
-  <p>The example is <b>ISPC</b>, the Intel SPMD Program Compiler, which you use in the first programming assignment. (Matt Pharr's blog series "The Story of ISPC" is a good read on why it was designed this way.)</p>
+  <p>ISPC, Intel's Implicit SPMD Program Compiler, makes this split visible. We will describe what its program instances mean first, then see how a CPU can run them with SIMD. That order helps explain why two correct assignments of array elements may have very different memory costs.</p>
 </section>
 
 <section class="lesson" id="s7" data-toc="SPMD and ISPC gangs" data-n="7">
   <div class="lesson-h"><div class="kicker">Section 7</div><h2>SPMD in ISPC: gangs of program instances</h2></div>
-  <p>Recall Lecture 2's example: compute sin(x) with a Taylor series, sin(x) = x − x³/3! + x⁵/5! − …, for every element of an array. The C++ version is an ordinary loop over <code>i</code>. Here it is in ISPC:</p>
+  <p>Use the same array example as Lecture 2. For each input x[i], measured in radians, approximate sin(x[i]) with a finite Taylor series: x − x³/3! + x⁵/5! − … . With a fixed, small number of terms, each element follows the same calculation, and different elements can be computed independently. Here is an illustrative ISPC version:</p>
   <pre class="code">export void ispc_sinx(<span class="u">uniform</span> int N, <span class="u">uniform</span> int terms,
                       <span class="u">uniform</span> float* x, <span class="u">uniform</span> float* result)
 {
@@ -253,7 +255,7 @@ svg text.sw{fill:#fff!important}
     int idx = i + <span class="k">programIndex</span>;
     float value = x[idx];
     float numer = x[idx] * x[idx] * x[idx];
-    <span class="u">uniform</span> int denom = 6;       // 3!
+    <span class="u">uniform</span> float denom = 6.0f; // 3!
     <span class="u">uniform</span> int sign = -1;
     for (<span class="u">uniform</span> int j = 1; j &lt;= terms; j++) {
       value += sign * numer / denom;
@@ -264,21 +266,22 @@ svg text.sw{fill:#fff!important}
     result[idx] = value;
   }
 }</pre>
-  <p>The C++ <code>main</code> calls <code>ispc_sinx(N, terms, x, result)</code> like any function. What that call <i>means</i> is the <b>SPMD</b> (single program, multiple data) abstraction:</p>
+  <p>The function starts <code>value</code> at x, then adds −x³/3!, +x⁵/5!, and so on. For example, <code>terms = 2</code> keeps the first three Taylor terms. This small kernel illustrates parallel structure, not production-quality sine accuracy: error depends on x and the number of terms, and practical libraries also reduce large inputs to a smaller range.</p>
+  <p>When C++ calls <code>ispc_sinx(N, terms, x, result)</code>, the SPMD model describes a group of logical executions of that function:</p>
   <ul>
-    <li>The call spawns a <b>gang</b> of ISPC <b>program instances</b>. All instances run the same ISPC function concurrently.</li>
-    <li>Each instance has <b>its own copy of local variables</b> (<code>idx</code>, <code>value</code>, <code>numer</code> above).</li>
-    <li>When the function returns, <b>all instances have completed</b>, and sequential C++ execution resumes.</li>
+    <li>The call executes a <b>gang</b> of ISPC <b>program instances</b>. Each follows the same function with its own logical instance ID. “Logical” matters: this does not promise one operating-system thread or core per instance.</li>
+    <li>Each instance has its own <b>varying</b> values, such as <code>idx</code>, <code>value</code>, and <code>numer</code>. Values marked <code>uniform</code>, such as <code>denom</code> and <code>sign</code>, are the same across the gang.</li>
+    <li>The call returns to C++ after all instances in the gang complete.</li>
   </ul>
   <figure class="fig"><div class="sc"><svg id="forkSvg" viewBox="0 0 760 230" role="img" aria-label="Sequential C++ code calls the ISPC function, which runs a gang of eight program instances; when all finish, sequential execution resumes" style="min-width:560px"></svg></div>
-    <figcaption><b>Fork, run a gang, join.</b> One thread of control reaches the call, becomes <code>programCount</code> logical instances (8 here), and becomes one thread again only when every instance has finished.</figcaption></figure>
+    <figcaption><b>Fork logically, then join.</b> The C++ caller enters one ISPC call; its gang has <code>programCount</code> logical instances (eight here). C++ resumes after the gang completes. The drawing describes program behavior, not eight operating-system threads.</figcaption></figure>
   <div class="tbl"><table>
     <tr><th>ISPC keyword</th><th>Meaning</th></tr>
-    <tr><td class="m">programCount</td><td>The number of instances running simultaneously in the gang. The same for every instance (a <b>uniform</b> value).</td></tr>
+    <tr><td class="m">programCount</td><td>The number of logical instances in the gang. It has the same value for every instance (it is <b>uniform</b>).</td></tr>
     <tr><td class="m">programIndex</td><td>This instance's ID within the gang, 0 to programCount − 1. Different in every instance (a <b>varying</b> value).</td></tr>
-    <tr><td class="m">uniform</td><td>A type modifier: every instance has the same value, so one copy suffices. Purely an optimization; it isn't needed for correctness.</td></tr>
+    <tr><td class="m">uniform</td><td>A type qualifier saying a value is shared across the gang, rather than separate for each instance. It affects which assignments and returns are legal, and it can enable scalar code.</td></tr>
   </table></div>
-  <p>In <code>ispc_sinx</code>, the loop counter <code>i</code> is uniform: every instance steps through i = 0, 8, 16, … together. Each computes its own element <code>idx = i + programIndex</code>. So with programCount = 8, instance 0 handles elements 0, 8, 16, …, instance 1 handles 1, 9, 17, … This is an <b>interleaved</b> assignment of array elements to instances.</p>
+  <p>Trace a concrete call with N = 32 and <code>programCount = 8</code>. The uniform loop counter takes values 0, 8, 16, and 24 for the whole gang. At i = 0, instance 0 uses <code>idx = 0</code> and instance 7 uses <code>idx = 7</code>; at i = 8 they use 8 and 15. Over the call, instance 0 handles 0, 8, 16, 24, while instance 1 handles 1, 9, 17, 25. This is an <b>interleaved</b> assignment. The divisibility assumption in the code keeps every instance's final index below N; a general version would mask or check the leftover elements.</p>
 </section>
 
 <section class="lesson" id="s8" data-toc="Interleaved vs blocked" data-n="8">
@@ -291,21 +294,22 @@ for (<span class="u">uniform</span> int i = 0; i &lt; count; i++) {
   int idx = start + i;
   float value = x[idx];
   ...                      // same Taylor series as before
+  result[idx] = value;
 }</pre>
-  <p>Both versions compute exactly the same results: the <b>abstraction</b> is satisfied either way. The difference is entirely in the <b>implementation</b>, and it's large. ISPC implements a gang with <b>SIMD instructions</b>: the gang size is the hardware's SIMD width (or a small multiple of it), and each instance is one vector lane. At each step of the loop, one vector instruction performs <code>float value = x[idx]</code> for all eight instances at once. What that instruction must do depends on which eight addresses the instances want.</p>
+  <p>Keep N = 32 and eight instances. In the first version, step 0 assigns indices 0 through 7 across the gang. In this blocked version, each instance owns four adjacent elements, so step 0 assigns 0, 4, 8, …, 28. Both versions compute the same result for every index, but the source code chooses different <i>work assignments</i>. On an eight-wide CPU SIMD target, those eight logical instances can occupy the eight lanes of one vector instruction. With a gang wider than the hardware vector, the compiler may use multiple vectors. The addresses requested together—not just the arithmetic—determine the memory instructions it needs.</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 8px"><span class="readout">Assignment:</span><div class="seg" role="group" aria-label="Assignment"><button data-as="int" aria-pressed="true">interleaved</button><button data-as="blk">blocked</button><button data-as="one">instance 0 does all</button><button data-as="dyn">dynamic</button></div>
       <span class="readout" style="margin-left:8px">programCount:</span><div class="seg" role="group" aria-label="Gang size"><button data-pc="4">4</button><button data-pc="8" aria-pressed="true">8</button></div></div>
     <div class="sc" style="padding:0"><svg id="asSvg" viewBox="0 0 760 300" role="img" aria-label="Grid of time steps by program instances showing which array element each instance handles, and the memory addresses one vector load touches" style="min-width:560px"></svg></div>
     <div class="ctrl"><button id="asBack">◀ Back</button><button id="asStep" class="pri">Next step ▶</button><button id="asReset">Reset</button><span class="readout" id="asOut"></span></div>
     <p class="msg" id="asMsg"></p>
-  </div><figcaption><b>Same work, different memory instructions.</b> N = 32 elements. Rows are steps of the loop; columns are program instances (vector lanes). The strip at the bottom is the array in memory, with this step's accesses highlighted. <b>Interleaved</b>: each step's eight addresses are contiguous, so one <b>packed vector load</b> (<code>vmovaps</code>, the <code>_mm256_load_ps</code> intrinsic) fetches them all. <b>Blocked</b>: the eight addresses are 4 apart, so the compiler must use a <b>gather</b> (<code>vgatherdps</code>, <code>_mm256_i32gather_ps</code>), a more complex and more costly instruction. The last two options preview possible <code>foreach</code> implementations (Section 9).</figcaption></figure>
-  <div class="pitfall"><b>Blocked is the natural choice for threads, interleaved for SIMD lanes.</b> Across CPU cores, giving each thread a contiguous block is usually best, since each core streams through its own memory. Across the lanes of one SIMD instruction, it's the opposite: the lanes execute together, so you want <i>neighbouring lanes</i> to touch neighbouring addresses. Which is better depends on the implementation, not the abstraction.</div>
+  </div><figcaption><b>Same result, different addresses together.</b> N = 32. Rows are loop steps; columns are program instances. Highlighted array cells are the values requested at that step. In the interleaved version, the eight addresses are contiguous, so one packed load can fetch them; an unaligned AVX example is <code>vmovups</code> (<code>_mm256_loadu_ps</code>). The aligned <code>vmovaps</code> form also requires a suitably aligned address. In the blocked version, addresses are four floats apart, so a compiler may use a gather instruction or several scalar loads. The other two choices illustrate different assignments, not a promise about how ISPC implements <code>foreach</code>.</figcaption></figure>
+  <div class="pitfall"><b>“Contiguous work per worker” means different things at different levels.</b> Giving each CPU core a block often lets it stream through nearby addresses. Within one SIMD instruction, neighboring lanes execute together; giving them neighboring elements makes a packed load possible. The useful layout depends on which workers act at the same time and which memory operation the hardware can perform.</div>
 </section>
 
 <section class="lesson" id="s9" data-toc="foreach" data-n="9">
   <div class="lesson-h"><div class="kicker">Section 9</div><h2>Raising the level of abstraction: <code>foreach</code></h2></div>
-  <p>Writing <code>programIndex</code> arithmetic by hand is error-prone. ISPC's <b>foreach</b> construct lets the programmer declare the parallel iterations instead:</p>
+  <p>The interleaved loop is efficient for this SIMD mapping, but the programmer had to write <code>i += programCount</code>, form each <code>idx</code>, and assume N divides the gang size. ISPC's <b>foreach</b> lets us state the intended iterations directly:</p>
   <pre class="code">export void ispc_sinx(<span class="u">uniform</span> int N, <span class="u">uniform</span> int terms,
                       <span class="u">uniform</span> float* x, <span class="u">uniform</span> float* result)
 {
@@ -315,13 +319,15 @@ for (<span class="u">uniform</span> int i = 0; i &lt; count; i++) {
     result[i] = value;
   }
 }</pre>
-  <p><code>foreach</code> says: <b>these are the iterations the whole gang must perform</b>, not each instance. The ISPC implementation takes responsibility for assigning iterations to instances. That assignment could be done in several valid ways, and the explorer above shows four: all iterations on instance 0 (valid but pointless), interleaved, blocked, or <b>dynamic</b>, where instances repeatedly grab the next unclaimed iteration from a shared counter with an atomic increment. (In practice ISPC uses an interleaved-style mapping, because it produces packed vector loads.)</p>
-  <p>In many simple cases, <code>foreach</code> lets you write a program <b>almost as if it were sequential</b>: "independently, for each element of the input array, do this." The next section shows where that "almost" matters.</p>
+  <p>The range <code>0 ... N</code> means indices 0 through N − 1. <code>foreach</code> gives the <i>whole gang</i> those N iterations; the programmer no longer names the instance responsible for each one. For N = 32 and eight instances, the compiler can process nearby indices together in groups of eight, making packed loads possible, and handle a final incomplete group when N is not divisible by eight. The language does not promise an order in which the iterations finish.</p>
+  <p>The explorer's first two assignments are concrete ways to distribute these 32 indices. “Instance 0 does all” and “dynamic” are thought experiments about other assignments. In particular, the displayed dynamic mode shuffles a fixed group of indices; it does not simulate a real atomic work queue or timing-dependent scheduling. Its “P× slower” message for one active instance compares work counts, not measured runtime. The lesson is which addresses would reach SIMD lanes together, not the compiler's exact choice or an exact speed ratio.</p>
+  <p>For independent array elements, <code>foreach</code> reads almost like an ordinary loop. The missing promise of iteration order matters when iterations write the same location or share state, as the next section shows.</p>
 </section>
 
 <section class="lesson" id="s10" data-toc="Semantics traps" data-n="10">
   <div class="lesson-h"><div class="kicker">Section 10</div><h2>Reading ISPC programs carefully: semantics traps</h2></div>
   <h3>Which of these programs is well defined?</h3>
+  <p>Assume x and y are separate arrays with enough space: x has N elements, and y has at least 2N. The two loops below both process every input index, but their writes have different relationships to neighboring iterations.</p>
   <div class="grid2">
     <pre class="code" style="margin:0">// absolute_repeat
 <span class="k">foreach</span> (i = 0 ... N) {
@@ -339,31 +345,31 @@ for (<span class="u">uniform</span> int i = 0; i &lt; count; i++) {
     y[i] = x[i];
 }</pre>
   </div>
-  <p><b>absolute_repeat</b> computes the absolute value of each element of x and writes it twice into y. Each iteration writes only its own two slots, 2i and 2i + 1, so the result is the same in every order: <b>well defined</b>. <b>shift_negative</b> is different. Iteration i may write y[i − 1], which iteration i − 1 also writes. Which write lands last depends on the order the implementation happens to run the iterations in, so <b>the output is undefined</b>.</p>
+  <p><b>absolute_repeat</b> writes the absolute value of x[i] into y[2i] and y[2i + 1]. Those two output slots belong only to iteration i, so the result is the same whatever order the iterations use. In <b>shift_negative</b>, a negative x[i] may make iteration i write y[i − 1], while iteration i − 1 may write that same slot through its <code>else</code> branch. For example, x[0] = 3 and x[1] = −1 make both iterations write y[0]. <code>foreach</code> promises no ordering that decides which write wins; some y slots are not written at all. The program therefore has <b>undefined output</b>.</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0 0 8px"><span class="readout">Program:</span><div class="seg" role="group" aria-label="Program"><button data-sp="abs" aria-pressed="true">absolute_repeat</button><button data-sp="shift">shift_negative</button></div>
       <span class="readout" style="margin-left:8px">Iteration order:</span><div class="seg" role="group" aria-label="Iteration order"><button data-so="fwd" aria-pressed="true">0, 1, 2, …</button><button data-so="rev">…, 2, 1, 0</button><button data-so="gang">shuffled (click again to reshuffle)</button></div></div>
     <div class="sc" style="padding:0"><svg id="spSvg" viewBox="0 0 760 230" role="img" aria-label="Input x, and the output y produced by the chosen iteration order compared with in-order execution" style="min-width:560px"></svg></div>
     <p class="msg" id="spMsg"></p>
-  </div><figcaption><b>Change only the order.</b> x has eight elements; three are negative. The two output rows compare the chosen order with plain in-order execution. For absolute_repeat they always match. For shift_negative, some cells are written by two iterations, and which value survives depends on the order. Highlighted cells differ. Any of these orders is a legal implementation of <code>foreach</code>.</figcaption></figure>
+  </div><figcaption><b>Change only the order.</b> x has eight elements; three are negative. The two output rows compare a selected order with index order. For absolute_repeat they match. For shift_negative, some cells have competing writers, highlighted values can differ, and question marks mark unwritten cells. The explorer runs iterations sequentially in a chosen order to illustrate possible results; a real parallel race offers no “last writer” guarantee. It does not predict ISPC's exact schedule.</figcaption></figure>
 
   <h3>Computing a sum: the uniform/varying distinction</h3>
-  <p>Summing an array exposes the uniform-versus-varying distinction. Two plausible attempts both fail to compile:</p>
+  <p>The next problem needs <i>cooperation</i> rather than merely independent iterations. Suppose an exported function must return one <code>uniform float</code> to C++: the sum of x[0] through x[N − 1]. In that function body, two tempting attempts fail type checking for different reasons:</p>
   <div class="grid2">
     <div><pre class="code" style="margin:0">// sum_incorrect_1
 float sum = 0.0f;
 <span class="k">foreach</span> (i = 0 ... N)
   sum += x[i];
-return sum;   // returns uniform float</pre>
-    <p style="font-size:14.5px"><code>sum</code> is <b>varying</b>: every instance has its own copy. The function must return <i>one</i> uniform float to C++. Which copy? It's a compile-time type error.</p></div>
+return sum;   // function requires a uniform float</pre>
+    <p style="font-size:14.5px"><code>sum</code> is <b>varying</b> by default: every instance keeps a partial sum. That cannot directly satisfy this function's required <i>uniform</i> return type. The varying-to-uniform return is a compile-time error.</p></div>
     <div><pre class="code" style="margin:0">// sum_incorrect_2
 <span class="u">uniform</span> float sum = 0.0f;
 <span class="k">foreach</span> (i = 0 ... N)
   sum += x[i];
 return sum;</pre>
-    <p style="font-size:14.5px"><code>sum</code> is <b>uniform</b>: one copy for the whole gang. But <code>x[i]</code> differs per instance, so the gang would be trying to add eight different values into one variable in one step. Also a compile-time type error.</p></div>
+    <p style="font-size:14.5px"><code>sum</code> is <b>uniform</b>: one value for the gang. But <code>x[i]</code> is varying, so the update tries to assign different lane results to that one value. ISPC rejects the varying-to-uniform assignment.</p></div>
   </div>
-  <p>The correct version gives each instance a <b>private partial sum</b>, with no communication during the loop, then combines them with a <b>cross-instance</b> operation from ISPC's standard library:</p>
+  <p>Instead, let each instance accumulate its assigned indices in a <b>private partial sum</b>. With N = 32 and an eight-instance gang, each instance adds four values. After the loop, ISPC's <code>reduce_add</code> combines the eight partials into one uniform result:</p>
   <pre class="code">export <span class="u">uniform</span> float sum_array(<span class="u">uniform</span> int N, <span class="u">uniform</span> float* x) {
   float partial = 0.0f;                   // one per instance
   <span class="k">foreach</span> (i = 0 ... N)
@@ -374,50 +380,50 @@ return sum;</pre>
     <div class="sc" style="padding:0"><svg id="suSvg" viewBox="0 0 760 240" role="img" aria-label="Eight lanes each accumulating a partial sum over 32 elements, then reduce_add combining them" style="min-width:560px"></svg></div>
     <div class="ctrl"><button id="suBack">◀ Back</button><button id="suStep" class="pri">Next step ▶</button><button id="suReset">Reset</button><span class="readout" id="suOut"></span></div>
     <p class="msg" id="suMsg"></p>
-  </div><figcaption><b>What the SIMD implementation actually does.</b> The ISPC code behaves like this AVX version: keep an 8-wide vector of partial sums; for each group of eight elements, add a packed vector load into it; finally store the vector and add its eight lanes together. If you can see why that correctly implements the gang abstraction, you have a good command of ISPC.</figcaption></figure>
-  <p><code>reduce_add</code> is one of several <b>cross-instance operations</b>, the parts of ISPC where instances deliberately communicate:</p>
+  </div><figcaption><b>Eight private sums, then one result.</b> A possible AVX implementation keeps eight partial sums in a vector register. Each group of eight inputs can be loaded and added to those lanes together; <code>reduce_add</code> then combines the lanes, possibly entirely in registers. The explorer uses small whole-number inputs, so its total is exact. For general floating-point inputs, this grouping can round differently from a left-to-right scalar sum.</figcaption></figure>
+  <p><code>reduce_add</code> is a <b>cross-instance operation</b>: it combines the values held by active instances. ISPC also provides operations that find an extreme value or move a value between instances:</p>
   <div class="tbl"><table>
     <tr><th>Operation</th><th>What it does</th></tr>
-    <tr><td class="m">uniform int64 reduce_add(int32 x)</td><td>Sum of x over all instances in the gang</td></tr>
-    <tr><td class="m">uniform int32 reduce_min(int32 a)</td><td>Minimum of a over all instances</td></tr>
-    <tr><td class="m">int32 broadcast(int32 value, uniform int index)</td><td>Every instance receives the value held by instance <code>index</code></td></tr>
+    <tr><td class="m">uniform int32 reduce_add(int32 x)</td><td>Sum of the active instances' int32 values; the float overload returns a uniform float</td></tr>
+    <tr><td class="m">uniform int32 reduce_min(int32 a)</td><td>Minimum of a over the active instances</td></tr>
+    <tr><td class="m">int32 broadcast(int32 value, uniform int index)</td><td>Active instances receive the value held by instance <code>index</code></td></tr>
     <tr><td class="m">int32 rotate(int32 value, uniform int offset)</td><td>Pass values around the gang by <code>offset</code> positions, wrapping at the ends</td></tr>
     <tr><td class="m">shift(value, offset)</td><td>Like rotate, but values shifted past the end of the gang become 0</td></tr>
   </table></div>
 
   <h3>Try it: a tree reduction across the gang</h3>
-  <p>These operations can express real cooperation. The lecture's example computes the product of eight numbers in lg 8 = <b>3 steps</b> instead of 7: in each step, some instances multiply their value by a partner's value obtained with <code>shift</code>, and the number of useful partial products halves.</p>
+  <p>To see why cross-instance movement helps, multiply eight numbers. A left-to-right chain has seven dependent multiplies. In a tree, four pairs multiply at once, then two pairs of partial products, then one final pair: still seven multiplies in total, but only <b>three dependent rounds</b> (log₂ 8 = 3). Each round obtains a partner's partial product with <code>shift</code>; half as many lanes have useful work in the next round.</p>
   <figure class="fig"><div class="widget">
     <div class="sc" style="padding:0"><svg id="trSvg" viewBox="0 0 760 250" role="img" aria-label="Eight lanes combining values in three steps: pairs, then groups of four, then all eight" style="min-width:560px"></svg></div>
     <div class="ctrl"><button id="trBack">◀ Back</button><button id="trStep" class="pri">Next step ▶</button><button id="trReset">Reset</button><span class="readout" id="trOut"></span></div>
     <p class="msg" id="trMsg"></p>
-  </div><figcaption><b>Three steps, not seven.</b> This explorer uses the convention that the shifted value an instance receives comes from the instance <i>d</i> positions above it (so lane 0 pairs with lane 1, then 2, then 4). ISPC's actual sign convention for the offset argument is defined in its documentation; the direction just determines which lane ends up holding the result. Masked lanes (hatched) compute nothing useful in that step.</figcaption></figure>
+  </div><figcaption><b>Three dependent rounds, seven multiplies overall.</b> Here lane 0 pairs with lane 1, then the partial product in lane 2, then the one in lane 4. The explorer takes a shifted value from <i>d</i> lanes above; an actual <code>shift</code> call must use the offset direction specified by ISPC. Hatched lanes are inactive for that round.</figcaption></figure>
 </section>
 
 <section class="lesson" id="s11" data-toc="Implementation: SIMD & tasks" data-n="11">
   <div class="lesson-h"><div class="kicker">Section 11</div><h2>How the gang is implemented, and what it doesn't give you</h2></div>
+  <p>We can now connect the logical model to the CPU doing the work. In the eight-instance example, each instance holds one of the eight partial sums, and <code>reduce_add</code> needs to combine them. A SIMD vector can hold those eight values, update them with packed operations, and reduce them at the end. That is a common implementation of one gang, not eight independent CPU threads.</p>
   <figure class="fig"><div class="sc"><svg id="implSvg" viewBox="0 0 760 250" role="img" aria-label="The SPMD abstraction of eight program instances is implemented as the eight lanes of SIMD instructions on one core; multiple cores need ISPC tasks" style="min-width:560px"></svg></div>
-    <figcaption><b>Abstraction on top, implementation below.</b> The programmer thinks of programCount logical instruction streams. The compiler emits one stream of SIMD instructions (AVX2 on x86, NEON on Arm), one lane per instance, and turns divergent control flow into masked lanes, just as you do by hand in the first assignment. All of it runs in <b>one thread on one core</b>.</figcaption></figure>
+    <figcaption><b>Eight logical instances, one CPU vector in this example.</b> On an eight-wide CPU target, the compiler can map an instance to each SIMD lane and use masks when their <code>if</code> branches differ. A single ordinary call runs this gang on one calling thread. A wider gang may require multiple native vectors while remaining one logical gang. Tasks or multiple host callers can put other gangs on other cores.</figcaption></figure>
   <ul>
-    <li><b>SPMD programming model:</b> the programmer "thinks" that calling an ISPC function spawns programCount logical instruction streams, each with a different programIndex. The program is written in terms of that abstraction.</li>
-    <li><b>SIMD implementation:</b> the ISPC compiler emits vector instructions that carry out the gang's logic, handling divergent <code>if</code>s by masking lanes.</li>
-    <li><b>The semantics can be subtle</b>, because <code>uniform</code> values and cross-instance operations let implementation details peek through the abstraction.</li>
+    <li><b>SPMD model:</b> the gang has <code>programCount</code> logical instances with different <code>programIndex</code> values. The language defines their values, masks, and cross-instance operations.</li>
+    <li><b>CPU SIMD implementation:</b> vector instructions perform corresponding work for several instances together. If instances take different branches, the compiler can mask lanes while executing each path.</li>
+    <li><b>Performance consequence:</b> separate logical instances do not automatically mean separate cores. Address patterns and how many lanes remain active determine how effectively one vector unit is used.</li>
   </ul>
-  <p>One consequence surprises people: everything shown so far uses <b>only one core</b>. On the four-core machines used in the course, the gang runs on one of them. To use all cores, ISPC has a second abstraction, the <b>task</b>, which launches work onto multiple threads and therefore multiple cores. (The first assignment explores it.) So the full picture is <b>tasks across cores, gangs across SIMD lanes within each core</b>: the same "multi-core × SIMD" combination as Lecture 2.</p>
+  <p>To use multiple CPU cores, the application needs multiple independent gangs. One route is ISPC's <b>task</b> mechanism: <code>launch</code> makes work available to a task runtime, whose workers may run gangs on several cores. Another is to call the exported ISPC function from several C++ threads. Scheduling depends on the runtime and the available work; a task declaration alone does not guarantee a particular core. The useful mental picture is <b>several gangs across cores, with SIMD work inside each gang</b>—the multicore × SIMD combination from Lecture 2.</p>
 </section>
 
 <section class="lesson" id="s12" data-toc="Levels of abstraction" data-n="12">
   <div class="lesson-h"><div class="kicker">Section 12</div><h2>How high should the abstraction go?</h2></div>
-  <p>ISPC is deliberately a <b>low-level</b> language. By exposing <code>programIndex</code> and <code>programCount</code>, it lets the programmer control exactly which work and which data each instance handles. The price: you can write programs with <b>undefined output</b> (like shift_negative), or programs that are correct <b>only for one particular programCount</b>.</p>
-  <p>What if the language didn't expose instances at all?</p>
+  <p>ISPC exposes instance IDs and gang size so we can choose assignments such as interleaved or blocked. That control made the memory behavior in Section 8 visible, but it also makes off-by-one indexing, assumptions about gang size, and conflicting writes possible. A higher-level model can hide some of those decisions. Consider two steps away from manual instance mapping:</p>
   <ul>
-    <li><b>Only <code>foreach</code>:</b> remove <code>programIndex</code> and <code>programCount</code>. Now there's little reason to think about instances. Everything outside a <code>foreach</code> must be uniform values and uniform logic, because with no instance IDs there is nothing that could make one instance's value differ from another's.</li>
-    <li><b>No indexing at all:</b> invoke a function once per element of a <b>collection</b>, like <code>y = map(doWork, x)</code>. The programmer writes no loops and does no indexing. NumPy and PyTorch programmers work this way: <code>Z = X + Y</code> adds whole arrays, and the library decides how to parallelize.</li>
+    <li><b>Use <code>foreach</code> without manual instance IDs:</b> the programmer specifies the iteration range and leaves mapping to the compiler. Varying values can still exist before and after the loop—the <code>partial</code> variable in Section 10 is one example—but code no longer assigns each index with <code>programIndex</code>.</li>
+    <li><b>Express whole-array operations:</b> in a more restricted style, write <code>y = map(doWork, x)</code> or <code>Z = X + Y</code> and let a library choose loops, vector width, and parallel scheduling. NumPy and PyTorch support this style, alongside explicit indexing and other lower-level features.</li>
   </ul>
-  <p>Each step up hides more of the implementation, which makes it easier to write correct programs and harder to control performance. Later lectures return to these data-parallel models.</p>
+  <p>Hiding a choice can remove one way to make a mistake, such as a hand-written out-of-range index. It can also make a performance choice harder to express. No rung automatically guarantees correct code or fast code: shared-state races and costly data movement remain possible wherever the model permits them. Later lectures revisit these data-parallel styles.</p>
   <figure class="fig"><div class="sc"><svg id="ladderSvg" viewBox="0 0 760 190" role="img" aria-label="Three levels of abstraction: ISPC with programIndex, foreach only, and map over collections" style="min-width:560px"></svg></div>
-    <figcaption><b>A ladder of abstractions.</b> Moving right, the programmer says less about <i>how</i> work is assigned and the system decides more. Control and the risk of undefined behaviour decrease together.</figcaption></figure>
-  <div class="insight">The lecture's summary: <b>programming models provide a way to think about the organization of parallel programs. They provide abstractions that permit multiple valid implementations.</b> Keep asking, for the rest of the course: which parts of what I'm seeing are the abstraction's promises, and which are just how this implementation happens to work?</div>
+    <figcaption><b>Who chooses the work assignment?</b> Moving right, more of that choice belongs to the compiler or library. The diagram suggests fewer opportunities for manual mapping errors; it does not promise that every program at a higher level is race-free or efficient.</figcaption></figure>
+  <div class="insight"><b>A programming model is a set of promises, not a wiring diagram.</b> Before relying on an execution order, a lane mapping, or a memory access pattern, ask whether the model guarantees it. Then inspect the implementation to understand performance. That habit will carry through the rest of the course.</div>
 </section>
 
 <section class="lesson" id="gloss" data-toc="Glossary & review" data-n="✓">
@@ -426,32 +432,35 @@ return sum;</pre>
     <dt>Latency</dt><dd>Time for one operation or request to complete.</dd>
     <dt>Throughput</dt><dd>Operations completed per unit time.</dd>
     <dt>Memory bandwidth</dt><dd>The rate at which memory can supply data, in bytes per second.</dd>
-    <dt>Little's law</dt><dd>Items in flight = throughput × latency.</dd>
-    <dt>Bandwidth-bound</dt><dd>Execution limited by the rate memory can supply data, with compute units stalled.</dd>
+    <dt>Little's law</dt><dd>In a steady flow, average items in flight = delivery rate × average latency.</dd>
+    <dt>Arithmetic intensity</dt><dd>Useful arithmetic operations per byte transferred; reuse can raise it.</dd>
+    <dt>Bandwidth-bound</dt><dd>Useful operation rate limited by memory's data-delivery rate rather than arithmetic capacity.</dd>
     <dt>Bottleneck</dt><dd>The stage with the lowest throughput, which sets the throughput of the whole path.</dd>
     <dt>Abstraction vs implementation</dt><dd>What a programming model's operations mean, versus how a particular system carries them out.</dd>
     <dt>SPMD</dt><dd>Single program, multiple data: one function run by many logical instances on different data.</dd>
-    <dt>Gang, program instance</dt><dd>The group of instances an ISPC call spawns; each instance is one logical stream with its own locals.</dd>
+    <dt>Gang, program instance</dt><dd>A gang is the group of logical ISPC instances in one call. Each instance has its own varying values; uniform values are shared.</dd>
     <dt>programCount / programIndex</dt><dd>The gang's size (uniform) and an instance's ID (varying).</dd>
     <dt>uniform / varying</dt><dd>One value shared by the gang / a separate value per instance.</dd>
     <dt>foreach</dt><dd>Declares iterations for the whole gang, leaving the assignment to the implementation.</dd>
-    <dt>Packed load vs gather</dt><dd>A vector load of contiguous addresses vs of arbitrary addresses; gathers cost more.</dd>
+    <dt>Packed load vs gather</dt><dd>A vector load of neighboring addresses versus a vector load from separately chosen addresses. Their costs depend on the hardware and memory pattern.</dd>
     <dt>Cross-instance operation</dt><dd>A standard-library call that combines or moves values between instances: reduce_add, broadcast, rotate, shift.</dd>
-    <dt>ISPC task</dt><dd>ISPC's abstraction for multi-core execution; gangs alone use one core's SIMD.</dd>
+    <dt>ISPC task</dt><dd>One way to submit independent gangs to a runtime that may run them across CPU cores.</dd>
   </dl>
   <div class="predict"><div class="ph"><b>Test yourself</b><span>The lecture's questions, plus a few more.</span></div><ol>
     <li>A car trip takes 30 minutes with one car on the road at a time. Adding three lanes raises throughput from 2 to 8 cars/hour. What happened to latency?
       <details><summary>Show answer</summary><div class="ans"><p>Nothing: still 30 minutes. More lanes add parallelism, which raises throughput without changing any one car's trip.</p></div></details></li>
-    <li>Laundry: wash 45 min, dry 60 min, fold 15 min. Pipelined, what's the throughput, and why isn't it one load every 40 minutes?
-      <details><summary>Show answer</summary><div class="ans"><p><b>1 load per hour.</b> The dryer is the slowest stage, so a load can leave the pipeline only every 60 minutes. The pipeline's throughput is set by its bottleneck, not the average stage.</p></div></details></li>
+    <li>Laundry: wash 45 min, dry 60 min, fold 15 min. Once the pipeline is full, what's its completion rate? If washes start every 45 minutes, what happens to later loads' individual latencies?
+      <details><summary>Show answer</summary><div class="ans"><p><b>One load per hour.</b> The dryer takes 60 minutes and sets the completion rate. New washes begin faster than the dryer can accept them, so later loads queue after washing and take more than two hours from their own start to finish.</p></div></details></li>
+    <li>A memory system delivers eight items per second, and each request takes two seconds. How many requests must be in flight on average?
+      <details><summary>Show answer</summary><div class="ans"><p>Little's law gives <b>8 × 2 = 16</b> requests in flight on average. The memory sketch's eight icons are schematic; eight literal outstanding requests would not sustain this rate at two-second latency.</p></div></details></li>
     <li>Convince yourself: in steady state, with enough loads in flight, why is core utilization independent of memory latency?
-      <details><summary>Show answer</summary><div class="ans"><p>Once enough requests are outstanding, the memory channel is always transferring, so the rate at which data arrives is its bandwidth. Math can proceed only as fast as its operands arrive. Latency just shifts when each item arrives, not how many arrive per second.</p></div></details></li>
-    <li>Why does the blocked sinx version need a gather while the interleaved version uses a packed load?
-      <details><summary>Show answer</summary><div class="ans"><p>At each step the eight instances access x[start + i] with starts that are N/8 apart, so the eight addresses are far apart. In the interleaved version they access x[i + 0 … i + 7], eight contiguous floats that one vector load can fetch.</p></div></details></li>
+      <details><summary>Show answer</summary><div class="ans"><p>Once enough independent requests are outstanding, the channel transfers continuously. Its bandwidth then caps the rate at which operands arrive. Raising latency requires more requests in flight to keep that condition true, but does not lower the already saturated transfer rate.</p></div></details></li>
+    <li>For N = 32 and eight instances, why might the blocked sinx version need a gather or separate loads while the interleaved version can use a packed load?
+      <details><summary>Show answer</summary><div class="ans"><p>At one blocked-loop step, the instances access x[0], x[4], x[8], …, x[28]: addresses four floats apart. At one interleaved step, they access x[0] through x[7], eight neighboring floats that a packed load can fetch.</p></div></details></li>
     <li>Why is shift_negative's output undefined, while absolute_repeat's isn't?
-      <details><summary>Show answer</summary><div class="ans"><p>In shift_negative, two different iterations can write the same element (y[i − 1] is written by iterations i − 1 and i), and <code>foreach</code> promises no order. In absolute_repeat every iteration writes only its own elements, 2i and 2i + 1.</p></div></details></li>
-    <li>With only <code>foreach</code> (no programIndex or programCount), why must everything outside a foreach be uniform?
-      <details><summary>Show answer</summary><div class="ans"><p>Outside a foreach there's no per-instance information at all: no instance ID and no per-iteration variable. Every instance runs identical code on identical inputs, so every value is necessarily the same across the gang.</p></div></details></li>
+      <details><summary>Show answer</summary><div class="ans"><p>Assuming separate valid x and y arrays, <code>shift_negative</code> can have two iterations write one y element with no promised order; it can leave other elements unwritten. In <code>absolute_repeat</code>, iteration i alone writes y[2i] and y[2i + 1].</p></div></details></li>
+    <li>If a language hid <code>programIndex</code> and <code>programCount</code> but kept <code>foreach</code>, could varying values still exist outside the loop?
+      <details><summary>Show answer</summary><div class="ans"><p>Yes. In the sum example, <code>partial</code> is declared before <code>foreach</code>, updated with a different partial sum in each instance, and passed to <code>reduce_add</code> afterward. Hiding instance IDs removes manual index assignment, not all varying state.</p></div></details></li>
   </ol></div>
   <p class="credit">Based on Stanford CS149 (Fall 2023), Lecture 3, "Multi-Core Architecture Part II (latency/bandwidth issues) + Parallel Programming Abstractions", by Kayvon Fatahalian and Kunle Olukotun. The explanations, diagrams and interactive models on this page are original study material. Hardware figures (V100, Xeon E5 v4) and ISPC examples are as presented in the lecture; for ISPC's exact semantics see the <a href="https://ispc.github.io/">ISPC documentation</a>. For the course's own slides and videos, see the <a href="https://gfxcourses.stanford.edu/cs149/fall23">CS149 course site</a>.</p>
   <div class="nextunit"><a href="lecture-02-modern-multicore.html"><small>← Previous lecture</small>Lecture 2 · A modern multi-core processor</a><a href="lecture-07-gpu-cuda.html"><small>Next companion</small>Lecture 7 · GPUs &amp; CUDA →</a></div>
