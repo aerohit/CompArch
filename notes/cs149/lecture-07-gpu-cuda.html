@@ -233,7 +233,7 @@ cudaMemcpy(deviceA, A, sizeof(float) * N, cudaMemcpyHostToDevice);
 
 <section class="lesson" id="s5" data-toc="Example: 1D convolution" data-n="5">
   <div class="lesson-h"><div class="kicker">Section 5</div><h2>Example: 1D convolution, and why shared memory helps</h2></div>
-  <p>Each output is the average of three neighbouring inputs: <code>output[i] = (input[i] + input[i+1] + input[i+2]) / 3</code>. Version 1 assigns one thread per output, and every thread reads its three inputs from global memory:</p>
+  <p>Consider a short sliding-window calculation, often called a <b>stencil</b>: <code>output[i] = (input[i] + input[i+1] + input[i+2]) / 3</code>. Output 0 needs inputs 0, 1, and 2; output 1 needs 1, 2, and 3. The two threads therefore ask for some of the same values. First, give each thread one output and let it read all three values from device global memory:</p>
   <pre class="code">#define THREADS_PER_BLK 128
 <span class="k">__global__</span> void convolve(int N, float* input, float* output) {
   int index = blockIdx.x * blockDim.x + threadIdx.x;  // thread-local
@@ -242,9 +242,10 @@ cudaMemcpy(deviceA, A, sizeof(float) * N, cudaMemcpyHostToDevice);
     result += input[index + i];
   output[index] = result / 3.f;
 }
-// host: N = 1024 * 1024 outputs, input has N + 2 elements
+// host: N = 1024 * 1024 outputs (divisible by 128);
+// device input has N + 2 elements, device output has N
 convolve&lt;&lt;&lt;N/THREADS_PER_BLK, THREADS_PER_BLK&gt;&gt;&gt;(N, devInput, devOutput);</pre>
-  <p>Neighbouring threads read overlapping inputs: input[5] is read by the threads computing outputs 3, 4 and 5. Version 2 has each block load its <b>support region</b> (the 130 inputs its 128 outputs need) into <b>shared memory</b> once, cooperatively, then compute from there:</p>
+  <p>For a block producing outputs 0 through 127, the union of required inputs is only 0 through 129: 130 values. Yet version 1 writes three load operations per thread, or 384 across the block. Version 2 first has the block cooperatively copy that 130-value <b>support region</b> into shared memory. Each thread loads one input, and threads 0 and 1 load the two extra values at the right edge. Then all threads read their three inputs from the shared copy:</p>
   <pre class="code"><span class="k">__global__</span> void convolve(int N, float* input, float* output) {
   <span class="k">__shared__</span> float support[THREADS_PER_BLK+2];     // one copy per block
   int index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -262,21 +263,22 @@ convolve&lt;&lt;&lt;N/THREADS_PER_BLK, THREADS_PER_BLK&gt;&gt;&gt;(N, devInput, 
     <div class="sc" style="padding:0"><svg id="cvSvg" viewBox="0 0 760 250" role="img" aria-label="One block's inputs and outputs, showing which global loads each version performs" style="min-width:560px"></svg></div>
     <div class="stat" id="cvStat"></div>
     <p class="msg" id="cvMsg"></p>
-  </div><figcaption><b>One block of 128 threads.</b> Version 1 issues 3 × 128 = <b>384</b> global load instructions per block, most of them for inputs a neighbouring thread also loads. Version 2 issues <b>130</b>: one per support element, then all reads come from fast on-chip shared memory. The drawing shows the first 16 threads of the block for legibility; the counts are for all 128.</figcaption></figure>
-  <p>The <code>__syncthreads()</code> call is essential. Without it, a thread could read <code>support[threadIdx.x + 2]</code> before the thread responsible for that element had written it. It's a <b>barrier</b>: no thread in the block continues until all have reached it. Unit 5, Lesson 23 of these notes explores the same pattern for matrix multiplication, including why tiled code sometimes needs a second barrier.</p>
+  </div><figcaption><b>Count source-level loads, then ask what memory actually transfers.</b> Version 1 performs 3 × 128 = <b>384 per-thread global load operations</b> per block. Version 2 performs <b>130</b>, then 384 shared-memory reads. The drawing shows only the first 16 threads. These counts are not DRAM transactions: adjacent loads can coalesce, caches can serve repeated values, and shared staging adds a barrier and uses 520 bytes per block. For this three-value stencil, version 2 is not automatically faster.</figcaption></figure>
+  <p>The <code>__syncthreads()</code> call is essential to version 2's correctness. After thread 0 loads <code>support[0]</code>, another thread might try to read it before that write completes. A <b>barrier</b> makes every thread in the block wait until all have finished the loading phase, then makes those writes visible to the block. The barrier sits outside the <code>if</code>, so all 128 threads reach it. In this example N is divisible by 128; a general kernel with a partial final block would need carefully guarded loads without letting some threads skip the barrier. Unit 5, Lesson 23 revisits the pattern for tiled matrix multiplication.</p>
 
   <h3>CUDA's synchronization constructs</h3>
   <ul>
-    <li><b><code>__syncthreads()</code></b>: a barrier across all threads <i>in one block</i>.</li>
-    <li><b>Atomic operations</b>, such as <code>float atomicAdd(float* addr, float amount)</code>, on both global and shared memory addresses.</li>
-    <li><b>Host/device synchronization</b>: an implicit barrier across all threads when a kernel returns.</li>
+    <li><b><code>__syncthreads()</code></b>: participating threads in one block wait for one another, and their prior memory writes become visible at the barrier. It does not synchronize separate blocks.</li>
+    <li><b>Atomic operations</b>, such as <code>atomicAdd</code>, perform one indivisible update to an address in supported shared or global memory.</li>
+    <li><b>Host/device synchronization</b>: a kernel launch normally returns to the CPU before completion. The host can wait with <code>cudaDeviceSynchronize()</code> or <code>cudaStreamSynchronize()</code>; an ordered blocking device-to-host copy can also wait for the result it copies.</li>
   </ul>
   <div class="tbl"><table>
     <tr><th>CUDA abstraction</th><th>What it provides</th></tr>
     <tr><td>Execution</td><td>Bulk launch of many threads, in a two-level hierarchy: threads grouped into thread blocks</td></tr>
-    <tr><td>Address spaces</td><td>Distributed: host and device, with built-in memcpy between them. Three kinds on the device: per-thread, per-block (shared) and per-program (global)</td></tr>
-    <tr><td>Synchronization</td><td>Barriers within a block; atomics on shared and global variables</td></tr>
+    <tr><td>Storage scope</td><td>In this explicit-copy model: host and device allocations; on the device, private thread values, block-shared memory, and device-global memory</td></tr>
+    <tr><td>Synchronization</td><td>Barriers within a block; atomics for selected shared/global updates; streams and host-side waits for ordered completion</td></tr>
   </table></div>
+  <p>Shared memory has a cost beyond the barrier: every resident block reserves space for its own 130-float support array. The next part shows how that resource requirement affects how many blocks a GPU can run at once.</p>
 </section>
 
 <!-- ================================ PART 3 ================================ -->
