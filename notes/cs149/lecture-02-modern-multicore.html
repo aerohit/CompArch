@@ -494,22 +494,22 @@ svg text.sw{fill:#fff!important}
 
 <section class="lesson" id="s13" data-toc="The story so far" data-n="13" style="margin-top:36px">
   <div class="lesson-h"><div class="kicker">Section 13</div><h2>The story so far</h2></div>
-  <p>To use a modern parallel processor efficiently, an application must:</p>
+  <p>The sine example gave each mechanism a job: independent array elements fed cores, fixed-term loops filled SIMD lanes, and extra ready threads could cover a load miss. The diagram collects those three requirements. They are useful checks, but satisfying them does not guarantee that memory can deliver data quickly enough.</p>
   <figure class="fig"><div class="sc"><svg id="reqSvg" viewBox="0 0 760 200" role="img" aria-label="Three requirements mapped to multi-core, SIMD and multithreading"></svg></div>
-    <figcaption><b>Each hardware idea puts one demand on the software.</b> Miss the first and cores sit idle. Miss the second and SIMD lanes are masked off. Miss the third and everything stalls on memory.</figcaption></figure>
+    <figcaption><b>Match the work to the hardware.</b> Without independent work, cores or execution units go unused. Without similar control paths, vector lanes may be masked. Without another ready thread, an unpredictable load can leave a core with no work to issue. Even when all three conditions hold, memory transfer rate can set a separate ceiling.</figcaption></figure>
   <h3>A thought experiment: multiplying two big vectors</h3>
-  <p>Take C[i] = A[i] × B[i] for millions of elements. For each element: load A[i], load B[i], multiply, store C[i]. It's perfectly parallel, needs the same instructions for every element, and has plenty of work for any number of threads. It meets all three requirements. Is it a good fit for a throughput processor like a GPU?</p>
+  <p>Now multiply two very large arrays: <code>C[i] = A[i] × B[i]</code>. Each element is independent, follows the same instructions, and offers plenty of tasks to keep threads resident. Yet every multiply needs two input values delivered and one output stored. Even an ideal schedule cannot multiply faster than memory can supply those bytes. Use the explorer to compare that supply with the chip's nominal compute rate.</p>
   <figure class="fig"><div class="widget">
     <div class="calc"><label class="rl" for="bwB">memory bandwidth = <b id="bwBv">900</b> GB/s<input id="bwB" type="range" min="25" max="3000" step="25" value="900"></label>
       <label class="rl" for="bwP">peak compute = <b id="bwPv">15.7</b> TFLOP/s<input id="bwP" type="range" min="0.2" max="60" step="0.1" value="15.7"></label></div>
     <div class="sc" style="padding:8px 0 0"><svg id="bwSvg" viewBox="0 0 760 170" role="img" aria-label="Compute capability versus multiplies per second that memory can feed" style="min-width:560px"></svg></div>
     <p class="msg" id="bwMsg"></p>
-  </div><figcaption><b>A preview of Lecture 3: latency is not the only memory problem.</b> Each multiply needs 12 bytes of memory traffic (two 4-byte inputs, one 4-byte output). At 900 GB/s that's only 75 billion multiplies per second, well under 1% of the V100's 15.7 TFLOP/s. No amount of multithreading fixes this. Multithreading hides <b>latency</b>, but this program is limited by <b>bandwidth</b>: bytes per second. The next lecture starts exactly there.</figcaption></figure>
+  </div><figcaption><b>Memory bandwidth sets the ceiling here.</b> At minimum, each element transfers 12 bytes: two 4-byte inputs and one 4-byte output; real traffic can be higher. At 900 GB/s, memory can feed at most 75 billion plain multiplies per second, or 0.075 TFLOP/s (one FLOP per multiply). The chart's compute bar uses the V100's 15.7 TFLOP/s <i>FMA</i> peak as a generous nominal ceiling for multiplies; FMA counts two FLOPs, so that label is not a measured plain-multiply peak. Even under this favorable comparison, memory feeds under 1% of the nominal rate. More threads can hide <b>latency</b>, but cannot exceed available <b>bandwidth</b> in bytes per second. Lecture 3 begins there.</figcaption></figure>
 </section>
 
 <section class="lesson" id="s14" data-toc="Build a processor" data-n="14">
   <div class="lesson-h"><div class="kicker">Section 14</div><h2>How it all fits together: build your own chip</h2></div>
-  <p>The lecture closes by combining the ideas one step at a time. Use the controls to build a chip and watch what each choice adds: more fetch/decode, more ALUs, more contexts, more cores. The counters show what the chip can do, and how much independent work your program must supply to use it.</p>
+  <p>Build a chip one choice at a time. Adding cores or SIMD lanes raises its peak arithmetic capacity; adding contexts gives each core more threads to turn to during stalls. Use the presets first, then change one control and watch which counter moves. The “work needed” counter describes enough elements to populate <i>every context and lane</i>, not a minimum for arithmetic saturation when one well-fed thread can keep a core busy.</p>
   <figure class="fig"><div class="widget">
     <div class="cfg">
       <div><span class="readout">Cores</span><div class="seg" role="group" aria-label="Cores"><button data-cf="cores" data-v="1" aria-pressed="true">1</button><button data-cf="cores" data-v="2">2</button><button data-cf="cores" data-v="4">4</button><button data-cf="cores" data-v="16">16</button></div></div>
@@ -521,7 +521,8 @@ svg text.sw{fill:#fff!important}
     <div class="sc" style="padding:10px 0 0"><svg id="cfSvg" viewBox="0 0 760 300" role="img" aria-label="Diagram of the configured chip, drawn in the style of the lecture slides"></svg></div>
     <div class="stat" id="cfStat"></div>
     <p class="msg" id="cfMsg"></p>
-  </div><figcaption><b>Drawn in the lecture's style:</b> grey data cache, orange fetch/decode and instruction selection, yellow ALUs, and blue execution contexts with their PC and registers. <b>Model:</b> with issue width 2 and SIMD on, the second instruction per clock is a scalar one alongside the vector one (as in the lecture's heterogeneous superscalar core). Threads are interleaved or simultaneous depending on the issue width. "Work needed" counts independent data elements: cores × threads × SIMD lanes.</figcaption></figure>
+  </div><figcaption><b>Read the boxes and the counters separately.</b> Grey is cache, orange is instruction selection and fetch/decode, yellow is arithmetic, and blue is resident register/PC contexts. With issue width 2 and SIMD enabled, this model pairs one vector instruction with one scalar instruction. “Peak ALU operations” counts lane capacity; “work needed” is cores × contexts × SIMD lanes for full residency. The “streams issuing per clock” counter counts <i>distinct threads</i>, not instructions: one stream with enough ILP can still fill both issue slots.</figcaption></figure>
+  <p>Try the superscalar preset: it has one resident thread and two issue slots. The distinct-stream counter remains one, while two independent instructions from that one stream could issue together. Then add a second hardware context. The arithmetic peak stays the same, but a second thread can use a slot or cover a stall. That difference is central to reading the next simulator.</p>
 </section>
 
 
