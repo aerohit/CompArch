@@ -261,51 +261,51 @@ svg text.sw{fill:#fff!important}
 
 <section class="lesson" id="s9" data-toc="The power wall" data-n="9">
   <div class="lesson-h"><div class="kicker">Section 9</div><h2>The power wall: why clocks stopped getting faster</h2></div>
-  <p>The second source of speedup was clock frequency: more clock ticks per second means more instructions per second. Frequency rose steadily for decades and then, in the mid-2000s, stopped at around 3–4 GHz, even though chips kept getting more transistors. The reason is <b>power</b>.</p>
-  <p>A transistor consumes power in two ways:</p>
+  <p>A core can also finish work sooner by running its clock faster. Its clock marks cycles in which work can advance, so more cycles per second can mean more instructions completed per second. Clock rates rose for decades but largely leveled off in the mid-2000s, while transistor counts kept growing. The limiting question became how much <b>power</b> a chip could use and cool.</p>
+  <p>Two contributions matter in a simplified power model:</p>
   <ul>
-    <li><b>Dynamic power</b>, spent every time transistors switch: <b>dynamic power ∝ capacitive load × voltage² × frequency</b>. Raising the frequency raises power proportionally, but that's the mild part.</li>
-    <li><b>Static power</b>, lost to <b>leakage</b>: transistors burn power even when they aren't switching.</li>
+    <li><b>Dynamic power</b> is spent when circuits switch. For a fixed amount of switching per cycle, it grows roughly as <b>switched capacitance × voltage² × frequency</b>. Running more cycles each second raises this cost.</li>
+    <li><b>Static power</b> comes from <b>leakage</b>: a powered chip uses some energy even when circuits are not switching.</li>
   </ul>
-  <p>The catch is that a transistor can only switch faster if it is driven at a <b>higher voltage</b>. The maximum frequency is determined by the core voltage. So pushing frequency up also pushes voltage up, and voltage enters squared. Together, power grows much faster than frequency: in the measurements the lecture shows, doubling the clock from 2.4 to 4.8 GHz multiplies power by roughly <b>four</b>. And power becomes <b>heat</b>, which has to be removed from a chip the size of a fingernail.</p>
+  <p>On a given chip design, reaching a higher clock often requires a higher supply voltage to keep switching reliable. Voltage appears squared in the dynamic-power term, so raising both voltage and frequency can make power climb much faster than clock rate. In the lecture's illustrative range, moving from about 2.4 to 4.8 GHz costs several times the power. Nearly all of that electrical energy ends up as heat that the cooling system must remove.</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0"><span class="readout">Clock frequency: <b id="pwFv"></b></span><input type="range" id="pwF" min="1" max="5" step="0.1" value="3.5" aria-label="Clock frequency in GHz"></div>
     <div class="sc" style="padding:8px 0 0"><svg id="pwSvg" viewBox="0 0 760 270" role="img" aria-label="Power versus clock frequency: dynamic and static power, rising steeply" style="min-width:560px"></svg></div>
     <div class="stat" id="pwStat"></div>
     <p class="msg" id="pwMsg"></p>
-  </div><figcaption><b>Doubling the clock can cost several times the power.</b> An illustrative model of one desktop core: voltage rises linearly with frequency, dynamic power = k × V² × f, static power grows with V. It is calibrated to the shape of the lecture's measurements (Intel i7-2600K and i7-3770K), where total power climbs from about 20 W at 1.6 GHz to over 200 W near 5 GHz. The exact numbers vary by chip; the shape doesn't.</figcaption></figure>
-  <p>How much power is too much? The lecture lists typical thermal design power (TDP), the heat a cooling system must remove:</p>
+  </div><figcaption><b>Doubling the clock can cost several times the power.</b> This is an illustrative model of one desktop core: it assumes voltage rises linearly with frequency, dynamic power follows V² × f, and static power grows with voltage. Its curve resembles the lecture's measurements of Intel i7-2600K and i7-3770K chips. Neither the exact wattage nor that voltage rule applies to every processor.</figcaption></figure>
+  <p>Power budgets vary greatly across devices. The table gives rough figures from the lecture, including <b>thermal design power (TDP)</b>: a cooling-design rating, not a promise that a device always consumes that many watts. The i9-10900K's 95 W figure in the lecture is its configurable lower TDP; its default TDP is 125 W, used here.</p>
   <div class="tbl"><table>
     <tr><th>Device</th><th>Power</th></tr>
     <tr><td>Mobile phone processor</td><td class="m">½–2 W</td></tr>
     <tr><td>Apple M1 laptop chip</td><td class="m">13 W</td></tr>
-    <tr><td>Intel Core i9 10900K (desktop CPU)</td><td class="m">95 W</td></tr>
+    <tr><td>Intel Core i9 10900K (desktop CPU)</td><td class="m">125 W default TDP</td></tr>
     <tr><td>NVIDIA RTX 4090 GPU</td><td class="m">450 W</td></tr>
     <tr><td>Standard microwave oven (for scale)</td><td class="m">900 W</td></tr>
     <tr><td>World's fastest supercomputer</td><td class="m">megawatts</td></tr>
   </table></div>
-  <p>A desktop chip is already dissipating a sizeable fraction of a microwave oven's power. A phone has a budget a hundred times smaller. Power is a <b>critical design constraint</b> in every modern processor. So what should a designer do with a fixed power budget?</p>
+  <p>The exact numbers are less important than the spread: a phone must work within a few watts, while a desktop chip may have over a hundred. Neither can raise clock speed without considering heat and battery or operating cost. Designers therefore look for more useful work within a fixed power budget.</p>
   <h3>Spend the power budget on more, slower cores</h3>
-  <p>Because power rises so steeply with frequency, running <b>two cores at a lower frequency</b> can deliver more total work than one core at a high frequency, for the same power. Try it: fix a power budget and see how fast each core can run as the core count grows.</p>
+  <p>One option is to divide work between <b>two slower cores</b>. Each core may finish its own portion less quickly than a fast core would, but together they can finish more portions per second within the same budget. That total rate is <b>throughput</b>. Move the power-budget slider and compare the bars for total throughput with the line for one core's speed.</p>
   <figure class="fig"><div class="widget">
     <div class="ctrl" style="margin:0"><span class="readout">Chip power budget: <b id="pbV"></b></span><input type="range" id="pbB" min="60" max="220" step="10" value="130" aria-label="Chip power budget in watts"></div>
     <div class="sc" style="padding:8px 0 0"><svg id="pbSvg" viewBox="0 0 760 260" role="img" aria-label="For 1 to 8 cores within the budget: the frequency each core can run at, and the chip's total throughput" style="min-width:560px"></svg></div>
     <p class="msg" id="pbMsg"></p>
   </div><figcaption><b>More cores, lower clocks, more total work, if the program is parallel.</b> Each bar is the chip's total throughput (cores × frequency, assuming the work splits perfectly). The line is the speed of each individual core, which is what a single-threaded program gets. Throughput rises quickly at first, then flattens as static power, which doesn't shrink with frequency, eats a growing share of the budget. Same illustrative power model as above.</figcaption></figure>
-  <p>That trade-off is the heart of the lecture: with power as the limit, the way to more performance is <b>more processing units running in parallel</b>, not faster ones. But a single-threaded program sees only the line, not the bars. It gets <i>slower</i> as the cores multiply.</p>
+  <p>The bars rise only if the work divides across cores; the summing exercise already showed why that assumption can fail. A single thread uses one core and follows the line. In this fixed-budget model, giving the chip more cores lowers the clock available to each, so that single thread can even slow down. Multiple cores create an opportunity for more throughput, not an automatic speedup for every program.</p>
 </section>
 <section class="lesson" id="s10" data-toc="No more free lunch" data-n="10">
   <div class="lesson-h"><div class="kicker">Section 10</div><h2>ILP tapped out, frequency stopped: no more free lunch</h2></div>
-  <p>Put the two walls together and you get the picture in the lecture's chart of Intel CPU trends (after Herb Sutter's 2005 article "The Free Lunch Is Over"):</p>
+  <p>Now the two limits fit together. Wider execution units found diminishing amounts of independent work in one instruction stream; higher clocks became too costly in power. The lecture captures this change in a stylized chart of processor trends, after Herb Sutter's 2005 article "The Free Lunch Is Over":</p>
   <figure class="fig"><div class="sc"><svg id="trendSvg" viewBox="0 0 760 300" role="img" aria-label="Stylized CPU trends 1970 to 2010: transistor count keeps rising; clock frequency, power and ILP rise and then flatten around 2005" style="min-width:560px"></svg></div>
-    <figcaption><b>Transistors kept coming, and the other curves stopped.</b> A stylized version of the trend chart, showing the shapes rather than the data (log scale). <b>Transistor density</b> kept doubling (Moore's law). <b>Clock frequency</b> flattened around 2005, when power hit what could be cooled. <b>ILP</b> flattened too: wider issue brought no further benefit. Power flattened with the clock because designers stopped raising it.</figcaption></figure>
-  <p>The consequence is the lecture's central claim:</p>
+    <figcaption><b>More transistors no longer meant the same single-thread gain.</b> The chart shows trends rather than measured data (log scale). Transistor counts continued to rise while clock-frequency and instruction-level gains slowed around the mid-2000s. The flattening is an approximation of a shift in growth rates, not a claim that single-thread performance or transistor progress literally stopped.</figcaption></figure>
+  <p>That shift changed where chip designers spent their growing transistor budgets:</p>
   <ul>
-    <li>The rate of <b>single-instruction-stream performance</b> scaling has fallen almost to zero. Frequency scaling is limited by power, and ILP scaling is tapped out.</li>
-    <li>Architects still get more transistors every generation, and now use them to build <b>more execution units that run in parallel</b>: more cores, wider vector units. They also build <b>units specialized for a specific task</b>, such as graphics, audio and video, or neural networks.</li>
-    <li><b>Software must be written to be parallel to see performance gains.</b> No more free lunch for software developers.</li>
+    <li><b>Single-thread speed still improves</b>, but the old rate of improvement became much harder to sustain through higher clocks and wider issue alone.</li>
+    <li>Designers increasingly use transistors for <b>parallel units</b>: more CPU cores and vector units that operate on several data values at once. They also build <b>specialized units</b> for tasks such as graphics, video, and neural networks.</li>
+    <li>To benefit from those extra units, software must give them useful work. An unchanged single-thread program cannot use several cores simply because they are present.</li>
   </ul>
-  <div class="pitfall"><b>Moore's law did not end in 2005.</b> Transistor counts kept growing. What ended was the easy conversion of those transistors into single-thread speed. The transistors went into parallel hardware instead, so the performance is still there, but only for programs that ask for it in parallel.</div>
+  <div class="pitfall"><b>Keep the trends separate.</b> The mid-2000s power wall did not make transistor counts stop rising. It made it harder to turn additional transistors into faster execution of one unchanged instruction stream. Parallel hardware offers another route, provided a program has work to feed it.</div>
 </section>
 
 <section class="lesson" id="s11" data-toc="Parallel machines everywhere" data-n="11">
