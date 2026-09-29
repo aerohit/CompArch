@@ -117,7 +117,7 @@ svg text.sw{fill:#fff!important}
   <h1>Latency, bandwidth, and the <em>SPMD</em> abstraction</h1>
   <p class="lede">Lecture 2 showed how many cores, SIMD lanes, and hardware threads can work at once. They still need data. This lecture first asks how quickly memory can deliver it: even thousands of arithmetic units may wait on one shared memory system. It then asks how to express work for those units without writing every machine instruction ourselves. ISPC provides a concrete way to separate a program's <b>meaning</b> from the <b>hardware steps</b> that carry it out.</p>
   <dl class="outcome">
-    <dt>You'll be able to</dt><dd>Distinguish latency from throughput with everyday and hardware examples. Explain why a throughput processor can be bandwidth-bound, and calculate how badly. Explain why, once enough requests are in flight, memory latency stops mattering and bandwidth takes over. Describe ISPC's SPMD model: gangs, program instances, <code>programIndex</code>, <code>programCount</code>, <code>uniform</code>, <code>foreach</code>. Trace how interleaved and blocked assignments map to SIMD instructions, and spot ISPC programs whose output is undefined.</dd>
+    <dt>You'll be able to</dt><dd>Distinguish latency from throughput with everyday and hardware examples. Explain when memory bandwidth limits sustained arithmetic throughput, and calculate the limit in a simple model. Explain why enough requests in flight can hide latency without shortening individual requests. Describe ISPC's SPMD model: gangs, program instances, <code>programIndex</code>, <code>programCount</code>, <code>uniform</code>, <code>foreach</code>. Trace how interleaved and blocked assignments affect SIMD memory instructions, and spot ISPC programs whose output is undefined.</dd>
     <dt>Background</dt><dd><a href="lecture-02-modern-multicore.html">Lecture 2</a> (multi-core, SIMD, multithreading) and <a href="lecture-01-why-parallelism.html">Lecture 1</a> (memory, latency, caches). Units 3–5 of these notes go deeper into pipelining, SIMD and GPUs.</dd>
     <dt>Source</dt><dd>Follows the structure and examples of Stanford CS149 <i>Parallel Computing</i>, Fall 2023, Lecture 3, "Multi-Core Architecture Part II + Parallel Programming Abstractions" (Kayvon Fatahalian and Kunle Olukotun). The explanations, diagrams and explorers here are original study material, not a copy of the slides.</dd>
   </dl>
@@ -320,7 +320,7 @@ for (<span class="u">uniform</span> int i = 0; i &lt; count; i++) {
   }
 }</pre>
   <p>The range <code>0 ... N</code> means indices 0 through N − 1. <code>foreach</code> gives the <i>whole gang</i> those N iterations; the programmer no longer names the instance responsible for each one. For N = 32 and eight instances, the compiler can process nearby indices together in groups of eight, making packed loads possible, and handle a final incomplete group when N is not divisible by eight. The language does not promise an order in which the iterations finish.</p>
-  <p>The explorer's first two assignments are concrete ways to distribute these 32 indices. “Instance 0 does all” and “dynamic” are thought experiments about other assignments. In particular, the displayed dynamic mode shuffles a fixed group of indices; it does not simulate a real atomic work queue or timing-dependent scheduling. Their lesson is about which addresses would reach SIMD lanes together, not about the compiler's exact choice.</p>
+  <p>The explorer's first two assignments are concrete ways to distribute these 32 indices. “Instance 0 does all” and “dynamic” are thought experiments about other assignments. In particular, the displayed dynamic mode shuffles a fixed group of indices; it does not simulate a real atomic work queue or timing-dependent scheduling. Its “P× slower” message for one active instance compares work counts, not measured runtime. The lesson is which addresses would reach SIMD lanes together, not the compiler's exact choice or an exact speed ratio.</p>
   <p>For independent array elements, <code>foreach</code> reads almost like an ordinary loop. The missing promise of iteration order matters when iterations write the same location or share state, as the next section shows.</p>
 </section>
 
@@ -351,7 +351,7 @@ for (<span class="u">uniform</span> int i = 0; i &lt; count; i++) {
       <span class="readout" style="margin-left:8px">Iteration order:</span><div class="seg" role="group" aria-label="Iteration order"><button data-so="fwd" aria-pressed="true">0, 1, 2, …</button><button data-so="rev">…, 2, 1, 0</button><button data-so="gang">shuffled (click again to reshuffle)</button></div></div>
     <div class="sc" style="padding:0"><svg id="spSvg" viewBox="0 0 760 230" role="img" aria-label="Input x, and the output y produced by the chosen iteration order compared with in-order execution" style="min-width:560px"></svg></div>
     <p class="msg" id="spMsg"></p>
-  </div><figcaption><b>Change only the order.</b> x has eight elements; three are negative. The two output rows compare a selected order with index order. For absolute_repeat they match. For shift_negative, some cells have competing writers, highlighted values can differ, and question marks mark unwritten cells. These orders illustrate why code cannot rely on <code>foreach</code> running iterations in index order; the explorer does not predict ISPC's exact schedule.</figcaption></figure>
+  </div><figcaption><b>Change only the order.</b> x has eight elements; three are negative. The two output rows compare a selected order with index order. For absolute_repeat they match. For shift_negative, some cells have competing writers, highlighted values can differ, and question marks mark unwritten cells. The explorer runs iterations sequentially in a chosen order to illustrate possible results; a real parallel race offers no “last writer” guarantee. It does not predict ISPC's exact schedule.</figcaption></figure>
 
   <h3>Computing a sum: the uniform/varying distinction</h3>
   <p>The next problem needs <i>cooperation</i> rather than merely independent iterations. Suppose an exported function must return one <code>uniform float</code> to C++: the sum of x[0] through x[N − 1]. In that function body, two tempting attempts fail type checking for different reasons:</p>
@@ -385,8 +385,8 @@ return sum;</pre>
   <div class="tbl"><table>
     <tr><th>Operation</th><th>What it does</th></tr>
     <tr><td class="m">uniform int32 reduce_add(int32 x)</td><td>Sum of the active instances' int32 values; the float overload returns a uniform float</td></tr>
-    <tr><td class="m">uniform int32 reduce_min(int32 a)</td><td>Minimum of a over all instances</td></tr>
-    <tr><td class="m">int32 broadcast(int32 value, uniform int index)</td><td>Every instance receives the value held by instance <code>index</code></td></tr>
+    <tr><td class="m">uniform int32 reduce_min(int32 a)</td><td>Minimum of a over the active instances</td></tr>
+    <tr><td class="m">int32 broadcast(int32 value, uniform int index)</td><td>Active instances receive the value held by instance <code>index</code></td></tr>
     <tr><td class="m">int32 rotate(int32 value, uniform int offset)</td><td>Pass values around the gang by <code>offset</code> positions, wrapping at the ends</td></tr>
     <tr><td class="m">shift(value, offset)</td><td>Like rotate, but values shifted past the end of the gang become 0</td></tr>
   </table></div>
