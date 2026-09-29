@@ -234,19 +234,19 @@ svg text.sw{fill:#fff!important}
 
 <section class="lesson" id="s6" data-toc="Abstraction vs implementation" data-n="6" style="margin-top:36px">
   <div class="lesson-h"><div class="kicker">Section 6</div><h2>The theme: abstraction versus implementation</h2></div>
-  <p>The second half of the lecture has one theme, and the course returns to it constantly. <b>Confusing the semantics of an abstraction with the details of its implementation is the most common source of confusion in parallel programming.</b> SPMD is one programming model among many, and SIMD one hardware organization among many; the <a href="../parallel-landscape.html">map of parallel machines and programs</a> lays them all out side by side.</p>
+  <p>The vector multiplication in Part 1 has a simple mathematical result, yet performance depends on details such as which nearby values the hardware fetches together. Parallel programming has this recurring split: the <b>abstraction</b> specifies what work means and what behavior is allowed; an <b>implementation</b> decides how to schedule that work on real hardware. The distinction matters for correctness as well as speed. Here the programming model is <b>SPMD</b> (single program, multiple data), and the common CPU implementation uses <b>SIMD</b> vector instructions. The <a href="../parallel-landscape.html">map of parallel machines and programs</a> places them alongside other models.</p>
   <div class="card4">
-    <div class="c2"><span class="l">Abstraction (semantics)</span>What do the operations of a programming model <i>mean</i>? Given a program and those meanings, what answer will it compute?</div>
-    <div class="c3"><span class="l">Implementation (scheduling)</span>How will that answer actually be computed on a parallel machine? In what order do operations run? Which thread, execution unit or vector lane does each one?</div>
-    <div class="c4"><span class="l">Your goal</span>Given a program and knowledge of how its programming model is implemented, <b>trace in your head</b> what each part of the parallel computer is doing at each step.</div>
-    <div class="c1"><span class="l">The trap</span>Assuming a guarantee the abstraction never made, because the implementation you happen to know gives it. Programs built on that assumption break on the next implementation.</div>
+    <div class="c2"><span class="l">Abstraction (semantics)</span>Which results and ordering does the programming model guarantee? Which choices does it leave open?</div>
+    <div class="c3"><span class="l">Implementation (scheduling)</span>How does a compiler or runtime assign that work to threads, execution units, or vector lanes?</div>
+    <div class="c4"><span class="l">Your goal</span>First check that the program is correct under the model's guarantees. Then trace how a likely implementation uses the machine's resources.</div>
+    <div class="c1"><span class="l">The trap</span>A program can appear correct under one execution order while relying on an order the model never promised.</div>
   </div>
-  <p>The example is <b>ISPC</b>, the Intel SPMD Program Compiler, which you use in the first programming assignment. (Matt Pharr's blog series "The Story of ISPC" is a good read on why it was designed this way.)</p>
+  <p>ISPC, Intel's Implicit SPMD Program Compiler, makes this split visible. We will describe what its program instances mean first, then see how a CPU can run them with SIMD. That order helps explain why two correct assignments of array elements may have very different memory costs.</p>
 </section>
 
 <section class="lesson" id="s7" data-toc="SPMD and ISPC gangs" data-n="7">
   <div class="lesson-h"><div class="kicker">Section 7</div><h2>SPMD in ISPC: gangs of program instances</h2></div>
-  <p>Recall Lecture 2's example: compute sin(x) with a Taylor series, sin(x) = x − x³/3! + x⁵/5! − …, for every element of an array. The C++ version is an ordinary loop over <code>i</code>. Here it is in ISPC:</p>
+  <p>Use the same array example as Lecture 2. For each input x[i], measured in radians, approximate sin(x[i]) with a finite Taylor series: x − x³/3! + x⁵/5! − … . With a fixed, small number of terms, each element follows the same calculation, and different elements can be computed independently. Here is an illustrative ISPC version:</p>
   <pre class="code">export void ispc_sinx(<span class="u">uniform</span> int N, <span class="u">uniform</span> int terms,
                       <span class="u">uniform</span> float* x, <span class="u">uniform</span> float* result)
 {
@@ -255,7 +255,7 @@ svg text.sw{fill:#fff!important}
     int idx = i + <span class="k">programIndex</span>;
     float value = x[idx];
     float numer = x[idx] * x[idx] * x[idx];
-    <span class="u">uniform</span> int denom = 6;       // 3!
+    <span class="u">uniform</span> float denom = 6.0f; // 3!
     <span class="u">uniform</span> int sign = -1;
     for (<span class="u">uniform</span> int j = 1; j &lt;= terms; j++) {
       value += sign * numer / denom;
@@ -266,21 +266,22 @@ svg text.sw{fill:#fff!important}
     result[idx] = value;
   }
 }</pre>
-  <p>The C++ <code>main</code> calls <code>ispc_sinx(N, terms, x, result)</code> like any function. What that call <i>means</i> is the <b>SPMD</b> (single program, multiple data) abstraction:</p>
+  <p>The function starts <code>value</code> at x, then adds −x³/3!, +x⁵/5!, and so on. For example, <code>terms = 2</code> keeps the first three Taylor terms. This small kernel illustrates parallel structure, not production-quality sine accuracy: error depends on x and the number of terms, and practical libraries also reduce large inputs to a smaller range.</p>
+  <p>When C++ calls <code>ispc_sinx(N, terms, x, result)</code>, the SPMD model describes a group of logical executions of that function:</p>
   <ul>
-    <li>The call spawns a <b>gang</b> of ISPC <b>program instances</b>. All instances run the same ISPC function concurrently.</li>
-    <li>Each instance has <b>its own copy of local variables</b> (<code>idx</code>, <code>value</code>, <code>numer</code> above).</li>
-    <li>When the function returns, <b>all instances have completed</b>, and sequential C++ execution resumes.</li>
+    <li>The call executes a <b>gang</b> of ISPC <b>program instances</b>. Each follows the same function with its own logical instance ID. “Logical” matters: this does not promise one operating-system thread or core per instance.</li>
+    <li>Each instance has its own <b>varying</b> values, such as <code>idx</code>, <code>value</code>, and <code>numer</code>. Values marked <code>uniform</code>, such as <code>denom</code> and <code>sign</code>, are the same across the gang.</li>
+    <li>The call returns to C++ after all instances in the gang complete.</li>
   </ul>
   <figure class="fig"><div class="sc"><svg id="forkSvg" viewBox="0 0 760 230" role="img" aria-label="Sequential C++ code calls the ISPC function, which runs a gang of eight program instances; when all finish, sequential execution resumes" style="min-width:560px"></svg></div>
-    <figcaption><b>Fork, run a gang, join.</b> One thread of control reaches the call, becomes <code>programCount</code> logical instances (8 here), and becomes one thread again only when every instance has finished.</figcaption></figure>
+    <figcaption><b>Fork logically, then join.</b> The C++ caller enters one ISPC call; its gang has <code>programCount</code> logical instances (eight here). C++ resumes after the gang completes. The drawing describes program behavior, not eight operating-system threads.</figcaption></figure>
   <div class="tbl"><table>
     <tr><th>ISPC keyword</th><th>Meaning</th></tr>
-    <tr><td class="m">programCount</td><td>The number of instances running simultaneously in the gang. The same for every instance (a <b>uniform</b> value).</td></tr>
+    <tr><td class="m">programCount</td><td>The number of logical instances in the gang. It has the same value for every instance (it is <b>uniform</b>).</td></tr>
     <tr><td class="m">programIndex</td><td>This instance's ID within the gang, 0 to programCount − 1. Different in every instance (a <b>varying</b> value).</td></tr>
-    <tr><td class="m">uniform</td><td>A type modifier: every instance has the same value, so one copy suffices. Purely an optimization; it isn't needed for correctness.</td></tr>
+    <tr><td class="m">uniform</td><td>A type qualifier saying a value is shared across the gang, rather than separate for each instance. It affects which assignments and returns are legal, and it can enable scalar code.</td></tr>
   </table></div>
-  <p>In <code>ispc_sinx</code>, the loop counter <code>i</code> is uniform: every instance steps through i = 0, 8, 16, … together. Each computes its own element <code>idx = i + programIndex</code>. So with programCount = 8, instance 0 handles elements 0, 8, 16, …, instance 1 handles 1, 9, 17, … This is an <b>interleaved</b> assignment of array elements to instances.</p>
+  <p>Trace a concrete call with N = 32 and <code>programCount = 8</code>. The uniform loop counter takes values 0, 8, 16, and 24 for the whole gang. At i = 0, instance 0 uses <code>idx = 0</code> and instance 7 uses <code>idx = 7</code>; at i = 8 they use 8 and 15. Over the call, instance 0 handles 0, 8, 16, 24, while instance 1 handles 1, 9, 17, 25. This is an <b>interleaved</b> assignment. The divisibility assumption in the code keeps every instance's final index below N; a general version would mask or check the leftover elements.</p>
 </section>
 
 <section class="lesson" id="s8" data-toc="Interleaved vs blocked" data-n="8">
