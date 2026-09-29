@@ -450,7 +450,7 @@ svg text.sw{fill:#fff!important}
 
 <section class="lesson" id="s11" data-toc="How many threads?" data-n="11">
   <div class="lesson-h"><div class="kicker">Section 11</div><h2>How many threads does it take?</h2></div>
-  <p>Consider a simple core that runs <b>one scalar instruction per clock</b> from one of its hardware threads. Each thread runs a loop: <b>some arithmetic instructions, then a memory load</b> whose data arrives after a fixed latency. The thread can't continue until it does. How busy is the core?</p>
+  <p>Count how many ready threads are needed to cover a memory wait. The explorer uses a deliberately simple one-issue core: one thread occupies it for <b>k arithmetic clocks</b>, then launches a memory request and waits <b>L clocks</b> before its next arithmetic burst. The request itself takes no separate issue slot in this model. Real loads do use hardware resources, so the formula below is a teaching estimate, not an exact sizing rule for a real chip.</p>
   <figure class="fig"><div class="widget">
     <div class="calc">
       <label class="rl" for="muK">arithmetic instructions per load = <b id="muKv">3</b><input id="muK" type="range" min="1" max="12" value="3"></label>
@@ -460,15 +460,15 @@ svg text.sw{fill:#fff!important}
     <div class="sc" style="padding:10px 0 0"><svg id="muSvg" viewBox="0 0 760 300" role="img" aria-label="Timeline of each hardware thread running, stalled or waiting, and core utilization" style="min-width:560px"></svg></div>
     <div class="stat" id="muStat"></div>
     <p class="msg" id="muMsg"></p>
-  </div><figcaption><b>Blue is running, red is stalled on memory, and grey is ready but waiting for the core.</b> With 3 arithmetic instructions and a 12-cycle load, one thread keeps the core busy 3 of every 15 cycles (20%). Two threads give 40%. <b>Five</b> threads give 100%, and more threads add nothing. Raise the arithmetic to 6 per load and only three threads are needed.</figcaption></figure>
-  <p>The rule falls out of the timeline. A thread computes for <i>k</i> cycles and then waits <i>L</i> cycles, so one period is k + L cycles. To fill the whole period, the core needs enough threads that their compute bursts cover it:</p>
+  </div><figcaption><b>Watch running, waiting, and ready time.</b> Blue uses the core, red waits for memory, and grey is ready but waiting its turn. With k = 3 and L = 12, one thread supplies work for 3 of every 15 clocks: 20% utilization. Five staggered threads can fill the 12-clock gap in this model. Raising k to 6 reduces the number needed to three. Additional threads do not raise the one-issue core's peak rate.</figcaption></figure>
+  <p>One thread's cycle is k clocks of arithmetic plus L of waiting. If T threads stagger their bursts perfectly, together they can supply T × k busy clocks in that k + L interval. Utilization cannot exceed 100%, and the smallest whole-number T that covers the interval is:</p>
   <p style="text-align:center;font:600 17px var(--mono)">threads needed = ⌈(k + L) / k⌉ = ⌈1 + L / k⌉ &nbsp;&nbsp;&nbsp; utilization = min(1, T·k / (k + L))</p>
-  <div class="insight"><b>Takeaway 1:</b> a multithreaded core avoids stalls by running other threads' instructions while one waits. The <b>memory latency itself doesn't change</b>. It just stops costing utilization.<br><br><b>Takeaway 2:</b> the more arithmetic a program does per memory access, the <b>fewer threads</b> it needs to hide the stalls. Latency is hidden by <i>other threads' arithmetic</i>.</div>
+  <div class="insight"><b>What the formula teaches.</b> Other threads can keep an execution unit busy during a memory wait without shortening the wait itself. More useful arithmetic per request means each thread fills a larger part of the gap, so fewer threads are needed. This assumes independent ready threads, perfect switching, and enough memory capacity for their requests; real performance also depends on those limits.</div>
   <div class="predict"><div class="ph"><b>Predict</b><span>Use the formula, then check with the sliders.</span></div><ol>
     <li>With 4 arithmetic instructions per load and a 20-cycle memory latency, how many threads reach 100%? What is the utilization with 3 threads?
       <details><summary>Show answer</summary><div class="ans"><p>(4 + 20) / 4 = <b>6 threads</b>. With 3: 3 × 4 / 24 = <b>50%</b>.</p></div></details></li>
     <li>Adding an 8th thread to the 3-instruction / 12-cycle program: does anything get faster?
-      <details><summary>Show answer</summary><div class="ans"><p><b>Total throughput doesn't change</b>, because the core is already 100% busy with 5 threads. And <b>each thread gets slower</b>, because it waits longer for its turn after its data arrives.</p></div></details></li>
+      <details><summary>Show answer</summary><div class="ans"><p><b>Total throughput cannot rise</b> above the already full one-issue rate. With extra ready threads sharing the same core, a thread may wait longer for its turn after data arrives; its individual completion time can rise. That delay comes from contention for the core, not from a slower memory access.</p></div></details></li>
   </ol></div>
 </section>
 
